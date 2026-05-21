@@ -1,0 +1,25 @@
+export const HOLES = [
+  { hole: 1,  tips: 313, mid: 300, womens: 294, par: 4, ruleName: "Green Is The Hole",         rule: "Skip the fairway — if your ball lands and stays on the green from your tee shot, the hole is complete. Wagers welcome. Confidence mandatory." },
+  { hole: 2,  tips: 493, mid: 480, womens: 357, par: 5, ruleName: "Free Throw / Longest Drive",  rule: "Longest drive wins a free throw (mulligan) usable on any future hole. Side bet: closest ball to 200 yards can revoke someone else's tee mulligan. Use it wisely." },
+  { hole: 3,  tips: 165, mid: 152, womens: 118, par: 3, ruleName: "One Club Only",               rule: "Pick ONE club off the tee. That's your club for the ENTIRE hole — approach, chip, and putt. The guy who picks driver for a par 3 deserves everything that comes next." },
+  { hole: 4,  tips: 378, mid: 365, womens: 310, par: 4, ruleName: "Worst Ball",                  rule: "Both players hit tee shots. The team plays from the WORST ball. The suffering is shared. The blame is entirely individual." },
+  { hole: 5,  tips: 520, mid: 505, womens: 430, par: 5, ruleName: "Scramble",                    rule: "Full scramble. Both hit, pick the best, both hit again from there. The catch: you still count every stroke. There's no mercy in the WFC rulebook." },
+  { hole: 6,  tips: 198, mid: 185, womens: 143, par: 3, ruleName: "Putt With Your Driver",       rule: "On the green, you putt using ONLY your driver. Sideways, backwards, whatever — the big stick only. This hole has ended 14 documented friendships since 2019." },
+  { hole: 7,  tips: 412, mid: 398, womens: 335, par: 4, ruleName: "Captain's Choice",            rule: "After tee shots, the captain picks which ball to play for the approach. The captain then MUST hit the second shot. Power. Accountability. Regret." },
+  { hole: 8,  tips: 445, mid: 430, womens: 375, par: 4, ruleName: "Long Drive Contest",          rule: "Longest drive in the fairway wins a 2-stroke reduction on final score. Out of bounds still counts — land it in the short grass or go home." },
+  { hole: 9,  tips: 485, mid: 470, womens: 405, par: 5, ruleName: "Par Means Free Beer",         rule: "Make par and the bar covers one round. Birdie? The whole group drinks on your tab (complimentary). Bogey? You watch everyone else drink while you reflect." },
+  { hole: 10, tips: 345, mid: 330, womens: 278, par: 4, ruleName: "Sniper Hole",                 rule: "Hit a tree = 2 penalty strokes. Hit TWO trees = you carry someone's bag for the next hole. Historical tree-hit rate: 40%. Stay humble." },
+  { hole: 11, tips: 175, mid: 160, womens: 128, par: 3, ruleName: "Closest To The Pin",         rule: "Closest tee shot to the pin cancels that team's worst hole score from their card. Accuracy rewarded. Bragging rights eternal." },
+  { hole: 12, tips: 420, mid: 405, womens: 352, par: 4, ruleName: "Longest Drive Official",     rule: "Official longest drive measurement. A volunteer marks it. A photo is taken. It is referenced at every subsequent WFC event until someone beats it." },
+  { hole: 13, tips: 510, mid: 495, womens: 425, par: 5, ruleName: "Alternate Shot",             rule: "Players alternate every shot for the entire hole. Team decides who tees off. Back and forth from there. Communication is key. Mutual destruction is likely." },
+  { hole: 14, tips: 188, mid: 175, womens: 140, par: 3, ruleName: "One Bounce Counts",          rule: "Your tee shot must bounce at least once before reaching the green or it doesn't count. Spin it back into the water? Classic. Grip it and skip it." },
+  { hole: 15, tips: 395, mid: 380, womens: 325, par: 4, ruleName: "Sandbagging Penalty",        rule: "Any team whose handicap is disputed by two or more other groups gets a 1-stroke penalty. Democracy rules. Cheaters pay. The WFC is watching." },
+  { hole: 16, tips: 545, mid: 528, womens: 455, par: 5, ruleName: "Free Throw Fairway",         rule: "Each player gets ONE free throw this hole — literally throw the ball with your hand toward the green. Distance is real. Use it at the right moment. Fully legal under WFC rules." },
+  { hole: 17, tips: 155, mid: 142, womens: 110, par: 3, ruleName: "Island Green Penalty",       rule: "Miss the green entirely = 2-stroke penalty + mandatory replay. It's a par 3. The green is RIGHT THERE. No excuse. Pay the toll. Walk of shame included." },
+  { hole: 18, tips: 438, mid: 422, womens: 368, par: 4, ruleName: "Victory Lap",                rule: "Final hole. Last year's losing team buys a round regardless of today's result. Today's winning team names the hardest rule for WFC next year. Make it legendary." },
+] as const;
+
+export type Hole = typeof HOLES[number];
+export const FRONT_NINE = HOLES.slice(0, 9);
+export const BACK_NINE = HOLES.slice(9, 18);
+export const TOTAL_PAR = HOLES.reduce((sum, h) => sum + h.par, 0); // 72
