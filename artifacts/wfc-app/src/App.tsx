@@ -8,7 +8,7 @@ import { useEffect } from "react";
 import Home from "@/pages/Home";
 import Scorecard from "@/pages/Scorecard";
 import Leaderboard from "@/pages/Leaderboard";
-import CourseMap from "@/pages/CourseMap";
+import HoleView from "@/pages/HoleView";
 import Rules from "@/pages/Rules";
 import Stats from "@/pages/Stats";
 import Admin from "@/pages/Admin";
@@ -24,7 +24,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/scorecard" component={Scorecard} />
         <Route path="/leaderboard" component={Leaderboard} />
-        <Route path="/map" component={CourseMap} />
+        <Route path="/hole" component={HoleView} />
         <Route path="/rules" component={Rules} />
         <Route path="/stats" component={Stats} />
         <Route path="/admin" component={Admin} />
