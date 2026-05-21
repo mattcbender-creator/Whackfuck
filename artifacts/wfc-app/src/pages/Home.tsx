@@ -73,15 +73,12 @@ export default function Home() {
         {/* Wordmark */}
         <div className={`transition-all duration-700 delay-100 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
           <h1
-            className="font-condensed font-black leading-none uppercase tracking-tight text-foreground"
-            style={{ fontSize: 'clamp(2.8rem, 15vw, 4.8rem)', textShadow: '0 0 40px rgba(57,255,20,0.15)' }}
+            className="font-condensed font-black leading-[0.9] uppercase tracking-tight text-foreground"
+            style={{ fontSize: 'clamp(2.8rem, 15vw, 4.8rem)' }}
           >
-            WHACK<br />
-            <span className="text-primary" style={{ textShadow: '0 0 20px #39FF14, 0 0 60px rgba(57,255,20,0.4)' }}>
-              FUCK CUP
-            </span>
+            WHACK FUCK CUP
           </h1>
-          <p className="mt-2 text-muted-foreground tracking-widest text-[10px] uppercase font-medium">
+          <p className="mt-3 text-muted-foreground tracking-widest text-[11px] uppercase font-medium">
             Dundee Country Club · Minus 5 or better = Tips
           </p>
         </div>
@@ -96,7 +93,7 @@ export default function Home() {
                 <Users className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Your Team</span>
               </div>
-              <p className="font-condensed text-2xl font-black text-foreground neon-text uppercase tracking-wide leading-tight">
+              <p className="font-condensed text-2xl font-black text-foreground uppercase tracking-wide leading-tight">
                 {teamInfo.teamName}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
@@ -107,8 +104,7 @@ export default function Home() {
             <button
               data-testid="button-start-tournament"
               onClick={() => setLocation('/hole')}
-              className="w-full bg-primary text-primary-foreground font-condensed text-2xl font-black py-5 rounded-xl uppercase tracking-widest transition-all active:scale-95"
-              style={{ boxShadow: '0 0 20px rgba(57,255,20,0.40), 0 0 60px rgba(57,255,20,0.12)' }}
+              className="w-full bg-primary text-primary-foreground font-condensed text-2xl font-black py-5 rounded-full uppercase tracking-widest transition-all active:scale-95 neon-border"
             >
               Continue Round
             </button>
@@ -116,7 +112,7 @@ export default function Home() {
             <div className="flex gap-3 mt-3">
               <button
                 onClick={() => setEditing(true)}
-                className="flex-1 py-2.5 rounded-xl bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
+                className="flex-1 py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
               >
                 Change Team
               </button>
@@ -129,7 +125,7 @@ export default function Home() {
                     setPlayer2('');
                   }
                 }}
-                className="px-4 py-2.5 rounded-xl bg-secondary text-muted-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors flex items-center gap-1.5"
+                className="px-5 py-3 rounded-full bg-secondary text-muted-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors flex items-center gap-1.5"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Reset
@@ -183,8 +179,7 @@ export default function Home() {
               <Button
                 data-testid="button-submit-team"
                 type="submit"
-                className="w-full h-14 font-condensed text-2xl font-black tracking-widest uppercase"
-                style={{ boxShadow: '0 0 20px rgba(57,255,20,0.35)' }}
+                className="w-full h-14 font-condensed text-2xl font-black tracking-widest uppercase rounded-full neon-border"
               >
                 Start Tournament
               </Button>

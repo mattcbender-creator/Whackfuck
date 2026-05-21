@@ -30,8 +30,8 @@ export default function Rules() {
   return (
     <div className="min-h-[100dvh] w-full bg-background flex flex-col pb-16 overflow-hidden">
       <div className="p-4 pt-8 shrink-0 text-center">
-        <h2 className="font-condensed text-4xl font-black uppercase tracking-widest text-foreground neon-text">
-          Rule Deck
+        <h2 className="font-condensed text-4xl font-black uppercase tracking-widest text-foreground">
+          Rule <span className="text-primary">Deck</span>
         </h2>
         <p className="text-sm text-muted-foreground mt-2 uppercase tracking-widest font-bold">
           Ignorance is not an excuse
@@ -51,7 +51,7 @@ export default function Rules() {
 
                   <div>
                     <div className="flex justify-between items-start mb-8">
-                      <span className="font-condensed text-6xl font-black text-primary neon-text leading-none">
+                      <span className="font-condensed text-6xl font-black text-primary leading-none">
                         #{hole.hole.toString().padStart(2, '0')}
                       </span>
                       <div className="text-right">

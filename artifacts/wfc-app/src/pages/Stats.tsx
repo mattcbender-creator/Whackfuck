@@ -47,7 +47,7 @@ export default function Stats() {
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border p-4">
         <div className="max-w-md mx-auto">
           <h2 className="font-condensed text-3xl font-black uppercase tracking-wider text-foreground">
-            Tournament <span className="text-primary neon-text">Stats</span>
+            Tournament <span className="text-primary">Stats</span>
           </h2>
         </div>
       </div>

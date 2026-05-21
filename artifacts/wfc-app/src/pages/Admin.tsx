@@ -40,7 +40,7 @@ export default function Admin() {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-background p-4">
         <form onSubmit={handleLogin} className="w-full max-w-sm bg-card p-8 rounded-xl border border-border space-y-6">
-          <h2 className="font-condensed text-3xl font-black uppercase text-center neon-text">Admin Access</h2>
+          <h2 className="font-condensed text-3xl font-black uppercase text-center">Admin <span className="text-primary">Access</span></h2>
           <Input 
             type="password"
             value={password}
@@ -57,7 +57,7 @@ export default function Admin() {
   return (
     <div className="min-h-[100dvh] bg-background p-4 pb-24">
       <div className="max-w-md mx-auto space-y-8">
-        <h2 className="font-condensed text-3xl font-black uppercase neon-text mt-8">Tournament Control</h2>
+        <h2 className="font-condensed text-3xl font-black uppercase mt-8">Tournament <span className="text-primary">Control</span></h2>
         
         <div className="bg-card p-6 rounded-xl border border-border space-y-4">
           <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Global Broadcast</h3>

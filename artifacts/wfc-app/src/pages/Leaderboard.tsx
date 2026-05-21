@@ -55,7 +55,7 @@ export default function Leaderboard() {
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border p-4">
         <div className="max-w-md mx-auto flex justify-between items-center">
           <h2 className="font-condensed text-3xl font-black uppercase tracking-wider text-foreground">
-            WFC <span className="text-primary neon-text">LIVE</span>
+            WFC <span className="text-primary">LIVE</span>
           </h2>
           <div className="flex items-center gap-2">
             <span className="relative flex h-3 w-3">

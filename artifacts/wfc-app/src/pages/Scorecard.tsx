@@ -38,7 +38,7 @@ export default function Scorecard() {
   const { teamInfo, scores, currentTee, netScore, holesPlayed, setScore } = useWFC();
   const [half, setHalf] = useState<Half>('front');
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [activeRule, setActiveRule] = useState<typeof HOLES[0] | null>(null);
+  const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
 
@@ -115,7 +115,7 @@ export default function Scorecard() {
           {/* Team + Controls row */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="font-condensed text-xl font-bold uppercase tracking-wider text-foreground neon-text leading-tight truncate">
+              <h2 className="font-condensed text-xl font-bold uppercase tracking-wider text-foreground leading-tight truncate">
                 {teamInfo?.teamName || 'Your Team'}
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -127,7 +127,7 @@ export default function Scorecard() {
               {/* Auto-Tee indicator */}
               <div className="bg-card border border-border rounded-lg px-3 py-1.5 text-center min-w-[72px]">
                 <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Auto-Tee</p>
-                <p className={`font-condensed text-xl font-black leading-tight ${currentTee === 'tips' ? 'text-red-400' : 'text-primary neon-text'}`}>
+                <p className={`font-condensed text-xl font-black leading-tight ${currentTee === 'tips' ? 'text-red-400' : 'text-primary'}`}>
                   {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
                 </p>
                 <p className={`text-[9px] font-bold leading-tight ${currentTee === 'tips' ? 'text-red-400' : 'text-blue-400'}`}>
@@ -164,7 +164,7 @@ export default function Scorecard() {
           )}
 
           {/* Front / Back toggle */}
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-3 bg-secondary/40 rounded-full p-1">
             {(['front', 'back'] as const).map(h => (
               <button
                 key={h}
@@ -172,8 +172,8 @@ export default function Scorecard() {
                   setHalf(h);
                   setSelectedIdx(h === 'front' ? 0 : 9);
                 }}
-                className={`flex-1 py-1.5 rounded-lg font-condensed font-bold text-sm uppercase tracking-wider transition-colors ${
-                  half === h ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'
+                className={`flex-1 py-2 rounded-full font-condensed font-bold text-sm uppercase tracking-wider transition-colors ${
+                  half === h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {h === 'front' ? 'Front 9' : 'Back 9'}
@@ -364,7 +364,7 @@ export default function Scorecard() {
             </div>
             <button
               onClick={() => setActiveRule(selHole)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-secondary hover:bg-secondary/70 transition-colors text-xs font-bold uppercase tracking-wider text-secondary-foreground"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary/15 border border-primary/40 hover:bg-primary/25 transition-colors text-xs font-bold uppercase tracking-wider text-primary"
             >
               <Info className="w-3.5 h-3.5" />
               Check Rule
@@ -377,7 +377,7 @@ export default function Scorecard() {
               <button
                 data-testid={`score-decrease-hole-${selHole.hole}`}
                 onClick={() => handleChange(-1)}
-                className="w-14 h-14 flex items-center justify-center rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground"
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground"
               >
                 <Minus className="w-6 h-6" />
               </button>
@@ -397,7 +397,7 @@ export default function Scorecard() {
               <button
                 data-testid={`score-increase-hole-${selHole.hole}`}
                 onClick={() => handleChange(1)}
-                className="w-14 h-14 flex items-center justify-center rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground"
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground"
               >
                 <Plus className="w-6 h-6" />
               </button>
@@ -435,7 +435,7 @@ export default function Scorecard() {
           {activeRule && (
             <div className="py-6 px-2">
               <div className="flex items-center gap-4 mb-5">
-                <span className="font-condensed text-5xl font-black text-primary neon-text opacity-40 leading-none">
+                <span className="font-condensed text-5xl font-black text-primary/30 leading-none">
                   {activeRule.hole.toString().padStart(2, '0')}
                 </span>
                 <SheetTitle className="font-condensed text-2xl uppercase tracking-wider text-left leading-tight">
