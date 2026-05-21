@@ -1,0 +1,110 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "gffHNzDy0UO-G_HoSvpU4"
+uri = "file://artifacts/wfc-app/public/holes/1.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "QnY_b2nl1dP6YartphAWD"
+uri = "file://artifacts/wfc-app/public/holes/2.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "fi2xtIXNfW0Wcx-frHtPp"
+uri = "file://artifacts/wfc-app/public/holes/3.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "dQCtHziqFFblB744miQck"
+uri = "file://artifacts/wfc-app/public/holes/4.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "9PTJ-ucSURvMg_6wS72fw"
+uri = "file://artifacts/wfc-app/public/holes/5.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Zddx7FEq4RtQy3Jsp3aQk"
+uri = "file://artifacts/wfc-app/public/holes/6.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "VA97A3PFCgEt4RrUaUszz"
+uri = "file://artifacts/wfc-app/public/holes/7.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Q80qJw_pPZiQsnKyxuP_J"
+uri = "file://artifacts/wfc-app/public/holes/8.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "8FY5DtkBpgEXqnUrN1JSz"
+uri = "file://artifacts/wfc-app/public/holes/9.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ZE7t52gBBeIBCS0efVu6y"
+uri = "file://artifacts/wfc-app/public/holes/10.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "mFjgXxoLT-TT0v9HgLmoo"
+uri = "file://artifacts/wfc-app/public/holes/11.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "NOTwvBuHuCLlqq57nU0zx"
+uri = "file://artifacts/wfc-app/public/holes/12.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "XT5pHdSylZCt7Irn2GPLT"
+uri = "file://artifacts/wfc-app/public/holes/13.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Y22QIvp3pabBjDcpaJRmA"
+uri = "file://artifacts/wfc-app/public/holes/14.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "yVSn9FqkZvq1L7HPVWQ0R"
+uri = "file://artifacts/wfc-app/public/holes/15.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "LtwTlns7QrVzQ65pOhSnN"
+uri = "file://artifacts/wfc-app/public/holes/16.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "HJIjgZ3oGRYsTsYmAjcZ5"
+uri = "file://artifacts/wfc-app/public/holes/17.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "rXClniKoFZn9rgmbNVJe6"
+uri = "file://artifacts/wfc-app/public/holes/18.png"
+type = "image"
+title = "generated_image"

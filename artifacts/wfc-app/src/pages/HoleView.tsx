@@ -167,7 +167,7 @@ export default function HoleView() {
         )}
         <img
           key={hole.hole}
-          src={`${BASE}/holes/${hole.hole}.jpg`}
+          src={`${BASE}/holes/${hole.hole}.png`}
           alt={`Hole ${hole.hole} aerial view`}
           className={`w-full h-full object-cover transition-opacity duration-500 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
           style={{ objectPosition: 'center 30%' }}
