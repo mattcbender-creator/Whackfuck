@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, onSnapshot, query, orderBy, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
 import { Crown, Settings, X, Trash2, Flame, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -80,6 +80,9 @@ export default function Leaderboard() {
         const snap = await getDocs(collection(db, name));
         await Promise.all(snap.docs.map(d => deleteDoc(doc(db!, name, d.id))));
       }
+      // Write a reset signal — every connected device listens for this
+      // and auto-clears its own localStorage when the timestamp is newer than joinedAt.
+      await setDoc(doc(db, 'config', 'tournament'), { resetAt: serverTimestamp() });
       setResetDone(true);
       fireEagleConfetti();
       setTimeout(() => fireEagleConfetti(), 500);

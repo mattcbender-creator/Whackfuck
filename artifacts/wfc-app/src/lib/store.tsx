@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { TOTAL_PAR, HOLES } from './holes';
+import { HOLES } from './holes';
 import { db, isFirebaseConfigured } from './firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 export interface TeamInfo { teamName: string; player1: string; player2: string; }
 
@@ -21,6 +21,7 @@ const StoreContext = createContext<WFCState | null>(null);
 
 const STORE_KEY = 'wfc-state';
 const TEAM_ID_KEY = 'wfc-team-id';
+const JOINED_AT_KEY = 'wfc-joined-at';
 
 function getOrCreateTeamId(): string {
   try {
@@ -55,6 +56,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     hydratedRef.current = true;
   }, []);
 
+  // ── Listen for admin tournament reset signal ──────────────────────────────
+  // When an admin wipes the tournament they write a `resetAt` timestamp to
+  // config/tournament. Any device whose `joinedAt` is BEFORE that timestamp
+  // knows it's been reset and clears its own localStorage automatically.
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const ref = doc(db, 'config', 'tournament');
+    const unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (!data?.resetAt) return;
+
+      // resetAt is a Firestore Timestamp
+      const resetAt: number = data.resetAt.toMillis?.() ?? Number(data.resetAt);
+      const joinedAt: number = parseInt(localStorage.getItem(JOINED_AT_KEY) ?? '0', 10);
+
+      if (resetAt > joinedAt) {
+        // This device's data pre-dates the reset — wipe it silently
+        const emptyScores = Array(18).fill(null);
+        setScoresState(emptyScores);
+        setTeamInfo(null);
+        try {
+          localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: null, scores: emptyScores }));
+          // Update joinedAt so we don't keep re-triggering
+          localStorage.setItem(JOINED_AT_KEY, String(resetAt + 1));
+        } catch { /* ignore */ }
+      }
+    }, (err) => console.error('Reset listener error', err));
+
+    return () => unsub();
+  }, []);
+
   const saveToLocal = (t: TeamInfo | null, s: (number | null)[]) => {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: t, scores: s }));
@@ -77,7 +110,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const netScore = holesPlayed > 0 ? totalScore - parPlayed : 0;
   const currentTee: 'tips' | 'womens' = netScore <= -5 ? 'tips' : 'womens';
 
-  // Live Firestore sync — push this device's team doc whenever it changes
+  // ── Live Firestore sync — push this device's scores whenever they change ──
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (!isFirebaseConfigured || !db) return;
@@ -98,6 +131,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateTeamInfo = (info: TeamInfo) => {
     setTeamInfo(info);
     saveToLocal(info, scores);
+    // Record when this team joined so we can compare against reset signals
+    try { localStorage.setItem(JOINED_AT_KEY, String(Date.now())); } catch { /* ignore */ }
   };
 
   const setScore = (hole: number, score: number | null) => {
@@ -135,8 +170,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
 export function useWFC() {
   const context = useContext(StoreContext);
-  if (!context) {
-    throw new Error('useWFC must be used within StoreProvider');
-  }
+  if (!context) throw new Error('useWFC must be used within StoreProvider');
   return context;
 }

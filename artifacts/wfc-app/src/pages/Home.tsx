@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Users, RotateCcw, ShieldAlert, X, Trash2, CheckCircle2 } from 'lucide-react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { fireEagleConfetti } from '@/lib/confetti';
 
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
@@ -74,6 +74,9 @@ export default function Home() {
           const snap = await getDocs(collection(db, name));
           await Promise.all(snap.docs.map(d => deleteDoc(doc(db!, name, d.id))));
         }
+        // Write a reset signal — every other connected device listens for this
+        // and will auto-clear its own localStorage when it sees it.
+        await setDoc(doc(db, 'config', 'tournament'), { resetAt: serverTimestamp() });
       }
 
       // Also clear this device's local state
