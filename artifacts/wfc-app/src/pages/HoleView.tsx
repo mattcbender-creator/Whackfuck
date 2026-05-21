@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Flag } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Image, X } from 'lucide-react';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
@@ -37,6 +37,7 @@ export default function HoleView() {
   const { teamInfo, scores, currentTee, netScore, holesPlayed, setScore } = useWFC();
   const [holeIdx, setHoleIdx] = useState(0);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [showImage, setShowImage] = useState(false);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
@@ -47,8 +48,8 @@ export default function HoleView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reset image loaded state on hole change
-  useEffect(() => { setImgLoaded(false); }, [holeIdx]);
+  // Reset image loaded state and close modal on hole change
+  useEffect(() => { setImgLoaded(false); setShowImage(false); }, [holeIdx]);
 
   const hole = HOLES[holeIdx];
   const score = scores[holeIdx];
@@ -159,34 +160,44 @@ export default function HoleView() {
         </div>
       </div>
 
-      {/* ── Satellite Hole Image ── */}
-      <div className="w-full relative overflow-hidden" style={{ height: '220px' }}>
-        {/* Skeleton shimmer while loading */}
-        {!imgLoaded && (
-          <div className="absolute inset-0 bg-secondary animate-pulse" />
-        )}
-        <img
-          key={hole.hole}
-          src={`${BASE}/holes/${hole.hole}.png`}
-          alt={`Hole ${hole.hole} aerial view`}
-          className={`w-full h-full object-cover transition-opacity duration-500 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-          style={{ objectPosition: 'center 30%' }}
-          onLoad={() => setImgLoaded(true)}
-        />
-        {/* Bottom gradient to blend into app background */}
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent pointer-events-none" />
-        {/* Top gradient */}
-        <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-background/60 to-transparent pointer-events-none" />
-        {/* Hole number badge overlay */}
-        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-white/10">
-          <span className="font-condensed text-sm font-black text-white uppercase tracking-widest">
-            PAR {hole.par} · {yardage} YDS
-          </span>
+      {/* ── Hole Image Modal ── */}
+      {showImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+          onClick={() => setShowImage(false)}
+        >
+          {/* Close button */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="font-condensed text-sm font-black text-white uppercase tracking-widest">
+              Hole {hole.hole} — Par {hole.par} · {yardage} YDS
+            </span>
+            <button
+              onClick={() => setShowImage(false)}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+          {/* Image */}
+          <div className="flex-1 flex items-center justify-center px-2 pb-4">
+            {!imgLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              </div>
+            )}
+            <img
+              key={hole.hole}
+              src={`${BASE}/holes/${hole.hole}.jpg`}
+              alt={`Hole ${hole.hole} satellite view`}
+              className={`max-w-full max-h-full object-contain transition-opacity duration-500 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+              onLoad={() => setImgLoaded(true)}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Main Content ── */}
-      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 gap-3 -mt-2">
+      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 gap-3 pt-2">
 
         {/* Tee yardages */}
         <div className="grid grid-cols-3 gap-2">
@@ -222,6 +233,15 @@ export default function HoleView() {
             );
           })}
         </div>
+
+        {/* Show Hole button */}
+        <button
+          onClick={() => { setImgLoaded(false); setShowImage(true); }}
+          className="flex items-center justify-center gap-2 mx-auto px-5 py-2 rounded-full bg-secondary border border-border/60 active:scale-95 active:bg-secondary/60 transition-all"
+        >
+          <Image className="w-4 h-4 text-primary" />
+          <span className="text-xs font-bold text-foreground uppercase tracking-widest">Show Hole</span>
+        </button>
 
         {/* Rule Card */}
         <div className="bg-card border border-primary/30 rounded-3xl p-4 relative overflow-hidden">
