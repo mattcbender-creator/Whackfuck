@@ -3,7 +3,7 @@ import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Users, RotateCcw, ShieldAlert, X, Trash2, CheckCircle2 } from 'lucide-react';
+import { Users, ShieldAlert, X, Trash2, CheckCircle2 } from 'lucide-react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { collection, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { fireEagleConfetti } from '@/lib/confetti';
@@ -167,19 +167,12 @@ export default function Home() {
               Continue Round
             </button>
 
-            <div className="flex gap-3 mt-3">
+            <div className="mt-3">
               <button
                 onClick={() => setEditing(true)}
-                className="flex-1 py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
+                className="w-full py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
               >
                 Change Team
-              </button>
-              <button
-                onClick={() => setShowAdmin(true)}
-                className="px-5 py-3 rounded-full bg-secondary text-muted-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset
               </button>
             </div>
           </div>

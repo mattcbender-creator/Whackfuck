@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { collection, onSnapshot, query, orderBy, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { Crown, Settings, X, Trash2, Flame, CheckCircle2 } from 'lucide-react';
+import { Crown, X, Trash2, Flame, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { fireEagleConfetti } from '@/lib/confetti';
@@ -201,15 +201,6 @@ export default function Leaderboard() {
           </div>
         </div>
       </div>
-
-      {/* Admin gear (bottom-right) */}
-      <button
-        onClick={() => setShowAdmin(true)}
-        aria-label="Admin reset"
-        className="fixed bottom-24 right-4 z-50 w-12 h-12 rounded-full bg-card border border-border hover:border-primary/60 hover:bg-card/80 transition-colors flex items-center justify-center shadow-lg"
-      >
-        <Settings className="w-5 h-5 text-muted-foreground" />
-      </button>
 
       {/* Admin reset modal */}
       {showAdmin && (
