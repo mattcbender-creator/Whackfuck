@@ -311,6 +311,14 @@ export default function Scorecard() {
 
   const handleChange = (delta: number) => {
     if (selLocked) return;
+    if (hasSubmitted) {
+      toast({
+        title: 'Round locked',
+        description: 'Your final score has been submitted. Scores can no longer be changed.',
+        variant: 'destructive',
+      });
+      return;
+    }
     // STRICT IN-ORDER: cannot enter a score for a hole when any prior hole is
     // still blank. Snap them back to the first unscored hole and tell them.
     if (selectedIdx > firstUnscored) {
@@ -760,14 +768,14 @@ export default function Scorecard() {
 
           {/* Score stepper */}
           <div className="px-4 py-4">
-            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${selLocked || selOutOfOrder ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
+            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${selLocked || selOutOfOrder || hasSubmitted ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
               <button
                 data-testid={`score-decrease-hole-${selHole.hole}`}
                 onClick={() => handleChange(-1)}
-                disabled={selLocked || selOutOfOrder}
+                disabled={selLocked || selOutOfOrder || hasSubmitted}
                 className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
-                {selLocked ? <Lock className="w-5 h-5" /> : <Minus className="w-6 h-6" />}
+                {selLocked || hasSubmitted ? <Lock className="w-5 h-5" /> : <Minus className="w-6 h-6" />}
               </button>
 
               <div className="flex flex-col items-center min-w-[96px]">
@@ -778,21 +786,26 @@ export default function Scorecard() {
                   {selScore ?? '—'}
                 </span>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mt-1 h-4 flex items-center gap-1">
-                  {selLocked && <Lock className="w-3 h-3 text-primary" />}
-                  {selLocked ? 'LOCKED' : selOutOfOrder ? 'BLOCKED' : scoreLabel(selDiff)}
+                  {(selLocked || hasSubmitted) && <Lock className="w-3 h-3 text-primary" />}
+                  {hasSubmitted ? 'SUBMITTED' : selLocked ? 'LOCKED' : selOutOfOrder ? 'BLOCKED' : scoreLabel(selDiff)}
                 </span>
               </div>
 
               <button
                 data-testid={`score-increase-hole-${selHole.hole}`}
                 onClick={() => handleChange(1)}
-                disabled={selLocked || selOutOfOrder}
+                disabled={selLocked || selOutOfOrder || hasSubmitted}
                 className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
-                {selLocked ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
+                {selLocked || hasSubmitted ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
               </button>
             </div>
-            {selLocked && (
+            {hasSubmitted ? (
+              <p className="text-[10px] text-yellow-400/90 text-center mt-2 uppercase tracking-widest font-bold">
+                <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5" />
+                Round Submitted — Scores Final
+              </p>
+            ) : selLocked && (
               <p className="text-[10px] text-muted-foreground/80 text-center mt-2 uppercase tracking-widest font-bold">
                 <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5 text-primary" />
                 Front 9 locked after the spin

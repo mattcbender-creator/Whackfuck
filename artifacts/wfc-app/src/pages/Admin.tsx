@@ -14,7 +14,7 @@ import {
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
 } from 'lucide-react';
 
-const ADMIN_PASSWORD = 'wfc2026!';
+const ADMIN_PASSWORD = 'wfc';
 
 const DEMO_TEAM_NAMES = [
   'Birdie Bandits', 'Sandbaggers', 'Bogey Boys', 'Mulligan Mafia', 'Whack Attack',
