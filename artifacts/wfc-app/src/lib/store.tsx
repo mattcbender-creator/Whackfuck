@@ -222,15 +222,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       teeMountRef.current = true;
       return;
     }
+    const teeToastClass =
+      'border-primary/60 bg-primary/15 text-foreground backdrop-blur ' +
+      '[&>div>div:first-child]:text-primary [&>div>div:first-child]:font-condensed ' +
+      '[&>div>div:first-child]:uppercase [&>div>div:first-child]:tracking-widest';
     if (currentTee === 'tips') {
       toast({
         title: 'You moved to the Tips tees',
         description: 'You went under par. Play from the longest yardage from here on.',
+        className: teeToastClass,
       });
     } else {
       toast({
         title: 'Back to the Women\u2019s tees',
         description: 'You\u2019re no longer under par. Play from the shortest yardage.',
+        className: teeToastClass,
       });
     }
   }, [currentTee, toast]);
