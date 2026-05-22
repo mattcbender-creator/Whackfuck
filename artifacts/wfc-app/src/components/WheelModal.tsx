@@ -322,7 +322,7 @@ export default function WheelModal({ open, onClose }: Props) {
             <p className="text-sm text-white/70 mb-6 leading-relaxed">
               Spin the Item Box to unlock the back 9. Whatever you land on applies immediately — to you or to another team.
               <br />
-              <span className="text-white/50 text-xs">Once you tap spin, your front 9 scores are locked.</span>
+              <span className="text-white/50 text-xs">Once you tap spin, your front 9 scores are locked. Wheel effects change scores only — they never move your tee block.</span>
             </p>
             <button
               onClick={() => setConfirming(true)}

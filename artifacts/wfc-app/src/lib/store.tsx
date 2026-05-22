@@ -29,6 +29,7 @@ export interface WFCState {
   scores: (number | null)[];
   currentTee: 'tips' | 'womens';
   netScore: number;
+  rawNet: number;
   holesPlayed: number;
   frontNineConfirmed: boolean;
   wheelSpin: WheelSpinRecord | null;
@@ -248,8 +249,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // worstBack9Diff was used by the old boo/hide-worst-hole rule; kept for
   // potential future rules but suppressed to avoid a lint warning.
   void worstBack9Diff;
-  const netScore = (holesPlayed > 0 ? totalScore - parPlayed : 0) + wheelAdjustment;
-  const currentTee: 'tips' | 'womens' = netScore < 0 ? 'tips' : 'womens';
+  // Raw under-par count (your scorecard vs par, NO wheel adjustments).
+  // Used for tee assignment so being hit by lightning/shells/etc. never
+  // moves your tee block. Wheel items affect your net score on the
+  // leaderboard but do not change which tees you play from.
+  const rawNet = holesPlayed > 0 ? totalScore - parPlayed : 0;
+  const netScore = rawNet + wheelAdjustment;
+  const currentTee: 'tips' | 'womens' = rawNet < 0 ? 'tips' : 'womens';
 
   // ── Global tee-change notification: fires on any tab (Hole, Scorecard, etc.)
   // because this lives in the provider, not in a page component. Skips the
@@ -268,14 +274,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       '[&>div>div:first-child]:uppercase [&>div>div:first-child]:tracking-widest';
     if (currentTee === 'tips') {
       toast({
-        title: 'You moved to the Tips tees',
-        description: 'You went under par. Play from the longest yardage from here on.',
+        title: 'Tee moved to Tips — you went under par',
+        description: 'Your scorecard is below par. Play the longest yardage from here on.',
         className: teeToastClass,
       });
     } else {
       toast({
         title: 'Back to the Women\u2019s tees',
-        description: 'You\u2019re no longer under par. Play from the shortest yardage.',
+        description: 'Your scorecard is back at par or over. Play the shortest yardage.',
         className: teeToastClass,
       });
     }
@@ -573,6 +579,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         scores,
         currentTee,
         netScore,
+        rawNet,
         holesPlayed,
         frontNineConfirmed,
         wheelSpin,

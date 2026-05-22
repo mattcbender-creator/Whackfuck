@@ -210,7 +210,7 @@ function pickChirp(scores: (number | null)[], netScore: number): string {
 
 export default function Scorecard() {
   const {
-    teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
+    teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
   } = useWFC();
@@ -420,14 +420,19 @@ export default function Scorecard() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {/* Auto-Tee indicator */}
-              <div className="bg-card border border-border rounded-lg px-3 py-1.5 text-center min-w-[72px]">
+              {/* Auto-Tee indicator. Shows RAW score-vs-par (not net) because
+                  tees are driven by raw scoring only — wheel hits change net
+                  but never move the tee block. */}
+              <div className="bg-card border border-border rounded-lg px-3 py-1.5 text-center min-w-[78px]">
                 <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Auto-Tee</p>
                 <p className={`font-condensed text-xl font-black leading-tight ${currentTee === 'tips' ? 'text-red-400' : 'text-primary'}`}>
-                  {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
+                  {rawNet === 0 ? 'E' : rawNet > 0 ? `+${rawNet}` : rawNet}
                 </p>
                 <p className={`text-[9px] font-bold leading-tight ${currentTee === 'tips' ? 'text-red-400' : 'text-blue-400'}`}>
                   {currentTee === 'tips' ? 'TIPS' : "WMN'S"}
+                </p>
+                <p className="text-[8px] font-bold text-muted-foreground/70 uppercase tracking-wider leading-tight mt-0.5">
+                  Raw vs Par
                 </p>
               </div>
 
@@ -441,13 +446,13 @@ export default function Scorecard() {
             </div>
           </div>
 
-          {/* Tee threshold hint — go under par to unlock Tips */}
+          {/* Tee threshold hint — go under par on your scorecard to unlock Tips */}
           {currentTee === 'womens' && (
             <div className="mt-2 flex justify-between items-center">
               <span className="text-[9px] text-muted-foreground uppercase tracking-widest">
-                Go under par to move to the Tips tees
+                Get your scorecard under par to move to Tips
               </span>
-              <span className="text-[9px] font-bold text-primary">&lt; 0</span>
+              <span className="text-[9px] font-bold text-primary">RAW &lt; 0</span>
             </div>
           )}
 

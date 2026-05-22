@@ -41,6 +41,43 @@ export default function Rules() {
       <div className="flex-1 flex flex-col justify-center w-full relative">
         <div className="overflow-hidden" ref={emblaRef}>
           <div className="flex touch-pan-y h-full">
+            {/* ── Intro card: How Tees Work. Always the first card in the deck
+                so any "wait, why is my tee on…" question is answered here. ── */}
+            <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
+              <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
+                  TEE
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-start mb-6">
+                    <span className="font-condensed text-5xl font-black text-primary leading-none">
+                      HOW TEES WORK
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 text-card-foreground/90 text-base leading-relaxed font-medium">
+                    <p>
+                      Your tee block is set by your <span className="font-black text-primary">raw scorecard vs par</span> — nothing else.
+                    </p>
+                    <div className="bg-secondary/40 rounded-xl p-3 border border-border/50 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-condensed text-base font-black text-red-400 uppercase tracking-widest w-20">Tips</span>
+                        <span className="text-sm">Raw score is under par</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-condensed text-base font-black text-blue-400 uppercase tracking-widest w-20">Women's</span>
+                        <span className="text-sm">Raw score is at par or over</span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Item Box hits (lightning, shells, banana, boo) add strokes to your <span className="font-bold text-foreground/80">net</span> score on the leaderboard — but they <span className="font-bold text-foreground/80">never</span> move your tee block. You earn Tips by playing well, not by avoiding the wheel.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {HOLES.map((hole) => (
               <div key={hole.hole} className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
                 <div className="h-full bg-card border border-border rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
@@ -87,12 +124,12 @@ export default function Rules() {
           </button>
           
           <div className="font-condensed text-xl font-bold tracking-widest">
-            {selectedIndex + 1} / 18
+            {selectedIndex === 0 ? 'TEE' : selectedIndex} / 18
           </div>
 
           <button 
             onClick={scrollNext}
-            disabled={selectedIndex === HOLES.length - 1}
+            disabled={selectedIndex === HOLES.length}
             className="w-12 h-12 flex items-center justify-center rounded-full bg-secondary text-secondary-foreground disabled:opacity-30 transition-opacity"
           >
             <ChevronRight className="w-6 h-6" />

@@ -222,13 +222,16 @@ export default function Home() {
               <div className="flex gap-4">
                 <div>
                   <span className="text-[10px] font-bold text-red-400 uppercase tracking-wide">Tips</span>
-                  <span className="text-[10px] text-muted-foreground ml-2">Under par (&lt; 0)</span>
+                  <span className="text-[10px] text-muted-foreground ml-2">Raw score under par</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wide">Women's</span>
                   <span className="text-[10px] text-muted-foreground ml-2">Everyone else</span>
                 </div>
               </div>
+              <p className="text-[10px] text-muted-foreground/80 mt-2 leading-snug">
+                Based on your <span className="font-bold text-foreground/80">scorecard vs par only</span>. Wheel hits add to your net but never move your tee block.
+              </p>
             </div>
           </div>
         )}
