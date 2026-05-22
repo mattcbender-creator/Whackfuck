@@ -79,7 +79,7 @@ export default function Home() {
             WHACK FUCK CUP
           </h1>
           <p className="mt-3 text-muted-foreground tracking-widest text-[11px] uppercase font-medium">
-            Dundee Country Club · Minus 5 or better = Tips
+            Dundee Country Club · Under par = Tips
           </p>
         </div>
 
@@ -197,7 +197,7 @@ export default function Home() {
               <div className="flex gap-4">
                 <div>
                   <span className="text-[10px] font-bold text-red-400 uppercase tracking-wide">Tips</span>
-                  <span className="text-[10px] text-muted-foreground ml-2">Net -5 or better</span>
+                  <span className="text-[10px] text-muted-foreground ml-2">Under par (&lt; 0)</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wide">Women's</span>
