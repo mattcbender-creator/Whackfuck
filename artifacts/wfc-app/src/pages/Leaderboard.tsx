@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { Crown, X, Flame, Target, Sparkles, Megaphone, Star, Zap, Flag } from 'lucide-react';
+import { HOLES } from '@/lib/holes';
+import { Crown, X, Flame, Target, Sparkles, Megaphone, Star, Zap, Flag, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
 import type { WheelSpinRecord, TargetedByEntry } from '@/lib/store';
@@ -54,6 +55,83 @@ interface TeamData {
   wheelSpin?: WheelSpinRecord | null;
   targetedBy?: TargetedByEntry[];
   wheelAdjustment?: number;
+  scores?: (number | null)[];
+}
+
+// Color a score by its diff vs par (eagle/birdie/par/bogey/double+)
+function scoreColor(score: number | null | undefined, par: number): string {
+  if (score === null || score === undefined) return 'text-muted-foreground/40';
+  const d = score - par;
+  if (d <= -2) return 'text-yellow-400';
+  if (d === -1) return 'text-primary';
+  if (d === 0) return 'text-foreground/80';
+  if (d === 1) return 'text-orange-400';
+  return 'text-red-500';
+}
+
+// Compact horizontal scorecard shown when a leaderboard row is expanded.
+function MiniScorecard({ scores }: { scores: (number | null)[] }) {
+  const half = (start: number, end: number) => HOLES.slice(start, end);
+  const playedSum = (start: number, end: number) => {
+    let s = 0; let any = false;
+    for (let i = start; i < end; i++) {
+      const v = scores[i];
+      if (v !== null && v !== undefined) { s += v; any = true; }
+    }
+    return any ? s : null;
+  };
+  const parSum = (start: number, end: number) =>
+    HOLES.slice(start, end).reduce((a, h) => a + h.par, 0);
+
+  const renderNine = (label: string, start: number, end: number) => {
+    const sum = playedSum(start, end);
+    const par = parSum(start, end);
+    return (
+      <table className="w-max border-collapse text-[11px]">
+        <tbody>
+          <tr className="border-b border-white/10">
+            <td className="px-2 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 w-12">Hole</td>
+            {half(start, end).map(h => (
+              <td key={h.hole} className="px-2 py-1 text-center font-condensed font-black w-8 text-foreground/70">{h.hole}</td>
+            ))}
+            <td className="px-2 py-1 text-center text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 border-l border-white/10 w-10">{label}</td>
+          </tr>
+          <tr className="border-b border-white/8">
+            <td className="px-2 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Par</td>
+            {half(start, end).map(h => (
+              <td key={h.hole} className="px-2 py-1 text-center text-muted-foreground/60">{h.par}</td>
+            ))}
+            <td className="px-2 py-1 text-center text-muted-foreground/60 border-l border-white/10 font-bold">{par}</td>
+          </tr>
+          <tr>
+            <td className="px-2 py-1.5 text-left text-[9px] font-bold uppercase tracking-widest text-foreground/80">Score</td>
+            {half(start, end).map((h, i) => {
+              const s = scores[start + i] ?? null;
+              return (
+                <td key={h.hole} className={`px-2 py-1.5 text-center font-condensed text-base font-black ${scoreColor(s, h.par)}`}>
+                  {s ?? '—'}
+                </td>
+              );
+            })}
+            <td className="px-2 py-1.5 text-center border-l border-white/10 font-condensed text-base font-black text-foreground/80">
+              {sum ?? ''}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-lg border border-white/10" style={{ background: '#0d0d0d' }}>
+        {renderNine('Out', 0, 9)}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-white/10" style={{ background: '#0d0d0d' }}>
+        {renderNine('In', 9, 18)}
+      </div>
+    </div>
+  );
 }
 
 function WheelBadge({ item, label }: { item: WheelItemId; label: string }) {
@@ -121,6 +199,7 @@ export default function Leaderboard() {
   const [tickerIdx, setTickerIdx] = useState(0);
   const prevPositionsRef = useRef<Record<string, number>>({});
   const [posChanges, setPosChanges] = useState<Record<string, number>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // ── Single events listener: powers both broadcast banner and live ticker ──
   useEffect(() => {
@@ -303,48 +382,72 @@ export default function Leaderboard() {
               const allHits = team.targetedBy ?? [];
               const aggregated = aggregateHits(allHits);
               const totalHits = allHits.length;
+              const isExpanded = expandedId === team.id;
+              const hasScores = Array.isArray(team.scores) && team.scores.some(s => s !== null && s !== undefined);
               return (
-                <div key={team.id} className="grid grid-cols-12 gap-2 p-3 items-center hover:bg-secondary/20 transition-colors">
-                  <div className="col-span-1 flex flex-col justify-center items-center gap-0.5">
-                    {idx === 0 ? (
-                      <Crown className="w-4 h-4 text-yellow-400" />
-                    ) : (
-                      <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
-                    )}
-                    {posChanges[team.id] !== undefined && posChanges[team.id] !== 0 && (
-                      <span className={`text-[8px] font-black leading-none ${posChanges[team.id] > 0 ? 'text-primary' : 'text-red-400'}`}>
-                        {posChanges[team.id] > 0 ? `▲${posChanges[team.id]}` : `▼${Math.abs(posChanges[team.id])}`}
+                <div key={team.id}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(prev => prev === team.id ? null : team.id)}
+                    data-testid={`leaderboard-row-${team.id}`}
+                    className={`w-full grid grid-cols-12 gap-2 p-3 items-center text-left transition-colors ${isExpanded ? 'bg-secondary/30' : 'hover:bg-secondary/20'}`}
+                  >
+                    <div className="col-span-1 flex flex-col justify-center items-center gap-0.5">
+                      {idx === 0 ? (
+                        <Crown className="w-4 h-4 text-yellow-400" />
+                      ) : (
+                        <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
+                      )}
+                      {posChanges[team.id] !== undefined && posChanges[team.id] !== 0 && (
+                        <span className={`text-[8px] font-black leading-none ${posChanges[team.id] > 0 ? 'text-primary' : 'text-red-400'}`}>
+                          {posChanges[team.id] > 0 ? `▲${posChanges[team.id]}` : `▼${Math.abs(posChanges[team.id])}`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="col-span-6 flex flex-col gap-1 min-w-0">
+                      <span className="font-bold text-sm truncate flex items-center gap-1.5">
+                        {team.teamName}
+                        <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                       </span>
-                    )}
-                  </div>
-                  <div className="col-span-6 flex flex-col gap-1 min-w-0">
-                    <span className="font-bold text-sm truncate">{team.teamName}</span>
-                    <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
-                    {(team.wheelSpin || totalHits > 0) && (
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {team.wheelSpin && (
-                          <WheelBadge item={team.wheelSpin.item} label={`Spun ${team.wheelSpin.item}`} />
-                        )}
-                        {aggregated.map(h => (
-                          <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="col-span-2 text-center font-condensed font-bold text-muted-foreground">
-                    {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
-                  </div>
-                  <div className="col-span-3 text-right font-condensed text-xl font-black">
-                    <span className={team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}>
-                      {team.netScore === 0 ? 'E' : team.netScore > 0 ? `+${team.netScore}` : team.netScore}
-                    </span>
-                    {typeof team.wheelAdjustment === 'number' && team.wheelAdjustment !== 0 && (
-                      <div className={`text-[9px] font-bold tracking-wider mt-0.5 ${team.wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
-                        {team.wheelAdjustment > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment} wheel
-                        {totalHits > 1 && <span className="text-muted-foreground/70 ml-1">({totalHits} hits)</span>}
-                      </div>
-                    )}
-                  </div>
+                      <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
+                      {(team.wheelSpin || totalHits > 0) && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {team.wheelSpin && (
+                            <WheelBadge item={team.wheelSpin.item} label={`Spun ${team.wheelSpin.item}`} />
+                          )}
+                          {aggregated.map(h => (
+                            <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="col-span-2 text-center font-condensed font-bold text-muted-foreground">
+                      {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
+                    </div>
+                    <div className="col-span-3 text-right font-condensed text-xl font-black">
+                      <span className={team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}>
+                        {team.netScore === 0 ? 'E' : team.netScore > 0 ? `+${team.netScore}` : team.netScore}
+                      </span>
+                      {typeof team.wheelAdjustment === 'number' && team.wheelAdjustment !== 0 && (
+                        <div className={`text-[9px] font-bold tracking-wider mt-0.5 ${team.wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
+                          {team.wheelAdjustment > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment} wheel
+                          {totalHits > 1 && <span className="text-muted-foreground/70 ml-1">({totalHits} hits)</span>}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="px-3 pb-4 pt-1 bg-secondary/10 border-t border-border/40">
+                      {hasScores ? (
+                        <MiniScorecard scores={team.scores as (number | null)[]} />
+                      ) : (
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          No scores entered yet.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
