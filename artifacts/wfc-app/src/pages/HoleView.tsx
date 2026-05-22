@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock } from 'lucide-react';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
@@ -43,7 +43,6 @@ export default function HoleView() {
   const [wheelOpen, setWheelOpen] = useState(false);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
-  const autoTriggeredRef = useRef(false);
   const { toast } = useToast();
 
   // Auto-jump to first unscored hole on mount
@@ -63,44 +62,42 @@ export default function HoleView() {
   const spunItem = getWheelItem(wheelSpin?.item);
   const holeLocked = frontNineConfirmed && holeIdx < 9;
 
-  // ── The gate: anything trying to land on hole 10+ runs through here.
-  // Returns true if navigation is allowed; false if it was blocked (and triggers wheel/toast).
+  // ── The gate: enforces ordered scoring + back-9 lock.
+  // Returns true if navigation is allowed; false if blocked.
   const tryGoToIdx = (targetIdx: number): boolean => {
-    // Allow moving anywhere in the front 9 or backwards freely.
-    if (targetIdx < 9) {
+    if (targetIdx === holeIdx) return true;
+    // Backwards is always fine.
+    if (targetIdx < holeIdx) {
       setHoleIdx(targetIdx);
       return true;
     }
-    // Target is back 9.
-    if (!front9Complete) {
+    // Forwards: every hole before `targetIdx` must have a score.
+    const missing = scores.slice(0, targetIdx).findIndex(s => s === null);
+    if (missing !== -1) {
       toast({
-        title: 'Finish the front 9 first',
-        description: 'Enter scores for all 9 front holes before moving on.',
+        title: `Score hole ${missing + 1} first`,
+        description: 'Holes must be entered in order.',
         variant: 'destructive',
       });
+      setHoleIdx(missing);
       return false;
     }
-    if (!wheelSpin) {
+    // Back-9 lock: must have spun the Item Box.
+    if (targetIdx >= 9 && !wheelSpin) {
+      if (!front9Complete) {
+        toast({
+          title: 'Finish the front 9 first',
+          description: 'Enter scores for all 9 front holes before moving on.',
+          variant: 'destructive',
+        });
+        return false;
+      }
       setWheelOpen(true);
       return false;
     }
     setHoleIdx(targetIdx);
     return true;
   };
-
-  // ── Auto-trigger: the SECOND the user completes all 9 front holes
-  // (typically by scoring hole 9), open the Item Box automatically. They can
-  // still dismiss it ("let me fix a front 9 score first") and edit before spinning.
-  useEffect(() => {
-    if (front9Complete && !wheelSpin && !autoTriggeredRef.current) {
-      autoTriggeredRef.current = true;
-      // small delay so the score-entry confetti/UX finishes first
-      const t = window.setTimeout(() => setWheelOpen(true), 700);
-      return () => window.clearTimeout(t);
-    }
-    if (!front9Complete) autoTriggeredRef.current = false;
-    return undefined;
-  }, [front9Complete, wheelSpin]);
 
   const handleScore = (delta: number) => {
     if (holeLocked) {
@@ -361,16 +358,16 @@ export default function HoleView() {
           </div>
         </div>
 
-        {/* Big Spin Item Box CTA when front 9 done & no spin yet (in case they
-            dismissed the auto-popup and want to re-open it). */}
+        {/* Big LOCK CTA when front 9 done & no spin yet — user must tap this
+            explicitly. No auto-pop. */}
         {front9Complete && !wheelSpin && (
           <button
             onClick={() => setWheelOpen(true)}
             data-testid="button-open-item-box"
-            className="w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-base uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/30"
+            className="w-full h-16 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/40 animate-pulse"
           >
-            <Sparkles className="w-5 h-5" />
-            Spin Item Box to Start Back 9
+            <Lock className="w-5 h-5" />
+            Lock Front 9 &amp; Spin Item Box
           </button>
         )}
 
@@ -380,47 +377,12 @@ export default function HoleView() {
             className="rounded-2xl px-4 py-3 flex items-center gap-3"
             style={{ background: `${spunItem.color}22`, borderLeft: `4px solid ${spunItem.color}` }}
           >
-            <Sparkles className="w-4 h-4" style={{ color: spunItem.color }} />
+            <Unlock className="w-4 h-4" style={{ color: spunItem.color }} />
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">You spun</p>
               <p className="font-condensed text-sm font-black uppercase tracking-wider" style={{ color: spunItem.color }}>
                 {spunItem.label}
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* Up next strip */}
-        {holeIdx < 17 && (
-          <div>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Up next</p>
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-              {HOLES.slice(holeIdx + 1, Math.min(holeIdx + 6, 18)).map((h, i) => {
-                const targetIdx = holeIdx + 1 + i;
-                const s = scores[targetIdx];
-                const d = s !== null ? s - h.par : null;
-                const isLockedTarget = targetIdx >= 9 && (!front9Complete || !wheelSpin);
-                return (
-                  <button
-                    key={h.hole}
-                    onClick={() => tryGoToIdx(targetIdx)}
-                    className={`shrink-0 flex flex-col items-center bg-card border rounded-2xl px-4 py-2 min-w-[60px] transition-colors relative ${
-                      isLockedTarget ? 'border-border/40 opacity-50' : 'border-border hover:border-primary/40'
-                    }`}
-                  >
-                    {isLockedTarget && (
-                      <Lock className="w-2.5 h-2.5 absolute top-1.5 right-1.5 text-muted-foreground" />
-                    )}
-                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">H{h.hole}</span>
-                    <span className="font-condensed text-lg font-black text-foreground leading-none mt-1">P{h.par}</span>
-                    {d !== null && (
-                      <span className={`text-[10px] font-bold mt-0.5 ${scoreColor(d)}`}>
-                        {d === 0 ? 'E' : d > 0 ? `+${d}` : d}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
             </div>
           </div>
         )}
