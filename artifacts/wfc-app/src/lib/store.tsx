@@ -278,7 +278,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveToLocal({ wheelSpin: record });
     if (isFirebaseConfigured && db && teamInfo) {
       try {
-        await setDoc(doc(db, 'teams', teamId), { wheelSpin: record }, { merge: true });
+        // Firestore rejects `undefined` values, so strip any undefined fields
+        // (e.g. targetTeam for self-only items like banana/mushroom/star/lightning).
+        const cleanRecord: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(record)) {
+          if (v !== undefined) cleanRecord[k] = v;
+        }
+        await setDoc(doc(db, 'teams', teamId), { wheelSpin: cleanRecord }, { merge: true });
       } catch (e) { console.error('Failed to record wheel spin', e); }
     }
   };
