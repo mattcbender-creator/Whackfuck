@@ -3,7 +3,8 @@ import { HOLES } from './holes';
 import { db, isFirebaseConfigured } from './firebase';
 import {
   doc, setDoc, onSnapshot, serverTimestamp,
-  collection, writeBatch, increment, arrayUnion, query, orderBy, getDocs
+  collection, writeBatch, increment, arrayUnion, query, orderBy, getDocs,
+  runTransaction,
 } from 'firebase/firestore';
 import type { WheelItemId } from './wheel';
 
@@ -283,29 +284,50 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const recordWheelSpin = async (record: WheelSpinRecord) => {
-    setWheelSpin(record);
-    saveToLocal({ wheelSpin: record });
+    // Build a clean copy with no undefined fields (Firestore rejects them).
+    const cleanRecord: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      if (v !== undefined) cleanRecord[k] = v;
+    }
+    // CRITICAL: run a transaction so that two tabs/devices can NEVER both
+    // succeed at recording a spin. If the server already has a wheelSpin for
+    // this team, abort and surface that prior spin locally instead.
     if (isFirebaseConfigured && db && teamInfo) {
+      const ref = doc(db, 'teams', teamId);
       try {
-        // Firestore rejects `undefined` values, so strip any undefined fields
-        // (e.g. targetTeam for self-only items like banana/mushroom/star/lightning).
-        const cleanRecord: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(record)) {
-          if (v !== undefined) cleanRecord[k] = v;
-        }
-        await setDoc(doc(db, 'teams', teamId), { wheelSpin: cleanRecord }, { merge: true });
-      } catch (e) { console.error('Failed to record wheel spin', e); }
+        const finalRecord = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(ref);
+          const existing = snap.exists() ? (snap.data().wheelSpin as WheelSpinRecord | undefined) : undefined;
+          if (existing && existing.item) {
+            // Another tab/device already claimed the spin. Keep theirs.
+            return existing;
+          }
+          tx.set(ref, { wheelSpin: cleanRecord, frontNineConfirmed: true }, { merge: true });
+          return record;
+        });
+        setWheelSpin(finalRecord);
+        saveToLocal({ wheelSpin: finalRecord });
+      } catch (e) {
+        console.error('Failed to record wheel spin', e);
+        // Fall back to local-only so the user isn't stuck.
+        setWheelSpin(record);
+        saveToLocal({ wheelSpin: record });
+      }
+    } else {
+      setWheelSpin(record);
+      saveToLocal({ wheelSpin: record });
     }
   };
 
   const applyEffectToSelf = (delta: number, booActiveFlag?: boolean) => {
     // Optimistic local update — snapshot listener will reconcile with server.
-    setWheelAdjustment(prev => prev + delta);
+    // Compute the next value once and use it for BOTH React state and the
+    // localStorage write so they can't diverge if a server snapshot races in.
+    const nextAdjustment = wheelAdjustment + delta;
+    const nextBoo = booActiveFlag ?? booActive;
+    setWheelAdjustment(nextAdjustment);
     if (booActiveFlag) setBooActive(true);
-    saveToLocal({
-      wheelAdjustment: wheelAdjustment + delta,
-      booActive: booActiveFlag ?? booActive,
-    });
+    saveToLocal({ wheelAdjustment: nextAdjustment, booActive: nextBoo });
     // Use Firestore atomic increment so concurrent writes don't lose updates.
     if (isFirebaseConfigured && db && teamInfo) {
       setDoc(doc(db, 'teams', teamId), {
@@ -325,7 +347,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (tid === teamId) continue;
         const ref = doc(db, 'teams', tid);
         batch.set(ref, {
+          // Increment BOTH wheelAdjustment AND netScore so the leaderboard
+          // reflects the hit immediately even if the target's device is
+          // offline. When they come back online, their own sync will write
+          // a freshly-computed netScore that includes the new wheelAdjustment
+          // — so the values stay consistent.
           wheelAdjustment: increment(1),
+          netScore: increment(1),
           targetedBy: arrayUnion({
             item,
             fromTeam: teamInfo.teamName,

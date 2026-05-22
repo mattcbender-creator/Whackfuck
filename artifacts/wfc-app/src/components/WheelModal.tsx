@@ -31,7 +31,7 @@ function iconFor(id: WheelItemId) {
 
 export default function WheelModal({ open, onClose }: Props) {
   const {
-    teamId, teamInfo, netScore,
+    teamId, teamInfo, netScore, wheelSpin: priorSpin,
     confirmFrontNine, frontNineConfirmed,
     recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
   } = useWFC();
@@ -42,23 +42,49 @@ export default function WheelModal({ open, onClose }: Props) {
   const [teams, setTeams] = useState<TeamSnapshot[]>([]);
   const [error, setError] = useState<string | null>(null);
   const spinTimer = useRef<number | null>(null);
+  const spinLockRef = useRef(false); // Guards against rapid double-taps of spin
 
   useEffect(() => {
     if (open) {
-      setPhase('intro');
-      setAngle(0);
-      setLanded(null);
+      // If this team already spun, re-opening the modal MUST NOT allow another
+      // spin. Show the result they already got and let them dismiss.
+      const existing = priorSpin ? WHEEL_ITEMS.find(w => w.id === priorSpin.item) ?? null : null;
+      if (existing) {
+        setPhase('applied');
+        setLanded(existing);
+        setAngle(0);
+      } else {
+        setPhase('intro');
+        setAngle(0);
+        setLanded(null);
+      }
       setError(null);
+      spinLockRef.current = false;
     }
     return () => {
-      if (spinTimer.current) window.clearTimeout(spinTimer.current);
+      if (spinTimer.current) {
+        window.clearTimeout(spinTimer.current);
+        spinTimer.current = null;
+      }
     };
-  }, [open]);
+  }, [open, priorSpin]);
 
   const otherTeams = teams.filter(t => t.id !== teamId);
 
   const handleSpin = async () => {
     if (phase !== 'intro') return;
+    // Defense in depth: NEVER allow a second spin for the same team, even if
+    // the modal somehow opens with an existing spin.
+    if (priorSpin) {
+      setPhase('applied');
+      const existing = WHEEL_ITEMS.find(w => w.id === priorSpin.item) ?? null;
+      setLanded(existing);
+      return;
+    }
+    // Rapid double-tap guard — React state isn't synchronous so two clicks in
+    // the same tick could both pass the phase check.
+    if (spinLockRef.current) return;
+    spinLockRef.current = true;
     // LOCK THE FRONT 9 NOW — the moment they commit to spinning, edits stop.
     if (!frontNineConfirmed) confirmFrontNine();
     // Load teams snapshot synchronously so targeting uses fresh data

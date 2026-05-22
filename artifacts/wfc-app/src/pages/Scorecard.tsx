@@ -38,7 +38,7 @@ function scoreLabel(diff: number | null) {
 
 export default function Scorecard() {
   const {
-    teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
+    teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, confirmFrontNine,
   } = useWFC();
   const [half, setHalf] = useState<Half>('front');
@@ -122,7 +122,9 @@ export default function Scorecard() {
     if (!db || !teamInfo) return;
     setIsSyncing(true);
     try {
-      const teamId = teamInfo.teamName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      // CRITICAL: must use the canonical teamId (UUID), NOT a slug of the team
+      // name. Slugged doc ids create ghost team docs that pollute targeting
+      // and the leaderboard.
       await setDoc(doc(db, 'teams', teamId), {
         ...teamInfo, scores, netScore, holesPlayed, currentTee,
         lastUpdated: new Date().toISOString(),
