@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
-import { Star, Zap, Flag } from 'lucide-react';
+import { Star, Zap, Flag, Sparkles } from 'lucide-react';
 import { useLocation } from 'wouter';
+import { getWheelItem, type WheelItemId } from '@/lib/wheel';
 
 interface FeedEvent {
   id: string;
@@ -11,6 +12,8 @@ interface FeedEvent {
   teamName?: string;
   hole?: number;
   netScore?: number;
+  itemLabel?: string;
+  targetTeam?: string;
   tsMs: number;
 }
 
@@ -22,6 +25,12 @@ function formatTicker(e: FeedEvent): string {
   if (e.type === 'finish' && e.teamName) {
     const net = e.netScore === 0 ? 'E' : (e.netScore ?? 0) > 0 ? `+${e.netScore}` : `${e.netScore}`;
     return `${e.teamName} finished at ${net}`;
+  }
+  if (e.type === 'wheel' && e.teamName) {
+    const item = e.itemLabel ?? getWheelItem(e.subtype as WheelItemId)?.label ?? 'Item';
+    return e.targetTeam
+      ? `${e.teamName} used ${item} on ${e.targetTeam}`
+      : `${e.teamName} used ${item}`;
   }
   return '';
 }
@@ -46,7 +55,7 @@ export function LiveTicker() {
       const list: FeedEvent[] = snap.docs
         .filter(d => {
           const t = d.data().type;
-          return t === 'score' || t === 'finish';
+          return t === 'score' || t === 'finish' || t === 'wheel';
         })
         .map(d => {
           const data = d.data();
@@ -84,6 +93,12 @@ export function LiveTicker() {
         )}
         {current.type === 'finish' && (
           <Flag className="w-3 h-3 text-white/50 shrink-0" />
+        )}
+        {current.type === 'wheel' && (
+          <Sparkles
+            className="w-3 h-3 shrink-0"
+            style={{ color: getWheelItem(current.subtype as WheelItemId)?.color ?? '#39FF14' }}
+          />
         )}
         <p className="flex-1 text-xs font-bold text-foreground/90 truncate">
           {formatTicker(current)}

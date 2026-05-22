@@ -35,6 +35,7 @@ export default function WheelModal({ open, onClose }: Props) {
     teamId, teamInfo, netScore, wheelSpin: priorSpin,
     confirmFrontNine, frontNineConfirmed,
     recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
+    logEvent,
   } = useWFC();
 
   const [phase, setPhase] = useState<Phase>('intro');
@@ -120,6 +121,19 @@ export default function WheelModal({ open, onClose }: Props) {
 
   const recordSpinOnSelf = async (item: WheelItem, targetTeam?: string) => {
     await recordWheelSpin({ item: item.id, at: Date.now(), targetTeam });
+    // Push a 'wheel' event onto the global feed so it shows up in the live
+    // ticker alongside birdies/eagles. targetTeam is "all teams" for
+    // lightning, the picked/random opponent for shells & boo, or omitted for
+    // self-only items (mushroom, super star).
+    if (teamInfo) {
+      logEvent({
+        type: 'wheel',
+        subtype: item.id,
+        itemLabel: item.label,
+        teamName: teamInfo.teamName,
+        targetTeam: item.id === 'lightning' ? 'all teams' : targetTeam,
+      });
+    }
   };
 
   // Local helper — pick one random element or null if empty.

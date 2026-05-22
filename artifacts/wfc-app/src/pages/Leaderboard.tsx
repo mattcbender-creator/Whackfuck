@@ -19,6 +19,8 @@ interface FeedEvent {
   netScore?: number;
   position?: number | null;
   message?: string;
+  itemLabel?: string;
+  targetTeam?: string;
   tsMs: number;
 }
 
@@ -30,6 +32,12 @@ function formatTicker(e: FeedEvent): string {
   if (e.type === 'finish' && e.teamName) {
     const net = e.netScore === 0 ? 'E' : (e.netScore ?? 0) > 0 ? `+${e.netScore}` : `${e.netScore}`;
     return `${e.teamName} finished at ${net}`;
+  }
+  if (e.type === 'wheel' && e.teamName) {
+    const item = e.itemLabel ?? getWheelItem(e.subtype as WheelItemId)?.label ?? 'Item';
+    return e.targetTeam
+      ? `${e.teamName} used ${item} on ${e.targetTeam}`
+      : `${e.teamName} used ${item}`;
   }
   return '';
 }
@@ -246,7 +254,9 @@ export default function Leaderboard() {
 
   // Derive broadcast and ticker events from the unified feed
   const latestBroadcast = feedEvents.find(e => e.type === 'broadcast');
-  const tickerEvents = feedEvents.filter(e => e.type === 'score' || e.type === 'finish');
+  const tickerEvents = feedEvents.filter(e =>
+    e.type === 'score' || e.type === 'finish' || e.type === 'wheel'
+  );
 
   // Auto-cycle ticker every 3 s
   useEffect(() => {
@@ -361,6 +371,12 @@ export default function Leaderboard() {
             )}
             {currentTickerEvent.type === 'finish' && (
               <Flag className="w-3 h-3 text-white/50 shrink-0" />
+            )}
+            {currentTickerEvent.type === 'wheel' && (
+              <Sparkles
+                className="w-3 h-3 shrink-0"
+                style={{ color: getWheelItem(currentTickerEvent.subtype as WheelItemId)?.color ?? '#39FF14' }}
+              />
             )}
             <p className="flex-1 text-xs font-bold text-foreground/90 truncate">
               {formatTicker(currentTickerEvent)}
