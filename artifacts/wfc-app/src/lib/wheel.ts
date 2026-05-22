@@ -137,3 +137,10 @@ export function targetAngleForIndex(index: number, fullSpins = 6): number {
 export function pickRandomIndex(): number {
   return Math.floor(Math.random() * WHEEL_ITEMS.length);
 }
+
+// Badge color helper — used by Leaderboard. Defined here (not in WheelModal)
+// so the component file only exports a single default component, which keeps
+// React Fast Refresh happy.
+export function getWheelItemColor(id: WheelItemId | null | undefined): string {
+  return getWheelItem(id)?.color ?? '#666';
+}

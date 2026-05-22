@@ -453,7 +453,6 @@ export default function WheelModal({ open, onClose }: Props) {
   function effectSummary(id: WheelItemId): string {
     const item = getWheelItem(id);
     if (!item) return '';
-    const targetName = priorSpin?.targetTeam ?? landed?.id === id ? '' : '';
     const last = priorSpin?.item === id ? priorSpin.targetTeam : undefined;
     switch (id) {
       case 'green_shell':
@@ -483,16 +482,8 @@ export default function WheelModal({ open, onClose }: Props) {
           ? `Boo stole 1 stroke from ${last}. They get +1, you get -1.`
           : 'Boo — no one to steal from. Took -1 for yourself instead.';
     }
-    void targetName;
   }
 }
-
-// Used by Leaderboard to show small badges; we re-export icons mapping.
-export { iconFor as wheelIcon };
-export const wheelBadgeColor = (id: WheelItemId) => {
-  const item = getWheelItem(id);
-  return item?.color ?? '#666';
-};
 
 // Avoid unused import warnings
 void Crown; void Target;

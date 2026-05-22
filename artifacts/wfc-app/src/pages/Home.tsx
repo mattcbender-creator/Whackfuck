@@ -3,31 +3,18 @@ import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Users, ShieldAlert, X, Trash2, CheckCircle2 } from 'lucide-react';
-import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { fireEagleConfetti } from '@/lib/confetti';
+import { Users, ShieldAlert } from 'lucide-react';
 
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
-// ⚙️ TOURNAMENT ADMIN PASSWORD — change this string to rotate the password.
-const ADMIN_RESET_PASSWORD = 'wfcreset2026';
-
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { setTeamInfo, teamInfo, resetScores } = useWFC();
+  const { setTeamInfo, teamInfo } = useWFC();
   const [teamName, setTeamName] = useState('');
   const [player1, setPlayer1] = useState('');
   const [player2, setPlayer2] = useState('');
   const [animate, setAnimate] = useState(false);
   const [editing, setEditing] = useState(false);
-
-  // Admin reset modal state
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [adminPw, setAdminPw] = useState('');
-  const [adminErr, setAdminErr] = useState('');
-  const [resetting, setResetting] = useState(false);
-  const [resetDone, setResetDone] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setAnimate(true), 80);
@@ -48,51 +35,6 @@ export default function Home() {
     setTeamInfo({ teamName: teamName.trim(), player1: player1.trim(), player2: player2.trim() });
     setEditing(false);
     setLocation('/hole');
-  };
-
-  const closeAdmin = () => {
-    setShowAdmin(false);
-    setAdminPw('');
-    setAdminErr('');
-    setResetDone(false);
-    setResetting(false);
-  };
-
-  const handleAdminReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPw !== ADMIN_RESET_PASSWORD) {
-      setAdminErr('Wrong password. Try again.');
-      return;
-    }
-    setAdminErr('');
-    setResetting(true);
-
-    try {
-      // Wipe all Firestore collections that hold tournament data
-      if (isFirebaseConfigured && db) {
-        for (const name of ['teams', 'scores', 'liveFeed', 'events', 'longestDrives']) {
-          const snap = await getDocs(collection(db, name));
-          await Promise.all(snap.docs.map(d => deleteDoc(doc(db!, name, d.id))));
-        }
-        // Write a reset signal — every other connected device listens for this
-        // and will auto-clear its own localStorage when it sees it.
-        await setDoc(doc(db, 'config', 'tournament'), { resetAt: serverTimestamp() });
-      }
-
-      // Also clear this device's local state
-      resetScores();
-      setTeamName('');
-      setPlayer1('');
-      setPlayer2('');
-
-      setResetDone(true);
-      fireEagleConfetti();
-      setTimeout(() => fireEagleConfetti(), 400);
-    } catch (err) {
-      console.error(err);
-      setAdminErr('Reset failed — check your Firebase connection.');
-      setResetting(false);
-    }
   };
 
   const showForm = !teamInfo || editing;
@@ -266,10 +208,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Tournament Admin (always visible at bottom) ── */}
+        {/* ── Tournament Admin link ── */}
         <div className={`w-full transition-all duration-700 delay-500 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
           <button
-            onClick={() => setShowAdmin(true)}
+            onClick={() => setLocation('/admin')}
+            data-testid="button-open-admin"
             className="w-full flex items-center justify-center gap-2 py-3 rounded-full border border-border/50 bg-card/30 hover:bg-card/60 transition-colors"
           >
             <ShieldAlert className="w-4 h-4 text-muted-foreground" />
@@ -278,78 +221,6 @@ export default function Home() {
         </div>
 
       </div>
-
-      {/* ── Admin Reset Modal ── */}
-      {showAdmin && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/80 backdrop-blur flex items-center justify-center p-4"
-          onClick={closeAdmin}
-        >
-          <div
-            className="w-full max-w-sm bg-card border border-border rounded-2xl p-6 relative"
-            onClick={e => e.stopPropagation()}
-          >
-            <button onClick={closeAdmin} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
-              <X className="w-5 h-5" />
-            </button>
-
-            {resetDone ? (
-              <div className="text-center py-6">
-                <CheckCircle2 className="w-16 h-16 text-primary mx-auto mb-4" />
-                <h3 className="font-condensed text-3xl font-black uppercase text-primary mb-2">
-                  Tournament Reset!
-                </h3>
-                <p className="text-sm text-muted-foreground mb-6">
-                  All scores and teams have been wiped.{'\n'}Everyone can now re-register fresh.
-                </p>
-                <button
-                  onClick={closeAdmin}
-                  className="w-full py-3 rounded-full bg-primary text-primary-foreground font-condensed font-black uppercase tracking-widest text-sm"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/40 flex items-center justify-center shrink-0">
-                    <Trash2 className="w-5 h-5 text-red-400" />
-                  </div>
-                  <div>
-                    <h3 className="font-condensed text-xl font-black uppercase tracking-wider">Reset Tournament</h3>
-                    <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                      Wipes all teams &amp; scores from every device instantly.
-                    </p>
-                  </div>
-                </div>
-
-                <form onSubmit={handleAdminReset} className="space-y-3">
-                  <Input
-                    type="password"
-                    autoFocus
-                    placeholder="Admin password"
-                    value={adminPw}
-                    onChange={e => { setAdminPw(e.target.value); setAdminErr(''); }}
-                    className="h-12 bg-input"
-                  />
-                  {adminErr && <p className="text-xs text-red-400">{adminErr}</p>}
-                  <Button
-                    type="submit"
-                    disabled={resetting}
-                    variant="destructive"
-                    className="w-full h-12 font-condensed font-black uppercase tracking-widest rounded-full"
-                  >
-                    {resetting ? 'Wiping all data…' : 'Wipe All Tournament Data'}
-                  </Button>
-                  <p className="text-[10px] text-center text-muted-foreground">
-                    This cannot be undone. All connected devices will update instantly.
-                  </p>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

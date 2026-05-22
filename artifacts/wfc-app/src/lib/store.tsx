@@ -28,7 +28,6 @@ export interface WFCState {
   scores: (number | null)[];
   currentTee: 'tips' | 'womens';
   netScore: number;
-  rawNetScore: number; // before wheel adjustments
   holesPlayed: number;
   frontNineConfirmed: boolean;
   wheelSpin: WheelSpinRecord | null;
@@ -199,11 +198,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
   });
-  const rawNetScore = holesPlayed > 0 ? totalScore - parPlayed : 0;
-  // Hide-worst-hole was removed in the simplified rule set; worstBack9Diff
-  // is computed above for potential future use but currently unused.
+  // worstBack9Diff was used by the old boo/hide-worst-hole rule; kept for
+  // potential future rules but suppressed to avoid a lint warning.
   void worstBack9Diff;
-  const netScore = rawNetScore + wheelAdjustment;
+  const netScore = (holesPlayed > 0 ? totalScore - parPlayed : 0) + wheelAdjustment;
   const currentTee: 'tips' | 'womens' = netScore <= -5 ? 'tips' : 'womens';
 
   // ── Push own changes to Firestore ──
@@ -406,7 +404,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         scores,
         currentTee,
         netScore,
-        rawNetScore,
         holesPlayed,
         frontNineConfirmed,
         wheelSpin,

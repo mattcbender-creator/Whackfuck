@@ -1,17 +1,12 @@
 import { useState, useEffect } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, onSnapshot, query, orderBy, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { Crown, X, Trash2, Flame, CheckCircle2, Target, Sparkles } from 'lucide-react';
+import { Crown, X, Flame, Target, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { fireEagleConfetti } from '@/lib/confetti';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
 import type { WheelSpinRecord, TargetedByEntry } from '@/lib/store';
 
-// ⚙️ ADMIN RESET PASSWORD — change this string to rotate the reset password.
-// Also referenced in README.md ("Change the admin reset password" section).
-const ADMIN_RESET_PASSWORD = 'wfcreset2026';
 
 interface TeamData {
   id: string;
@@ -86,12 +81,7 @@ export default function Leaderboard() {
   const { teamInfo, netScore, holesPlayed, currentTee } = useWFC();
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(isFirebaseConfigured);
-  const [showAdmin, setShowAdmin] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
-  const [adminPw, setAdminPw] = useState('');
-  const [adminErr, setAdminErr] = useState('');
-  const [resetting, setResetting] = useState(false);
-  const [resetDone, setResetDone] = useState(false);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !db) {
@@ -122,49 +112,6 @@ export default function Leaderboard() {
     return () => unsub();
   }, [teamInfo, netScore, holesPlayed, currentTee]);
 
-  const handleAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPw !== ADMIN_RESET_PASSWORD) {
-      setAdminErr('Wrong password.');
-      return;
-    }
-    if (!db) {
-      setAdminErr('Firebase not configured — nothing to reset.');
-      return;
-    }
-    setAdminErr('');
-    setResetting(true);
-    try {
-      // Wipe each collection that holds tournament state.
-      for (const name of ['teams', 'scores', 'liveFeed', 'events', 'longestDrives']) {
-        const snap = await getDocs(collection(db, name));
-        await Promise.all(snap.docs.map(d => deleteDoc(doc(db!, name, d.id))));
-      }
-      // Write a reset signal — every connected device listens for this
-      // and auto-clears its own localStorage when the timestamp is newer than joinedAt.
-      await setDoc(doc(db, 'config', 'tournament'), { resetAt: serverTimestamp() });
-      setResetDone(true);
-      fireEagleConfetti();
-      setTimeout(() => fireEagleConfetti(), 500);
-      setTimeout(() => {
-        // Hard refresh every connected device that loads this URL again;
-        // onSnapshot listeners will already show empty state instantly.
-        window.location.reload();
-      }, 2500);
-    } catch (err) {
-      console.error(err);
-      setAdminErr('Reset failed. Check console.');
-      setResetting(false);
-    }
-  };
-
-  const closeAdmin = () => {
-    setShowAdmin(false);
-    setAdminPw('');
-    setAdminErr('');
-    setResetDone(false);
-    setResetting(false);
-  };
 
   return (
     <div className="min-h-[100dvh] w-full bg-background pb-24 relative">
@@ -283,55 +230,6 @@ export default function Leaderboard() {
         </div>
       </div>
 
-      {/* Admin reset modal */}
-      {showAdmin && (
-        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur flex items-center justify-center p-4" onClick={closeAdmin}>
-          <div className="w-full max-w-sm bg-card border border-border rounded-2xl p-6 relative" onClick={e => e.stopPropagation()}>
-            <button onClick={closeAdmin} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
-              <X className="w-5 h-5" />
-            </button>
-
-            {resetDone ? (
-              <div className="text-center py-6">
-                <CheckCircle2 className="w-16 h-16 text-primary mx-auto mb-4" />
-                <h3 className="font-condensed text-3xl font-black uppercase text-primary mb-2">Tournament Reset!</h3>
-                <p className="text-sm text-muted-foreground">Refreshing every device…</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/40 flex items-center justify-center">
-                    <Trash2 className="w-5 h-5 text-red-400" />
-                  </div>
-                  <div>
-                    <h3 className="font-condensed text-xl font-black uppercase tracking-wider">Reset Tournament</h3>
-                    <p className="text-[11px] text-muted-foreground">Wipes all teams, scores, and live feed.</p>
-                  </div>
-                </div>
-                <form onSubmit={handleAdminSubmit} className="space-y-3">
-                  <Input
-                    type="password"
-                    autoFocus
-                    placeholder="Admin password"
-                    value={adminPw}
-                    onChange={e => { setAdminPw(e.target.value); setAdminErr(''); }}
-                    className="h-12 bg-input"
-                  />
-                  {adminErr && <p className="text-xs text-red-400">{adminErr}</p>}
-                  <Button
-                    type="submit"
-                    disabled={resetting}
-                    variant="destructive"
-                    className="w-full h-12 font-condensed font-black uppercase tracking-widest rounded-full"
-                  >
-                    {resetting ? 'Wiping…' : 'Wipe All Data'}
-                  </Button>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* In-app Firebase setup modal */}
       {showSetup && (
