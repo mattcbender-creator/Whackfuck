@@ -130,6 +130,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (prev && prev.item === incoming.item && prev.at === incoming.at) return prev;
           return incoming;
         });
+      } else if (data.wheelSpin === null && 'wheelSpin' in data) {
+        // Server explicitly cleared the spin (e.g. fresh registration after
+        // reset). Honor it — don't leave a stale spin lingering locally.
+        setWheelSpin(prev => prev === null ? prev : null);
       }
       if (typeof data.frontNineConfirmed === 'boolean') {
         setFrontNineConfirmed(prev => prev === data.frontNineConfirmed ? prev : data.frontNineConfirmed);
@@ -245,10 +249,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveToLocal({ teamInfo: info });
     try { localStorage.setItem(JOINED_AT_KEY, String(Date.now())); } catch { /* ignore */ }
     // Ensure baseline fields exist on our doc (so other devices can target us)
+    // AND explicitly null out every piece of gameplay state. This guarantees a
+    // clean slate on (re-)registration even when the same teamId is reused
+    // after an admin reset — otherwise stale `wheelSpin` (e.g. an old Boo) can
+    // be replayed from the Firestore IndexedDB cache and the snapshot listener
+    // will resurrect it locally, making the next spin appear non-random.
     if (isFirebaseConfigured && db) {
       const ref = doc(db, 'teams', teamId);
       setDoc(ref, {
         teamName: info.teamName,
+        player1: info.player1,
+        player2: info.player2,
+        scores: Array(18).fill(null),
+        netScore: 0,
+        holesPlayed: 0,
+        currentTee: 'womens',
+        frontNineConfirmed: false,
+        wheelSpin: null,
         wheelAdjustment: 0,
         booActive: false,
         targetedBy: [],
