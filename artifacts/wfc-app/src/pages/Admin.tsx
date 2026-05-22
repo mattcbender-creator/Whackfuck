@@ -1,15 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import {
   collection, addDoc, doc, setDoc, getDocs, writeBatch, serverTimestamp,
-  query, where,
+  query, where, deleteDoc, updateDoc, onSnapshot, increment,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { HOLES } from '@/lib/holes';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
-import { Sparkles, Trash2, Beaker, Megaphone, Lock } from 'lucide-react';
+import {
+  Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
+  Plus, Minus, RefreshCw, ChevronDown, ChevronUp,
+} from 'lucide-react';
 
 const ADMIN_PASSWORD = 'wfc2026!';
 
@@ -26,14 +29,13 @@ const DEMO_FIRST_NAMES = [
   'Will', 'Pete', 'Sam', 'Luke', 'Eric', 'Paul', 'Jake', 'Ben', 'Drew', 'Cole',
 ];
 
-// Realistic score for a hole — weighted toward bogey/par with occasional birdies/blow-ups
 function randomHoleScore(par: number): number {
   const r = Math.random();
-  if (r < 0.05) return par - 1;        // 5% birdie
-  if (r < 0.40) return par;            // 35% par
-  if (r < 0.75) return par + 1;        // 35% bogey
-  if (r < 0.92) return par + 2;        // 17% double
-  return par + 3;                      // 8% triple+
+  if (r < 0.05) return par - 1;
+  if (r < 0.40) return par;
+  if (r < 0.75) return par + 1;
+  if (r < 0.92) return par + 2;
+  return par + 3;
 }
 
 function pick<T>(arr: T[]): T {
@@ -49,6 +51,17 @@ function shuffle<T>(arr: T[]): T[] {
   return out;
 }
 
+interface LiveTeam {
+  id: string;
+  teamName: string;
+  player1: string;
+  player2: string;
+  netScore: number;
+  holesPlayed: number;
+  wheelAdjustment?: number;
+  isDemo?: boolean;
+}
+
 export default function Admin() {
   const [password, setPassword] = useState('');
   const [auth, setAuth] = useState(false);
@@ -56,6 +69,61 @@ export default function Admin() {
   const [demoCount, setDemoCount] = useState(13);
   const [seeding, setSeeding] = useState(false);
   const { toast } = useToast();
+
+  // Team management state
+  const [teams, setTeams] = useState<LiveTeam[]>([]);
+  const [teamsOpen, setTeamsOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingTeam, setEditingTeam] = useState<LiveTeam | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editP1, setEditP1] = useState('');
+  const [editP2, setEditP2] = useState('');
+  const [adjustingTeam, setAdjustingTeam] = useState<LiveTeam | null>(null);
+  const [adjustDelta, setAdjustDelta] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  const loadTeams = useCallback(async () => {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'teams'));
+    const list: LiveTeam[] = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        teamName: data.teamName ?? '(unnamed)',
+        player1: data.player1 ?? '',
+        player2: data.player2 ?? '',
+        netScore: typeof data.netScore === 'number' ? data.netScore : 0,
+        holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
+        wheelAdjustment: typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0,
+        isDemo: !!data.isDemo,
+      };
+    });
+    list.sort((a, b) => a.netScore - b.netScore);
+    setTeams(list);
+  }, []);
+
+  // Live listener while panel is open
+  useEffect(() => {
+    if (!auth || !teamsOpen || !db) return;
+    const unsub = onSnapshot(collection(db, 'teams'), snap => {
+      const list: LiveTeam[] = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          teamName: data.teamName ?? '(unnamed)',
+          player1: data.player1 ?? '',
+          player2: data.player2 ?? '',
+          netScore: typeof data.netScore === 'number' ? data.netScore : 0,
+          holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
+          wheelAdjustment: typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0,
+          isDemo: !!data.isDemo,
+        };
+      });
+      list.sort((a, b) => a.netScore - b.netScore);
+      setTeams(list);
+    });
+    return () => unsub();
+  }, [auth, teamsOpen]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +150,71 @@ export default function Admin() {
     }
   };
 
+  const handleDelete = async (team: LiveTeam) => {
+    if (!db) return;
+    if (!window.confirm(`Delete "${team.teamName}" (${team.player1} & ${team.player2})? This cannot be undone.`)) return;
+    setDeletingId(team.id);
+    try {
+      await deleteDoc(doc(db, 'teams', team.id));
+      toast({ title: `Deleted "${team.teamName}"` });
+    } catch (e) {
+      toast({ title: 'Delete failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const openEdit = (team: LiveTeam) => {
+    setEditingTeam(team);
+    setEditName(team.teamName);
+    setEditP1(team.player1);
+    setEditP2(team.player2);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!db || !editingTeam) return;
+    if (!editName.trim()) { toast({ title: 'Team name required', variant: 'destructive' }); return; }
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'teams', editingTeam.id), {
+        teamName: editName.trim(),
+        player1: editP1.trim(),
+        player2: editP2.trim(),
+      });
+      toast({ title: 'Team updated' });
+      setEditingTeam(null);
+    } catch (e) {
+      toast({ title: 'Save failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAdjust = (team: LiveTeam) => {
+    setAdjustingTeam(team);
+    setAdjustDelta(0);
+  };
+
+  const handleSaveAdjust = async () => {
+    if (!db || !adjustingTeam || adjustDelta === 0) { setAdjustingTeam(null); return; }
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'teams', adjustingTeam.id), {
+        wheelAdjustment: increment(adjustDelta),
+        netScore: increment(adjustDelta),
+      });
+      toast({
+        title: `Adjusted "${adjustingTeam.teamName}"`,
+        description: `${adjustDelta > 0 ? '+' : ''}${adjustDelta} stroke${Math.abs(adjustDelta) !== 1 ? 's' : ''} applied`,
+      });
+      setAdjustingTeam(null);
+    } catch (e) {
+      toast({ title: 'Adjust failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSeedDemo = async () => {
     if (!db) {
       toast({ title: 'Firebase not configured', variant: 'destructive' });
@@ -91,7 +224,6 @@ export default function Admin() {
     setSeeding(true);
     try {
       const fdb = db;
-      // First wipe any existing demo teams so re-seeding doesn't pile up.
       const existing = await getDocs(query(collection(fdb, 'teams'), where('isDemo', '==', true)));
       if (!existing.empty) {
         const wipeBatch = writeBatch(fdb);
@@ -103,7 +235,6 @@ export default function Admin() {
       const firsts = shuffle(DEMO_FIRST_NAMES);
       const now = Date.now();
 
-      // ── Phase 1: build base team data ──────────────────────────────────────
       interface DemoTeam {
         id: string;
         teamName: string;
@@ -119,7 +250,7 @@ export default function Admin() {
         targetedBy: { item: WheelItemId; fromTeam: string; at: number }[];
       }
 
-      const teams: DemoTeam[] = names.map((teamName, i) => {
+      const demoTeams: DemoTeam[] = names.map((teamName, i) => {
         const holesPlayed = 1 + Math.floor(Math.random() * 18);
         const scores: (number | null)[] = Array(18).fill(null);
         for (let h = 0; h < holesPlayed; h++) {
@@ -148,11 +279,10 @@ export default function Admin() {
         };
       });
 
-      // ── Phase 2: apply wheel effects so scores & hit-badges match spins ────
-      for (const spinner of teams) {
+      for (const spinner of demoTeams) {
         if (!spinner.wheelSpin) continue;
         const { item, at } = spinner.wheelSpin;
-        const others = teams.filter(t => t.id !== spinner.id);
+        const others = demoTeams.filter(t => t.id !== spinner.id);
         const fromTeam = spinner.teamName;
 
         const hit = (t: DemoTeam, src: WheelItemId) => {
@@ -163,11 +293,9 @@ export default function Admin() {
 
         switch (item) {
           case 'lightning':
-            // All other teams +1
             for (const t of others) hit(t, 'lightning');
             break;
           case 'boo': {
-            // Steal: random other +1, self -1
             const target = pick(others);
             if (target) {
               hit(target, 'boo');
@@ -178,17 +306,14 @@ export default function Admin() {
             break;
           }
           case 'mushroom':
-            // Self -1
             spinner.wheelAdjustment -= 1;
             spinner.netScore -= 1;
             break;
           case 'super_star':
-            // Self -2
             spinner.wheelAdjustment -= 2;
             spinner.netScore -= 2;
             break;
           case 'green_shell': {
-            // Random other +1
             const target = pick(others);
             if (target) {
               hit(target, 'green_shell');
@@ -197,7 +322,6 @@ export default function Admin() {
             break;
           }
           case 'red_shell': {
-            // Random other +1 (picker in real game, random for demo)
             const target = pick(others);
             if (target) {
               hit(target, 'red_shell');
@@ -206,8 +330,7 @@ export default function Admin() {
             break;
           }
           case 'blue_shell': {
-            // Leader +1 (or self if leading)
-            const sorted = [...teams].sort((a, b) => a.netScore - b.netScore);
+            const sorted = [...demoTeams].sort((a, b) => a.netScore - b.netScore);
             const leader = sorted[0];
             if (leader) {
               if (leader.id === spinner.id) {
@@ -221,7 +344,6 @@ export default function Admin() {
             break;
           }
           case 'banana': {
-            // Random team behind (fewer holes played) +1, fizzles if none
             const behind = others.filter(t => t.holesPlayed < spinner.holesPlayed);
             const target = pick(behind);
             if (target) {
@@ -233,16 +355,13 @@ export default function Admin() {
         }
       }
 
-      // ── Phase 3: recompute currentTee now that adjustments are final ───────
-      for (const t of teams) {
+      for (const t of demoTeams) {
         t.currentTee = t.netScore <= -5 ? 'tips' : 'womens';
       }
 
-      // ── Phase 4: write to Firestore ────────────────────────────────────────
       const batch = writeBatch(fdb);
-      for (const t of teams) {
+      for (const t of demoTeams) {
         const ref = doc(fdb, 'teams', t.id);
-        // Clean wheelSpin: strip undefined fields (Firestore rejects them)
         let cleanSpin: Record<string, unknown> | null = null;
         if (t.wheelSpin) {
           cleanSpin = {};
@@ -356,6 +475,9 @@ export default function Admin() {
     );
   }
 
+  const realTeams = teams.filter(t => !t.isDemo);
+  const demoTeams = teams.filter(t => t.isDemo);
+
   return (
     <div className="min-h-[100dvh] bg-background p-4 pb-24">
       <div className="max-w-md mx-auto space-y-6">
@@ -379,6 +501,73 @@ export default function Admin() {
             />
             <Button type="submit" className="w-full h-12" data-testid="button-send-broadcast">Send Broadcast</Button>
           </form>
+        </div>
+
+        {/* ── Team Management ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => { setTeamsOpen(v => !v); }}
+          >
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Manage Teams</h3>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="font-condensed text-lg font-black text-primary leading-none">
+                {realTeams.length} real · {demoTeams.length} demo
+              </span>
+              {teamsOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          </button>
+
+          {teamsOpen && (
+            <div className="border-t border-border">
+              {teams.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-6 px-5">No teams registered yet.</p>
+              )}
+
+              {/* Real teams */}
+              {realTeams.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60 px-5 py-2 border-b border-border/50">
+                    Real Teams
+                  </p>
+                  {realTeams.map(team => (
+                    <TeamRow
+                      key={team.id}
+                      team={team}
+                      deleting={deletingId === team.id}
+                      onDelete={() => handleDelete(team)}
+                      onEdit={() => openEdit(team)}
+                      onAdjust={() => openAdjust(team)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Demo teams (collapsed count only) */}
+              {demoTeams.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 px-5 py-2 border-t border-border/50">
+                    Demo Teams ({demoTeams.length}) — use "Clear Demo Teams" below to remove
+                  </p>
+                </div>
+              )}
+
+              <div className="p-4 border-t border-border/50">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadTeams}
+                  className="w-full text-xs uppercase tracking-widest font-bold border-border text-muted-foreground"
+                >
+                  <RefreshCw className="w-3 h-3 mr-2" />
+                  Refresh List
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Demo Mode ── */}
@@ -451,6 +640,160 @@ export default function Admin() {
             Wipes ALL teams (real and demo), scores, wheel spins, and the leaderboard from Firestore. Every connected device will be reset to the home screen automatically.
           </p>
         </div>
+      </div>
+
+      {/* ── Edit Team Modal ── */}
+      {editingTeam && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setEditingTeam(null)}>
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-condensed text-xl font-black uppercase tracking-wider">Edit Team</h3>
+              <button onClick={() => setEditingTeam(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Team Name</label>
+                <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 bg-input" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player 1</label>
+                <Input value={editP1} onChange={e => setEditP1(e.target.value)} className="h-11 bg-input" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player 2</label>
+                <Input value={editP2} onChange={e => setEditP2(e.target.value)} className="h-11 bg-input" />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 h-11" onClick={() => setEditingTeam(null)}>Cancel</Button>
+              <Button className="flex-1 h-11 font-bold" onClick={handleSaveEdit} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Stroke Adjustment Modal ── */}
+      {adjustingTeam && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setAdjustingTeam(null)}>
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm space-y-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-condensed text-xl font-black uppercase tracking-wider">Manual Adjustment</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{adjustingTeam.teamName}</p>
+              </div>
+              <button onClick={() => setAdjustingTeam(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+              Adds strokes directly to this team's net score (positive = penalty, negative = bonus). Use to correct scoring errors or apply rulings.
+            </p>
+
+            <div className="flex items-center justify-center gap-6">
+              <button
+                onClick={() => setAdjustDelta(d => d - 1)}
+                className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/70 transition-colors"
+              >
+                <Minus className="w-6 h-6" />
+              </button>
+              <div className="text-center min-w-[80px]">
+                <p className={`font-condensed text-5xl font-black leading-none ${adjustDelta > 0 ? 'text-orange-400' : adjustDelta < 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                  {adjustDelta > 0 ? `+${adjustDelta}` : adjustDelta === 0 ? '0' : adjustDelta}
+                </p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">strokes</p>
+              </div>
+              <button
+                onClick={() => setAdjustDelta(d => d + 1)}
+                className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/70 transition-colors"
+              >
+                <Plus className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="bg-secondary/40 rounded-lg px-4 py-2 text-center">
+              <span className="text-xs text-muted-foreground">Net score: </span>
+              <span className="font-bold text-sm">{adjustingTeam.netScore > 0 ? `+${adjustingTeam.netScore}` : adjustingTeam.netScore}</span>
+              {adjustDelta !== 0 && (
+                <>
+                  <span className="text-muted-foreground mx-1.5">→</span>
+                  <span className={`font-bold text-sm ${(adjustingTeam.netScore + adjustDelta) <= 0 ? 'text-primary' : 'text-orange-400'}`}>
+                    {(adjustingTeam.netScore + adjustDelta) > 0 ? `+${adjustingTeam.netScore + adjustDelta}` : adjustingTeam.netScore + adjustDelta}
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 h-11" onClick={() => setAdjustingTeam(null)}>Cancel</Button>
+              <Button
+                className="flex-1 h-11 font-bold"
+                onClick={handleSaveAdjust}
+                disabled={saving || adjustDelta === 0}
+              >
+                {saving ? 'Applying…' : 'Apply'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface TeamRowProps {
+  team: LiveTeam;
+  deleting: boolean;
+  onDelete: () => void;
+  onEdit: () => void;
+  onAdjust: () => void;
+}
+
+function TeamRow({ team, deleting, onDelete, onEdit, onAdjust }: TeamRowProps) {
+  const net = team.netScore;
+  const netLabel = net === 0 ? 'E' : net > 0 ? `+${net}` : String(net);
+  const netColor = net < 0 ? 'text-primary' : net > 0 ? 'text-orange-400' : 'text-muted-foreground';
+
+  return (
+    <div className="flex items-center gap-3 px-5 py-3 border-t border-border/30 first:border-t-0">
+      <div className="flex-1 min-w-0">
+        <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
+        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+          {team.player1}{team.player2 ? ` & ${team.player2}` : ''} · {team.holesPlayed}/18
+        </p>
+      </div>
+
+      <span className={`font-condensed text-lg font-black leading-none shrink-0 ${netColor}`}>{netLabel}</span>
+
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onAdjust}
+          title="Adjust strokes"
+          className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onEdit}
+          title="Edit team"
+          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onDelete}
+          disabled={deleting}
+          title="Delete team"
+          className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-950/30 transition-colors disabled:opacity-40"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
