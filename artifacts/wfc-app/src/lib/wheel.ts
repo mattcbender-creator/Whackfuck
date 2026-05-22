@@ -8,7 +8,9 @@ export type WheelItemId =
   | 'super_star'
   | 'boo';
 
-export type SelectionMode = 'none' | 'nearby' | 'ahead' | 'any';
+// 'none' — auto effect, no user pick required
+// 'any'  — user picks any other team
+export type SelectionMode = 'none' | 'any';
 
 export interface WheelItem {
   id: WheelItemId;
@@ -19,6 +21,7 @@ export interface WheelItem {
   textColor: string;
   selection: SelectionMode;
   description: string;
+  flavor: string;
 }
 
 // Order MUST match the image, going clockwise starting from the pointer at TOP.
@@ -32,8 +35,9 @@ export const WHEEL_ITEMS: WheelItem[] = [
     emojiLess: 'GS',
     color: '#2ecc40',
     textColor: '#ffffff',
-    selection: 'nearby',
-    description: 'Pick a nearby team — they take +1 stroke.',
+    selection: 'none',
+    flavor: 'Random attack',
+    description: '+1 stroke to a random team (any team in the tournament).',
   },
   {
     id: 'red_shell',
@@ -42,8 +46,9 @@ export const WHEEL_ITEMS: WheelItem[] = [
     emojiLess: 'RS',
     color: '#e63946',
     textColor: '#ffffff',
-    selection: 'ahead',
-    description: 'Pick any team ahead of you — they take +1 stroke.',
+    selection: 'any',
+    flavor: 'Targeted attack',
+    description: 'Pick any team → +1 stroke.',
   },
   {
     id: 'blue_shell',
@@ -53,7 +58,8 @@ export const WHEEL_ITEMS: WheelItem[] = [
     color: '#2a9df4',
     textColor: '#ffffff',
     selection: 'none',
-    description: 'Auto-fires at the current leader — they take +1 stroke.',
+    flavor: 'Auto leader',
+    description: '+1 stroke to current 1st place leader (hits you if you\'re leading).',
   },
   {
     id: 'banana',
@@ -63,7 +69,8 @@ export const WHEEL_ITEMS: WheelItem[] = [
     color: '#f4d35e',
     textColor: '#1a1a1a',
     selection: 'none',
-    description: 'Slipped! You take +1 stroke on your back 9.',
+    flavor: 'Slipped!',
+    description: '+1 stroke to a random team physically behind you (lower hole number).',
   },
   {
     id: 'lightning',
@@ -73,7 +80,8 @@ export const WHEEL_ITEMS: WheelItem[] = [
     color: '#3aa1ff',
     textColor: '#ffffff',
     selection: 'none',
-    description: 'Strikes everyone else — every other team takes +1 stroke.',
+    flavor: 'Strikes everyone else',
+    description: '+1 stroke to all other teams.',
   },
   {
     id: 'mushroom',
@@ -83,7 +91,8 @@ export const WHEEL_ITEMS: WheelItem[] = [
     color: '#ff7043',
     textColor: '#ffffff',
     selection: 'none',
-    description: 'Boost! You shave -1 stroke off your back 9.',
+    flavor: 'Boost',
+    description: '-1 stroke to your own back-9 total.',
   },
   {
     id: 'super_star',
@@ -93,7 +102,8 @@ export const WHEEL_ITEMS: WheelItem[] = [
     color: '#ffd700',
     textColor: '#1a1a1a',
     selection: 'none',
-    description: 'Invincible! You shave -2 strokes off your back 9.',
+    flavor: 'Invincible!',
+    description: '-2 strokes to your own back-9 total.',
   },
   {
     id: 'boo',
@@ -102,8 +112,9 @@ export const WHEEL_ITEMS: WheelItem[] = [
     emojiLess: 'BO',
     color: '#a05ec6',
     textColor: '#ffffff',
-    selection: 'any',
-    description: 'Steal -1 from a team of your choice AND your worst back-9 hole is hidden.',
+    selection: 'none',
+    flavor: 'Steal',
+    description: 'Steal 1 stroke from a random other team (their score +1, yours -1).',
   },
 ];
 

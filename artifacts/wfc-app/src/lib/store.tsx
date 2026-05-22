@@ -33,7 +33,6 @@ export interface WFCState {
   frontNineConfirmed: boolean;
   wheelSpin: WheelSpinRecord | null;
   wheelAdjustment: number;
-  booActive: boolean;
   targetedBy: TargetedByEntry[];
   setTeamInfo: (info: TeamInfo) => void;
   setScore: (hole: number, score: number | null) => void;
@@ -41,7 +40,7 @@ export interface WFCState {
   confirmFrontNine: () => void;
   recordWheelSpin: (record: WheelSpinRecord) => Promise<void>;
   applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
-  applyEffectToSelf: (delta: number, booActive?: boolean) => void;
+  applyEffectToSelf: (delta: number) => void;
   listTeamsOnce: () => Promise<TeamSnapshot[]>;
 }
 
@@ -80,7 +79,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [frontNineConfirmed, setFrontNineConfirmed] = useState(false);
   const [wheelSpin, setWheelSpin] = useState<WheelSpinRecord | null>(null);
   const [wheelAdjustment, setWheelAdjustment] = useState(0);
-  const [booActive, setBooActive] = useState(false);
   const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
   const hydratedRef = useRef(false);
 
@@ -95,7 +93,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (typeof parsed.frontNineConfirmed === 'boolean') setFrontNineConfirmed(parsed.frontNineConfirmed);
         if (parsed.wheelSpin) setWheelSpin(parsed.wheelSpin);
         if (typeof parsed.wheelAdjustment === 'number') setWheelAdjustment(parsed.wheelAdjustment);
-        if (typeof parsed.booActive === 'boolean') setBooActive(parsed.booActive);
         if (Array.isArray(parsed.targetedBy)) setTargetedBy(parsed.targetedBy);
       }
     } catch (e) {
@@ -116,9 +113,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const data = snap.data();
       if (typeof data.wheelAdjustment === 'number') {
         setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
-      }
-      if (typeof data.booActive === 'boolean') {
-        setBooActive(prev => prev === data.booActive ? prev : data.booActive);
       }
       if (Array.isArray(data.targetedBy)) {
         setTargetedBy(prev => prev.length === data.targetedBy.length ? prev : data.targetedBy as TargetedByEntry[]);
@@ -159,7 +153,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setFrontNineConfirmed(false);
         setWheelSpin(null);
         setWheelAdjustment(0);
-        setBooActive(false);
         setTargetedBy([]);
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: null, scores: emptyScores }));
@@ -176,13 +169,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     frontNineConfirmed: boolean;
     wheelSpin: WheelSpinRecord | null;
     wheelAdjustment: number;
-    booActive: boolean;
     targetedBy: TargetedByEntry[];
   }>) => {
     try {
       const current = {
         teamInfo, scores, frontNineConfirmed, wheelSpin,
-        wheelAdjustment, booActive, targetedBy,
+        wheelAdjustment, targetedBy,
       };
       const next = { ...current, ...overrides };
       localStorage.setItem(STORE_KEY, JSON.stringify(next));
@@ -208,9 +200,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   });
   const rawNetScore = holesPlayed > 0 ? totalScore - parPlayed : 0;
-  // Boo: drop worst back-9 hole (only effective once back-9 has scores)
-  const booDrop = booActive ? worstBack9Diff : 0;
-  const netScore = rawNetScore + wheelAdjustment - booDrop;
+  // Hide-worst-hole was removed in the simplified rule set; worstBack9Diff
+  // is computed above for potential future use but currently unused.
+  void worstBack9Diff;
+  const netScore = rawNetScore + wheelAdjustment;
   const currentTee: 'tips' | 'womens' = netScore <= -5 ? 'tips' : 'womens';
 
   // ── Push own changes to Firestore ──
@@ -267,7 +260,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         frontNineConfirmed: false,
         wheelSpin: null,
         wheelAdjustment: 0,
-        booActive: false,
         targetedBy: [],
       }, { merge: true }).catch(() => {});
     }
@@ -287,11 +279,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setFrontNineConfirmed(false);
     setWheelSpin(null);
     setWheelAdjustment(0);
-    setBooActive(false);
     setTargetedBy([]);
     saveToLocal({
       teamInfo: null, scores: newScores, frontNineConfirmed: false,
-      wheelSpin: null, wheelAdjustment: 0, booActive: false, targetedBy: [],
+      wheelSpin: null, wheelAdjustment: 0, targetedBy: [],
     });
   };
 
@@ -336,20 +327,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const applyEffectToSelf = (delta: number, booActiveFlag?: boolean) => {
+  const applyEffectToSelf = (delta: number) => {
     // Optimistic local update — snapshot listener will reconcile with server.
-    // Compute the next value once and use it for BOTH React state and the
-    // localStorage write so they can't diverge if a server snapshot races in.
     const nextAdjustment = wheelAdjustment + delta;
-    const nextBoo = booActiveFlag ?? booActive;
     setWheelAdjustment(nextAdjustment);
-    if (booActiveFlag) setBooActive(true);
-    saveToLocal({ wheelAdjustment: nextAdjustment, booActive: nextBoo });
+    saveToLocal({ wheelAdjustment: nextAdjustment });
     // Use Firestore atomic increment so concurrent writes don't lose updates.
     if (isFirebaseConfigured && db && teamInfo) {
       setDoc(doc(db, 'teams', teamId), {
         wheelAdjustment: increment(delta),
-        ...(booActiveFlag ? { booActive: true } : {}),
       }, { merge: true }).catch(e => console.error('Self effect sync failed', e));
     }
   };
@@ -425,7 +411,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         frontNineConfirmed,
         wheelSpin,
         wheelAdjustment,
-        booActive,
         targetedBy,
         setTeamInfo: updateTeamInfo,
         setScore,

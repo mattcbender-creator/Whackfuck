@@ -139,7 +139,6 @@ export default function Admin() {
             ? { item: wheelItem, at: now - Math.floor(Math.random() * 1000 * 60 * 30) }
             : null,
           wheelAdjustment: 0,
-          booActive: wheelItem === 'boo',
           targetedBy: [],
           isDemo: true,
           lastUpdated: serverTimestamp(),

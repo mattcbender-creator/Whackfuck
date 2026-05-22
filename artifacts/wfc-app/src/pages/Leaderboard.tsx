@@ -25,7 +25,6 @@ interface TeamData {
   wheelSpin?: WheelSpinRecord | null;
   targetedBy?: TargetedByEntry[];
   wheelAdjustment?: number;
-  booActive?: boolean;
 }
 
 function WheelBadge({ item, label }: { item: WheelItemId; label: string }) {
@@ -235,15 +234,10 @@ export default function Leaderboard() {
                   <div className="col-span-6 flex flex-col gap-1 min-w-0">
                     <span className="font-bold text-sm truncate">{team.teamName}</span>
                     <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
-                    {(team.wheelSpin || totalHits > 0 || team.booActive) && (
+                    {(team.wheelSpin || totalHits > 0) && (
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {team.wheelSpin && (
                           <WheelBadge item={team.wheelSpin.item} label={`Spun ${team.wheelSpin.item}`} />
-                        )}
-                        {team.booActive && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-purple-500/40 bg-purple-500/15 text-purple-300">
-                            Boo · worst hole hidden
-                          </span>
                         )}
                         {aggregated.map(h => (
                           <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />

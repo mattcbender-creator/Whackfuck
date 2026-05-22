@@ -119,28 +119,58 @@ export default function WheelModal({ open, onClose }: Props) {
     await recordWheelSpin({ item: item.id, at: Date.now(), targetTeam });
   };
 
+  // Local helper — pick one random element or null if empty.
+  const pickRandom = <T,>(arr: T[]): T | null =>
+    arr.length === 0 ? null : arr[Math.floor(Math.random() * arr.length)];
+
   const applyAutoEffect = async (item: WheelItem, snap: TeamSnapshot[]) => {
     if (!teamInfo) return;
     const others = snap.filter(t => t.id !== teamId);
+    const myHolesPlayed = snap.find(t => t.id === teamId)?.holesPlayed ?? 0;
     try {
       switch (item.id) {
-        case 'blue_shell': {
-          // Auto-fire at current leader, excluding self.
-          const sorted = [...others].sort((a, b) => a.netScore - b.netScore);
-          const leader = sorted[0];
-          if (leader) {
-            await applyEffectToOthers('blue_shell', [leader.id]);
-            await recordSpinOnSelf(item, leader.teamName);
+        case 'green_shell': {
+          // RANDOM attack on any other team.
+          const target = pickRandom(others);
+          if (target) {
+            await applyEffectToOthers('green_shell', [target.id]);
+            await recordSpinOnSelf(item, target.teamName);
           } else {
-            // Only team on the course — nothing to hit.
             await recordSpinOnSelf(item);
           }
           break;
         }
-        case 'banana':
-          applyEffectToSelf(+1);
-          await recordSpinOnSelf(item);
+        case 'blue_shell': {
+          // Auto-fire at current leader (lowest netScore including self).
+          // Per spec: "hits you if you're leading".
+          const sorted = [...snap].sort((a, b) => a.netScore - b.netScore);
+          const leader = sorted[0];
+          if (leader) {
+            if (leader.id === teamId) {
+              applyEffectToSelf(+1);
+              await recordSpinOnSelf(item, leader.teamName);
+            } else {
+              await applyEffectToOthers('blue_shell', [leader.id]);
+              await recordSpinOnSelf(item, leader.teamName);
+            }
+          } else {
+            await recordSpinOnSelf(item);
+          }
           break;
+        }
+        case 'banana': {
+          // RANDOM team physically behind you (lower hole number).
+          const behind = others.filter(t => t.holesPlayed < myHolesPlayed);
+          const target = pickRandom(behind);
+          if (target) {
+            await applyEffectToOthers('banana', [target.id]);
+            await recordSpinOnSelf(item, target.teamName);
+          } else {
+            // No one behind — banana fizzles. Still record the spin.
+            await recordSpinOnSelf(item);
+          }
+          break;
+        }
         case 'lightning': {
           const ids = others.map(t => t.id);
           await applyEffectToOthers('lightning', ids);
@@ -157,6 +187,20 @@ export default function WheelModal({ open, onClose }: Props) {
           await recordSpinOnSelf(item);
           fireEagleConfetti();
           break;
+        case 'boo': {
+          // Steal -1 from a RANDOM other team: their score +1, yours -1.
+          const target = pickRandom(others);
+          if (target) {
+            await applyEffectToOthers('boo', [target.id]);
+            applyEffectToSelf(-1);
+            await recordSpinOnSelf(item, target.teamName);
+          } else {
+            // No one to steal from — still apply the -1 to self as bonus.
+            applyEffectToSelf(-1);
+            await recordSpinOnSelf(item);
+          }
+          break;
+        }
       }
       setPhase('applied');
     } catch (e) {
@@ -168,13 +212,8 @@ export default function WheelModal({ open, onClose }: Props) {
   const handlePickTarget = async (target: TeamSnapshot) => {
     if (!landed) return;
     try {
-      if (landed.id === 'boo') {
-        // Steal -1 from target → +1 on target, -1 on self, hide worst back-9
-        await applyEffectToOthers('boo', [target.id]);
-        applyEffectToSelf(-1, true);
-      } else {
-        await applyEffectToOthers(landed.id, [target.id]);
-      }
+      // Only Red Shell uses the picker now — straight +1 on chosen team.
+      await applyEffectToOthers(landed.id, [target.id]);
       await recordSpinOnSelf(landed, target.teamName);
       setPhase('applied');
     } catch (e) {
@@ -183,21 +222,8 @@ export default function WheelModal({ open, onClose }: Props) {
     }
   };
 
-  // Filter team options by selection mode
-  const pickOptions = (() => {
-    if (!landed) return [];
-    if (landed.selection === 'ahead') {
-      // Teams with netScore strictly less than our raw netScore
-      return otherTeams.filter(t => t.netScore < netScore);
-    }
-    if (landed.selection === 'nearby') {
-      // Sort by closeness in net score and take top 5
-      return [...otherTeams]
-        .sort((a, b) => Math.abs(a.netScore - netScore) - Math.abs(b.netScore - netScore))
-        .slice(0, 5);
-    }
-    return otherTeams;
-  })();
+  // Only 'any' selection (Red Shell) requires picking — everything else is auto.
+  const pickOptions = landed?.selection === 'any' ? otherTeams : [];
 
   if (!open) return null;
 
@@ -342,17 +368,13 @@ export default function WheelModal({ open, onClose }: Props) {
             </div>
 
             <h3 className="text-[11px] font-black text-white/70 uppercase tracking-widest mb-2 px-1">
-              {landed.selection === 'ahead' && 'Pick a team ahead of you'}
-              {landed.selection === 'nearby' && 'Pick a nearby team'}
-              {landed.selection === 'any' && 'Pick any team to steal from'}
+              Pick any team — they take +1 stroke
             </h3>
 
             {pickOptions.length === 0 ? (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-5 text-center">
                 <p className="text-sm text-white/70 mb-3">
-                  {landed.selection === 'ahead'
-                    ? 'No teams ahead of you — lucky them. Spin is a dud.'
-                    : 'No other teams available.'}
+                  No other teams available.
                 </p>
                 <button
                   onClick={async () => {
@@ -431,14 +453,25 @@ export default function WheelModal({ open, onClose }: Props) {
   function effectSummary(id: WheelItemId): string {
     const item = getWheelItem(id);
     if (!item) return '';
+    const targetName = priorSpin?.targetTeam ?? landed?.id === id ? '' : '';
+    const last = priorSpin?.item === id ? priorSpin.targetTeam : undefined;
     switch (id) {
       case 'green_shell':
+        return last
+          ? `Random shell hit ${last}. +1 stroke on their net score.`
+          : 'Random shell — no targets available, no effect.';
       case 'red_shell':
-        return 'Target hit. +1 stroke applied to their net score.';
+        return last
+          ? `You targeted ${last}. +1 stroke on their net score.`
+          : 'Targeted attack — no targets available.';
       case 'blue_shell':
-        return 'Blue shell tracked the leader. +1 stroke applied to them.';
+        return last
+          ? `Blue shell tracked the leader (${last}). +1 stroke on them.`
+          : 'Blue shell — no other teams to hit.';
       case 'banana':
-        return 'You slipped on a banana. +1 stroke added to your back 9.';
+        return last
+          ? `Banana slipped onto ${last} (behind you). +1 stroke on them.`
+          : 'Banana fizzled — no teams physically behind you.';
       case 'lightning':
         return 'Lightning struck every other team. +1 stroke each.';
       case 'mushroom':
@@ -446,8 +479,11 @@ export default function WheelModal({ open, onClose }: Props) {
       case 'super_star':
         return 'Invincibility! -2 strokes off your back 9.';
       case 'boo':
-        return 'Boo stole 1 stroke and your worst back-9 hole is hidden.';
+        return last
+          ? `Boo stole 1 stroke from ${last}. They get +1, you get -1.`
+          : 'Boo — no one to steal from. Took -1 for yourself instead.';
     }
+    void targetName;
   }
 }
 
