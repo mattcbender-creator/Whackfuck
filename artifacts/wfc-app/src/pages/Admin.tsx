@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
@@ -11,7 +11,7 @@ import { HOLES } from '@/lib/holes';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
-  Plus, Minus, RefreshCw, ChevronDown, ChevronUp,
+  Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
 } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'wfc2026!';
@@ -85,6 +85,8 @@ export default function Admin() {
   const [message, setMessage] = useState('');
   const [demoCount, setDemoCount] = useState(13);
   const [seeding, setSeeding] = useState(false);
+  const [simulating, setSimulating] = useState(false);
+  const simTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
   // Team management state
@@ -467,6 +469,96 @@ export default function Admin() {
     }
   };
 
+  // ── Live simulation: every tick, advance one random unfinished demo team ──
+  // by a single hole. This drives leaderboard reshuffles so the position
+  // arrows actually fire during a demo (otherwise demo teams are static and
+  // no movement = no arrows).
+  const simulationTick = useCallback(async () => {
+    if (!db) return;
+    try {
+      const fdb = db;
+      const snap = await getDocs(query(collection(fdb, 'teams'), where('isDemo', '==', true)));
+      const candidates = snap.docs.filter(d => {
+        const hp = d.data().holesPlayed;
+        return typeof hp === 'number' && hp < 18;
+      });
+      if (candidates.length === 0) return;
+      // Advance 1-2 teams per tick for visible movement
+      const advanceCount = Math.min(candidates.length, Math.random() < 0.5 ? 2 : 1);
+      const picks = shuffle(candidates).slice(0, advanceCount);
+
+      for (const d of picks) {
+        const data = d.data();
+        const scores: (number | null)[] = Array.isArray(data.scores) ? [...data.scores] : Array(18).fill(null);
+        const hp: number = data.holesPlayed;
+        const nextHole = hp; // 0-indexed
+        if (nextHole >= 18) continue;
+        const par = HOLES[nextHole].par;
+        const newScore = randomHoleScore(par);
+        scores[nextHole] = newScore;
+        const newHp = hp + 1;
+        // Recompute netScore = strokes - par for all played holes, plus existing wheelAdjustment
+        const playedPar = HOLES.slice(0, newHp).reduce((s, h) => s + h.par, 0);
+        const playedScore = scores.slice(0, newHp).reduce<number>((s, v) => s + (v ?? 0), 0);
+        const wheelAdj = typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
+        const newNet = playedScore - playedPar + wheelAdj;
+        const currentTee = newNet <= -5 ? 'tips' : 'womens';
+
+        await updateDoc(d.ref, {
+          scores,
+          holesPlayed: newHp,
+          netScore: newNet,
+          currentTee,
+          lastUpdated: Timestamp.now(),
+        });
+
+        const diff = newScore - par;
+        if (diff <= -1) {
+          await addDoc(collection(fdb, 'events'), {
+            type: 'score',
+            subtype: diff <= -2 ? 'eagle' : 'birdie',
+            teamName: data.teamName,
+            hole: nextHole + 1,
+            score: newScore,
+            par,
+            isDemo: true,
+            timestamp: Timestamp.now(),
+          });
+        }
+        if (newHp === 18) {
+          await addDoc(collection(fdb, 'events'), {
+            type: 'finish',
+            teamName: data.teamName,
+            netScore: newNet,
+            isDemo: true,
+            timestamp: Timestamp.now(),
+          });
+        }
+      }
+    } catch (e) {
+      console.error('sim tick failed', e);
+    }
+  }, []);
+
+  // Start/stop the simulation interval
+  useEffect(() => {
+    if (!simulating) {
+      if (simTimer.current) { clearInterval(simTimer.current); simTimer.current = null; }
+      return;
+    }
+    // Fire immediately, then every 8 seconds
+    simulationTick();
+    simTimer.current = setInterval(simulationTick, 8000);
+    return () => {
+      if (simTimer.current) { clearInterval(simTimer.current); simTimer.current = null; }
+    };
+  }, [simulating, simulationTick]);
+
+  // Stop simulation if we navigate away from admin
+  useEffect(() => () => {
+    if (simTimer.current) clearInterval(simTimer.current);
+  }, []);
+
   const handleClearDemo = async () => {
     if (!db) return;
     try {
@@ -679,6 +771,23 @@ export default function Admin() {
           >
             <Sparkles className="w-4 h-4 mr-2" />
             {seeding ? 'Seeding…' : `Seed ${demoCount} Demo Teams`}
+          </Button>
+
+          <Button
+            onClick={() => setSimulating(v => !v)}
+            variant="outline"
+            className={`w-full h-10 text-xs uppercase tracking-widest font-bold ${
+              simulating
+                ? 'border-red-500/50 text-red-400 hover:bg-red-500/10'
+                : 'border-primary/40 text-primary hover:bg-primary/10'
+            }`}
+            data-testid="button-simulate-live"
+          >
+            {simulating ? (
+              <><Pause className="w-3 h-3 mr-2" /> Stop Live Simulation</>
+            ) : (
+              <><Play className="w-3 h-3 mr-2" /> Simulate Live Play (8s ticks)</>
+            )}
           </Button>
 
           <Button

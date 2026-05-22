@@ -214,8 +214,15 @@ export default function Scorecard() {
     frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
   } = useWFC();
   const [, setLocation] = useLocation();
-  const [half, setHalf] = useState<Half>('front');
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  // Default to the first unscored hole so the scorecard opens on the hole
+  // the user is actually playing — not always hole 1.
+  const initialIdx = (() => {
+    const idx = scores.findIndex(s => s === null);
+    if (idx === -1) return 17;
+    return Math.min(idx, 17);
+  })();
+  const [half, setHalf] = useState<Half>(initialIdx >= 9 ? 'back' : 'front');
+  const [selectedIdx, setSelectedIdx] = useState(initialIdx);
   const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
