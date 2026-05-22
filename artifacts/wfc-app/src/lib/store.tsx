@@ -208,7 +208,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // potential future rules but suppressed to avoid a lint warning.
   void worstBack9Diff;
   const netScore = (holesPlayed > 0 ? totalScore - parPlayed : 0) + wheelAdjustment;
-  const currentTee: 'tips' | 'womens' = netScore <= -5 ? 'tips' : 'womens';
+  const currentTee: 'tips' | 'womens' = netScore < 0 ? 'tips' : 'womens';
 
   // ── Push own changes to Firestore ──
   useEffect(() => {

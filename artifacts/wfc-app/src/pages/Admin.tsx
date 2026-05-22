@@ -303,7 +303,7 @@ export default function Admin() {
             : null,
           wheelAdjustment: 0,
           netScore: rawNet,
-          currentTee: rawNet <= -5 ? 'tips' : 'womens',
+          currentTee: rawNet < 0 ? 'tips' : 'womens',
           targetedBy: [],
           _lastUpdatedMs: now - minsAgo * 60 * 1000,
         };
@@ -386,7 +386,7 @@ export default function Admin() {
       }
 
       for (const t of demoTeams) {
-        t.currentTee = t.netScore <= -5 ? 'tips' : 'womens';
+        t.currentTee = t.netScore < 0 ? 'tips' : 'womens';
       }
 
       const batch = writeBatch(fdb);
@@ -502,7 +502,7 @@ export default function Admin() {
         const playedScore = scores.slice(0, newHp).reduce<number>((s, v) => s + (v ?? 0), 0);
         const wheelAdj = typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
         const newNet = playedScore - playedPar + wheelAdj;
-        const currentTee = newNet <= -5 ? 'tips' : 'womens';
+        const currentTee = newNet < 0 ? 'tips' : 'womens';
 
         await updateDoc(d.ref, {
           scores,

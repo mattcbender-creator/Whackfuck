@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
@@ -408,9 +408,26 @@ export default function Scorecard() {
     }
   };
 
-  // How many more strokes under par needed to reach Tips threshold (-5)
-  const moreNeeded = Math.max(0, netScore + 5);
-  const teeProgress = Math.min(100, Math.max(0, ((-netScore) / 5) * 100));
+  // Notify the user only when their tee block flips (Women's ↔ Tips).
+  // Skip the initial mount so we don't toast on page load.
+  const teeMountRef = useRef(false);
+  useEffect(() => {
+    if (!teeMountRef.current) {
+      teeMountRef.current = true;
+      return;
+    }
+    if (currentTee === 'tips') {
+      toast({
+        title: 'You moved to the Tips tees',
+        description: 'You went under par. Play from the longest yardage from here on.',
+      });
+    } else {
+      toast({
+        title: 'Back to the Women\u2019s tees',
+        description: 'You\u2019re no longer under par. Play from the shortest yardage.',
+      });
+    }
+  }, [currentTee, toast]);
 
   const CELL = 'px-3 py-2 text-center cursor-pointer select-none transition-colors';
   const STICKY = 'sticky left-0 z-10 bg-[#0d0d0d] px-3 py-2 text-[10px] font-bold uppercase tracking-widest';
@@ -455,21 +472,13 @@ export default function Scorecard() {
             </div>
           </div>
 
-          {/* Tee progress bar — shows how far to -5 */}
+          {/* Tee threshold hint — go under par to unlock Tips */}
           {currentTee === 'womens' && (
-            <div className="mt-2">
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-[9px] text-muted-foreground uppercase tracking-widest">
-                  {moreNeeded > 0 ? `${moreNeeded} under par to unlock Tips tees` : 'Tips tees unlocked'}
-                </span>
-                <span className="text-[9px] font-bold text-primary">-5</span>
-              </div>
-              <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-500 rounded-full"
-                  style={{ width: `${teeProgress}%` }}
-                />
-              </div>
+            <div className="mt-2 flex justify-between items-center">
+              <span className="text-[9px] text-muted-foreground uppercase tracking-widest">
+                Go under par to move to the Tips tees
+              </span>
+              <span className="text-[9px] font-bold text-primary">&lt; 0</span>
             </div>
           )}
 
