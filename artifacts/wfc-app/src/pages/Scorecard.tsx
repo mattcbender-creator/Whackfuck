@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock } from 'lucide-react';
+import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -36,16 +37,126 @@ function scoreLabel(diff: number | null) {
   return `+${diff}`;
 }
 
+function ordinal(n: number): string {
+  if (n === 1) return '1st';
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return `${n}th`;
+}
+
+function pickChirp(scores: (number | null)[], netScore: number): string {
+  let worstIdx = -1;
+  let worstDiff = -999;
+  let tripleCount = 0;
+
+  scores.forEach((s, i) => {
+    if (s === null) return;
+    const diff = s - HOLES[i].par;
+    if (diff >= 3) tripleCount++;
+    if (diff > worstDiff) { worstDiff = diff; worstIdx = i; }
+  });
+
+  const wh = worstIdx >= 0 ? HOLES[worstIdx] : null;
+  const ws = worstIdx >= 0 ? scores[worstIdx] as number : 0;
+  const rnd = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+
+  // Catastrophic single hole
+  if (wh && worstDiff >= 4) return rnd([
+    `A ${ws} on hole ${wh.hole}? That's not a golf score, that's a cry for help. The "${wh.ruleName}" rule didn't even touch you — you did that all by yourself.`,
+    `Hole ${wh.hole}, par ${wh.par}. You made ${ws}. The marshal is filing paperwork. There may be consequences.`,
+    `${ws} on hole ${wh.hole}?? The ball was found. Your dignity was not.`,
+    `Hole ${wh.hole} ("${wh.ruleName}") is seeking a restraining order. A ${ws} on a par ${wh.par} is not forgiven.`,
+  ]);
+
+  // Triple bogey on a specific hole
+  if (wh && worstDiff === 3) return rnd([
+    `Triple bogey on hole ${wh.hole}. "${wh.ruleName}" — a rule that clearly didn't apply to you today.`,
+    `A ${ws} on hole ${wh.hole}, par ${wh.par}. The groundskeeper saw that happen in real time and requested a moment of silence.`,
+    `Hole ${wh.hole} — you turned a par ${wh.par} into a ${ws}. At least you're consistent at being shit.`,
+    `The flag on hole ${wh.hole} was just a suggestion. You ignored it. And then took three more shots.`,
+  ]);
+
+  // Multiple triples
+  if (tripleCount >= 3) return rnd([
+    `${tripleCount} triple bogeys or worse. That's not a round of golf, that's a guided tour of everything that can go wrong.`,
+    `You had ${tripleCount} triples. Somewhere out there, a golf cart is weeping.`,
+    `${tripleCount}x triple bogey. The course didn't beat you — you beat yourself, repeatedly, with your own clubs.`,
+  ]);
+
+  // Score tiers
+  if (netScore >= 15) return rnd([
+    `+${netScore}? Jesus Christ. The scorecard looks like a receipt from a bad night out.`,
+    `+${netScore} net. That's not a golf score, that's a bus route.`,
+    `You shot +${netScore}. The course feels bad for you. Not bad enough to give you a stroke, but bad.`,
+    `+${netScore}. Did you play 18 holes or just commit ${netScore} crimes against golf?`,
+    `+${netScore}. Your cart GPS routed you to every hazard on the course and you just went with it.`,
+  ]);
+
+  if (netScore >= 10) return rnd([
+    `+${netScore}. You played every hole like it personally offended you.`,
+    `+${netScore} net. Your ball spent more time in the rough than a stray dog. Just live there.`,
+    `The pro shop called. They're quietly retiring your tee time.`,
+    `+${netScore}? At least you finished. That's the compliment. That's the entire compliment.`,
+    `+${netScore}. You gave it everything you had. Golf gave it back.`,
+  ]);
+
+  if (netScore >= 6) return rnd([
+    `+${netScore}. Not a disaster. Just a very confident mediocrity.`,
+    `+${netScore} net. You had moments out there. None of them were good, but you had them.`,
+    `+${netScore}. The good news is nobody's chirping you for this at the bar. The bad news is that's because they forgot.`,
+    `Respectable effort. Truly. We just don't know what you were respecting.`,
+    `+${netScore}. Solid enough that you can lie about it next year.`,
+  ]);
+
+  if (netScore >= 3) return rnd([
+    `+${netScore}. You almost sniffed par. It smelled it and walked away.`,
+    `+${netScore}. Look at you, fighting for relevance on the leaderboard. Love the effort.`,
+    `Not bad. Not good. +${netScore} is the beige of golf scores — inoffensive, unremarkable, forgettable.`,
+    `+${netScore}. The round you tell people was "actually pretty decent" at the 19th hole.`,
+  ]);
+
+  if (netScore === 2) return rnd([
+    `+2. Two shots. Two. You left two strokes on the course like loose change on a bar top.`,
+    `Two over. That's a birdie-free back 9, buddy. TWO. Agonizing.`,
+  ]);
+
+  if (netScore === 1) return rnd([
+    `One over. One. You had 18 tries and needed just one more birdie. One lousy birdie. Brutal.`,
+    `+1. You looked par in the eyes and blinked. Par doesn't blink.`,
+  ]);
+
+  if (netScore === 0) return rnd([
+    `Even par. Par is average. Congratulations on being exactly, profoundly average.`,
+    `E. As in "Exactly what we expected from you."`,
+    `Even par! The golf equivalent of a participation ribbon that you're genuinely proud of. Good for you.`,
+  ]);
+
+  if (netScore === -1) return `One under? Not bad at all. Still gonna check your card twice, but not bad.`;
+  if (netScore === -2) return `Two under. Actual golf. The group is suspicious but impressed.`;
+
+  return rnd([
+    `${netScore} net? Either you're actually good or someone's been marking your card wrong all day.`,
+    `${Math.abs(netScore)} under par. Disgusting display. Who do you think you are, showing up these boys?`,
+    `${netScore}. The committee will be reviewing this scorecard. With magnifying glasses.`,
+  ]);
+}
+
 export default function Scorecard() {
   const {
     teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
-    frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy,
+    frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce,
   } = useWFC();
+  const [, setLocation] = useLocation();
   const [half, setHalf] = useState<Half>('front');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishPosition, setFinishPosition] = useState<number | null>(null);
+  const [finishLoading, setFinishLoading] = useState(false);
+  const [finishChirp, setFinishChirp] = useState('');
+  const [totalTeams, setTotalTeams] = useState(0);
   const { toast } = useToast();
 
   // Note: front-9 lock happens INSIDE the wheel modal when the user actually
@@ -154,6 +265,34 @@ export default function Scorecard() {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleSubmitFinal = async () => {
+    if (!teamInfo) return;
+    setFinishLoading(true);
+    // Force a sync first so our final score is in Firestore
+    if (db) {
+      try {
+        await setDoc(doc(db, 'teams', teamId), {
+          ...teamInfo, scores, netScore, holesPlayed, currentTee,
+          lastUpdated: new Date().toISOString(),
+        }, { merge: true });
+      } catch { /* non-fatal */ }
+    }
+    // Fetch leaderboard to find our position
+    try {
+      const snap = await listTeamsOnce();
+      const sorted = [...snap].sort((a, b) => a.netScore - b.netScore);
+      const pos = sorted.findIndex(t => t.id === teamId);
+      setFinishPosition(pos >= 0 ? pos + 1 : null);
+      setTotalTeams(sorted.length);
+    } catch {
+      setFinishPosition(null);
+    }
+    setFinishChirp(pickChirp(scores, netScore));
+    setFinishLoading(false);
+    setFinishOpen(true);
+    if (netScore <= 0) fireEagleConfetti();
   };
 
   // How many more strokes under par needed to reach Tips threshold (-5)
@@ -470,6 +609,19 @@ export default function Scorecard() {
             </div>
           </div>
         )}
+
+        {/* ── Submit Final Score ── */}
+        {holesPlayed === 18 && (
+          <button
+            onClick={handleSubmitFinal}
+            disabled={finishLoading}
+            data-testid="button-submit-final"
+            className="mt-4 w-full h-16 rounded-2xl bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-yellow-500/30 disabled:opacity-60"
+          >
+            <Trophy className="w-6 h-6" />
+            {finishLoading ? 'Submitting…' : 'Submit Final Score'}
+          </button>
+        )}
       </div>
 
       {/* ── Score Entry Panel ── */}
@@ -612,6 +764,91 @@ export default function Scorecard() {
 
       {/* ── Mario Kart Item Wheel ── */}
       <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} />
+
+      {/* ── Final Score Submission Modal ── */}
+      {finishOpen && (
+        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur flex flex-col overflow-y-auto">
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 text-center min-h-[100dvh]">
+
+            {/* Close */}
+            <button
+              onClick={() => setFinishOpen(false)}
+              className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+
+            {/* Header */}
+            <div className="mb-6">
+              <Trophy className="w-12 h-12 text-yellow-400 mx-auto mb-3" style={{ filter: 'drop-shadow(0 0 12px #facc15)' }} />
+              <h2 className="font-condensed text-4xl font-black uppercase tracking-widest text-white">
+                Round Complete
+              </h2>
+              <p className="text-sm text-white/50 mt-1 uppercase tracking-widest font-bold">
+                {teamInfo?.teamName}
+              </p>
+            </div>
+
+            {/* Final Net Score */}
+            <div className="mb-6">
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">Final Net Score</p>
+              <span
+                className={`font-condensed text-8xl font-black leading-none ${
+                  netScore < 0 ? 'text-primary' : netScore > 0 ? 'text-orange-400' : 'text-white'
+                }`}
+                style={netScore < 0 ? { textShadow: '0 0 30px #39FF14' } : {}}
+              >
+                {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
+              </span>
+            </div>
+
+            {/* Leaderboard Position */}
+            {finishPosition !== null && (
+              <div className="mb-8 px-6 py-4 rounded-2xl border border-white/15 bg-white/5 w-full max-w-xs">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">Current Standing</p>
+                <p className="font-condensed text-3xl font-black text-white">
+                  <span className="text-yellow-400">{ordinal(finishPosition)}</span>
+                  <span className="text-white/40 text-lg font-bold"> / {totalTeams} teams</span>
+                </p>
+                {finishPosition === 1 && (
+                  <p className="text-xs text-yellow-400 font-bold mt-1 uppercase tracking-widest">You are leading the tournament</p>
+                )}
+                {finishPosition === 2 && (
+                  <p className="text-xs text-white/60 font-bold mt-1 uppercase tracking-widest">One spot off the lead</p>
+                )}
+                {finishPosition > totalTeams - 2 && finishPosition > 3 && (
+                  <p className="text-xs text-red-400 font-bold mt-1 uppercase tracking-widest">Fighting for your dignity</p>
+                )}
+              </div>
+            )}
+
+            {/* The Chirp */}
+            <div className="w-full max-w-sm mb-8 px-5 py-5 rounded-2xl bg-white/5 border border-white/10">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-3">The Verdict</p>
+              <p className="text-base text-white/90 leading-relaxed font-medium text-left">
+                {finishChirp}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="w-full max-w-xs space-y-3">
+              <button
+                onClick={() => setFinishOpen(false)}
+                className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
+              >
+                Back to Scorecard
+              </button>
+              <button
+                onClick={() => { setFinishOpen(false); setLocation('/leaderboard'); }}
+                className="w-full h-12 rounded-full border border-white/20 text-white/70 font-condensed font-bold text-sm uppercase tracking-widest hover:bg-white/5 transition-colors"
+              >
+                View Full Leaderboard
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
