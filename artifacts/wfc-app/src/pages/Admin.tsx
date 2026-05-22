@@ -12,6 +12,7 @@ import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
+  ShieldAlert, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'wfc';
@@ -77,6 +78,125 @@ interface LiveTeam {
   holesPlayed: number;
   wheelAdjustment?: number;
   isDemo?: boolean;
+  scores?: (number | null)[];
+  hasSubmitted?: boolean;
+  submittedAt?: number | null;
+  lastUpdated?: number | null;
+  frontNineConfirmed?: boolean;
+  wheelSpin?: { item?: string } | null;
+}
+
+interface AuditFlag {
+  severity: 'high' | 'medium' | 'low';
+  label: string;
+  detail: string;
+}
+
+function mapTeam(id: string, data: Record<string, unknown>): LiveTeam {
+  const d = data as Record<string, unknown>;
+  const submittedAtRaw = d.submittedAt as { toMillis?: () => number } | number | null | undefined;
+  const lastUpdatedRaw = d.lastUpdated as { toMillis?: () => number } | number | null | undefined;
+  const toMs = (v: typeof submittedAtRaw): number | null => {
+    if (!v) return null;
+    if (typeof v === 'number') return v;
+    if (typeof v === 'object' && typeof v.toMillis === 'function') return v.toMillis();
+    return null;
+  };
+  return {
+    id,
+    teamName: (d.teamName as string) ?? '(unnamed)',
+    player1: (d.player1 as string) ?? '',
+    player2: (d.player2 as string) ?? '',
+    netScore: typeof d.netScore === 'number' ? d.netScore : 0,
+    holesPlayed: typeof d.holesPlayed === 'number' ? d.holesPlayed : 0,
+    wheelAdjustment: typeof d.wheelAdjustment === 'number' ? d.wheelAdjustment : 0,
+    isDemo: !!d.isDemo,
+    scores: Array.isArray(d.scores) ? (d.scores as (number | null)[]) : [],
+    hasSubmitted: !!d.hasSubmitted,
+    submittedAt: toMs(submittedAtRaw),
+    lastUpdated: toMs(lastUpdatedRaw),
+    frontNineConfirmed: !!d.frontNineConfirmed,
+    wheelSpin: (d.wheelSpin as { item?: string } | null | undefined) ?? null,
+  };
+}
+
+function auditTeam(t: LiveTeam): AuditFlag[] {
+  const flags: AuditFlag[] = [];
+  const scores = Array.isArray(t.scores) ? t.scores : [];
+  let birdies = 0;
+  let eagles = 0;
+  let eagleOnPar3 = false;
+  scores.forEach((s, i) => {
+    if (s === null || s === undefined) return;
+    const par = HOLES[i]?.par ?? 4;
+    const d = s - par;
+    if (d <= -2) {
+      eagles++;
+      if (par === 3) eagleOnPar3 = true;
+    } else if (d === -1) {
+      birdies++;
+    }
+  });
+
+  if (t.hasSubmitted && (t.holesPlayed ?? 0) < 18) {
+    flags.push({
+      severity: 'high',
+      label: 'Submitted with < 18 holes',
+      detail: `Only ${t.holesPlayed}/18 holes scored when round was submitted.`,
+    });
+  }
+  if (t.hasSubmitted && t.submittedAt && t.lastUpdated && t.lastUpdated - t.submittedAt > 5000) {
+    const mins = Math.round((t.lastUpdated - t.submittedAt) / 60000);
+    flags.push({
+      severity: 'high',
+      label: 'Edited after submitting',
+      detail: `Doc updated ~${mins}m after the submit timestamp.`,
+    });
+  }
+  if (t.netScore <= -5) {
+    flags.push({
+      severity: 'high',
+      label: 'Suspiciously low net score',
+      detail: `Net is ${t.netScore > 0 ? '+' : ''}${t.netScore} — confirm with playing partners.`,
+    });
+  } else if (t.netScore <= -3) {
+    flags.push({
+      severity: 'medium',
+      label: 'Low net score',
+      detail: `Net is ${t.netScore > 0 ? '+' : ''}${t.netScore} — worth a glance.`,
+    });
+  }
+  if (birdies + eagles > 4) {
+    flags.push({
+      severity: 'medium',
+      label: 'High under-par count',
+      detail: `${birdies} birdie${birdies === 1 ? '' : 's'} + ${eagles} eagle${eagles === 1 ? '' : 's'} across the round.`,
+    });
+  }
+  if (eagleOnPar3) {
+    flags.push({
+      severity: 'medium',
+      label: 'Eagle on a par 3',
+      detail: 'Hole-in-one claimed — verify before paying out.',
+    });
+  }
+  const back9Scored = scores.slice(9).some(s => s !== null && s !== undefined);
+  if (back9Scored && !t.wheelSpin?.item) {
+    flags.push({
+      severity: 'high',
+      label: 'Back 9 scored without Item Box spin',
+      detail: 'Players skipped the wheel — back-9 lock bypassed.',
+    });
+  }
+  const front9Filled = scores.slice(0, 9).every(s => s !== null && s !== undefined);
+  if (front9Filled && back9Scored && !t.frontNineConfirmed) {
+    flags.push({
+      severity: 'medium',
+      label: 'Front 9 never confirmed',
+      detail: 'Played the back 9 without locking the front — possible re-edits.',
+    });
+  }
+  return flags;
 }
 
 export default function Admin() {
@@ -100,49 +220,28 @@ export default function Admin() {
   const [adjustingTeam, setAdjustingTeam] = useState<LiveTeam | null>(null);
   const [adjustDelta, setAdjustDelta] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
 
   const loadTeams = useCallback(async () => {
     if (!db) return;
     const snap = await getDocs(collection(db, 'teams'));
-    const list: LiveTeam[] = snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id,
-        teamName: data.teamName ?? '(unnamed)',
-        player1: data.player1 ?? '',
-        player2: data.player2 ?? '',
-        netScore: typeof data.netScore === 'number' ? data.netScore : 0,
-        holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
-        wheelAdjustment: typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0,
-        isDemo: !!data.isDemo,
-      };
-    });
+    const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
     list.sort((a, b) => a.netScore - b.netScore);
     setTeams(list);
   }, []);
 
-  // Live listener while panel is open
+  // Live listener while either panel is open
   useEffect(() => {
-    if (!auth || !teamsOpen || !db) return;
+    if (!auth || (!teamsOpen && !auditOpen) || !db) return;
     const unsub = onSnapshot(collection(db, 'teams'), snap => {
-      const list: LiveTeam[] = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          teamName: data.teamName ?? '(unnamed)',
-          player1: data.player1 ?? '',
-          player2: data.player2 ?? '',
-          netScore: typeof data.netScore === 'number' ? data.netScore : 0,
-          holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
-          wheelAdjustment: typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0,
-          isDemo: !!data.isDemo,
-        };
-      });
+      const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
       list.sort((a, b) => a.netScore - b.netScore);
       setTeams(list);
     });
     return () => unsub();
-  }, [auth, teamsOpen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, teamsOpen, auditOpen]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -727,6 +826,137 @@ export default function Admin() {
                   Refresh List
                 </Button>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Score Audit ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setAuditOpen(v => !v)}
+            data-testid="button-toggle-audit"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Score Audit</h3>
+            </div>
+            <div className="flex items-center gap-3">
+              {(() => {
+                const flagged = realTeams.filter(t => auditTeam(t).length > 0).length;
+                return (
+                  <span className={`font-condensed text-lg font-black leading-none ${flagged > 0 ? 'text-orange-400' : 'text-primary'}`}>
+                    {flagged === 0 ? 'All Clear' : `${flagged} flagged`}
+                  </span>
+                );
+              })()}
+              {auditOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          </button>
+
+          {auditOpen && (
+            <div className="border-t border-border">
+              <p className="text-[10px] text-muted-foreground/80 px-5 py-3 border-b border-border/40 leading-relaxed">
+                Real teams only. Flags catch likely score-glitches: edits after submitting, suspiciously low net scores, eagles on par 3s, skipped front-9 lock, back-9 scored without spinning the Item Box, etc. Tap a team for the breakdown.
+              </p>
+              {realTeams.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-6 px-5">No real teams yet.</p>
+              )}
+              {realTeams.map(team => {
+                const flags = auditTeam(team);
+                const hasHigh = flags.some(f => f.severity === 'high');
+                const expanded = auditExpandedId === team.id;
+                const showSubmitTime = team.hasSubmitted && team.submittedAt
+                  ? new Date(team.submittedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                  : null;
+                return (
+                  <div key={team.id} className="border-t border-border/30 first:border-t-0">
+                    <button
+                      onClick={() => setAuditExpandedId(prev => prev === team.id ? null : team.id)}
+                      className="w-full flex items-center gap-3 px-5 py-3 text-left active:bg-secondary/40 transition-colors"
+                      data-testid={`audit-team-${team.id}`}
+                    >
+                      <div className="shrink-0">
+                        {flags.length === 0 ? (
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
+                        ) : (
+                          <AlertTriangle className={`w-4 h-4 ${hasHigh ? 'text-red-400' : 'text-orange-400'}`} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
+                        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                          {team.holesPlayed}/18 · Net {team.netScore > 0 ? `+${team.netScore}` : team.netScore === 0 ? 'E' : team.netScore}
+                          {team.hasSubmitted ? ` · Submitted${showSubmitTime ? ` ${showSubmitTime}` : ''}` : ' · In progress'}
+                        </p>
+                      </div>
+                      <span className={`font-condensed text-sm font-black shrink-0 ${flags.length === 0 ? 'text-primary' : hasHigh ? 'text-red-400' : 'text-orange-400'}`}>
+                        {flags.length === 0 ? 'OK' : `${flags.length}`}
+                      </span>
+                      {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                    </button>
+
+                    {expanded && (
+                      <div className="px-5 pb-4 space-y-2">
+                        {flags.length === 0 ? (
+                          <p className="text-[11px] text-muted-foreground/80">No anomalies detected.</p>
+                        ) : flags.map((f, i) => (
+                          <div
+                            key={i}
+                            className={`rounded-lg p-3 border ${
+                              f.severity === 'high'
+                                ? 'bg-red-950/30 border-red-900/60'
+                                : 'bg-orange-950/20 border-orange-900/50'
+                            }`}
+                          >
+                            <p className={`text-[11px] font-black uppercase tracking-widest ${f.severity === 'high' ? 'text-red-400' : 'text-orange-400'}`}>
+                              {f.label}
+                            </p>
+                            <p className="text-[11px] text-foreground/80 mt-1 leading-snug">{f.detail}</p>
+                          </div>
+                        ))}
+
+                        {/* Mini hole-by-hole breakdown */}
+                        <div className="bg-secondary/30 rounded-lg p-2 mt-2">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5 px-1">
+                            Hole-by-Hole
+                          </p>
+                          <div className="grid grid-cols-9 gap-0.5">
+                            {Array.from({ length: 18 }).map((_, i) => {
+                              const s = team.scores?.[i] ?? null;
+                              const par = HOLES[i]?.par ?? 4;
+                              const d = s !== null ? s - par : null;
+                              let cls = 'text-muted-foreground/40 bg-background/40';
+                              if (d !== null) {
+                                if (d <= -2) cls = 'text-yellow-300 bg-yellow-900/40';
+                                else if (d === -1) cls = 'text-primary bg-primary/15';
+                                else if (d === 0) cls = 'text-foreground/80 bg-background/60';
+                                else if (d === 1) cls = 'text-orange-300 bg-orange-900/20';
+                                else cls = 'text-red-300 bg-red-900/30';
+                              }
+                              return (
+                                <div
+                                  key={i}
+                                  className={`text-center py-1 rounded text-[10px] font-condensed font-black ${cls}`}
+                                  title={`Hole ${i + 1} (par ${par})`}
+                                >
+                                  {s ?? '—'}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 text-[10px] text-muted-foreground/70 pt-1 px-1 flex-wrap">
+                          <span>Wheel: <span className="text-foreground/80">{team.wheelSpin?.item ?? 'none'}</span></span>
+                          <span>· Adj: <span className="text-foreground/80">{team.wheelAdjustment ?? 0}</span></span>
+                          <span>· F9 lock: <span className="text-foreground/80">{team.frontNineConfirmed ? 'yes' : 'no'}</span></span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

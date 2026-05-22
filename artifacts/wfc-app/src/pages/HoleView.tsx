@@ -6,7 +6,7 @@ import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { getWheelItem } from '@/lib/wheel';
 import { db } from '@/lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
 import { useToast } from '@/hooks/use-toast';
 import { pickChirp } from '@/lib/chirps';
@@ -49,6 +49,7 @@ export default function HoleView() {
   const {
     teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, listTeamsOnce, logEvent,
+    hasSubmitted, submitFinal,
   } = useWFC();
   const [, setLocation] = useLocation();
   const [holeIdx, setHoleIdx] = useState(0);
@@ -58,26 +59,16 @@ export default function HoleView() {
   const [finishLoading, setFinishLoading] = useState(false);
   const [totalTeams, setTotalTeams] = useState(0);
   const [finishChirp, setFinishChirp] = useState('');
-  const [hasSubmitted, setHasSubmitted] = useState(() => {
-    try { return localStorage.getItem('wfc-submitted') === 'true'; } catch { return false; }
-  });
   const finishShownRef = useRef(false);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const { toast } = useToast();
 
-  const markSubmitted = () => {
-    setHasSubmitted(true);
-    try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ }
-  };
+  const markSubmitted = submitFinal;
 
-  // Clear submitted flag on admin reset
+  // Reset finish-shown latch when admin wipes the team
   useEffect(() => {
-    if (!teamInfo) {
-      setHasSubmitted(false);
-      finishShownRef.current = false;
-      try { localStorage.removeItem('wfc-submitted'); } catch { /* ignore */ }
-    }
+    if (!teamInfo) finishShownRef.current = false;
   }, [teamInfo]);
 
   // Auto-trigger finish modal the first time hole 18 is completed
@@ -100,7 +91,7 @@ export default function HoleView() {
         await setDoc(doc(db, 'teams', teamId), {
           teamName: teamInfo.teamName, player1: teamInfo.player1, player2: teamInfo.player2,
           scores, netScore, holesPlayed, currentTee,
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: serverTimestamp(),
         }, { merge: true });
       } catch { /* non-fatal */ }
     }
@@ -139,7 +130,7 @@ export default function HoleView() {
 
   const front9Complete = scores.slice(0, 9).every(s => s !== null);
   const spunItem = getWheelItem(wheelSpin?.item);
-  const holeLocked = frontNineConfirmed && holeIdx < 9;
+  const holeLocked = hasSubmitted || (frontNineConfirmed && holeIdx < 9);
 
   // ── The gate: enforces ordered scoring + back-9 lock.
   // Returns true if navigation is allowed; false if blocked.
@@ -383,7 +374,7 @@ export default function HoleView() {
         <div className={`bg-card border rounded-2xl p-4 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
           <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-3 flex items-center justify-center gap-1.5">
             {holeLocked && <Lock className="w-3 h-3 text-primary" />}
-            {holeLocked ? 'Front 9 Locked' : 'Enter Score'}
+            {hasSubmitted ? 'Round Submitted' : holeLocked ? 'Front 9 Locked' : 'Enter Score'}
           </p>
 
           <div className="flex items-center justify-between gap-4">
@@ -419,8 +410,8 @@ export default function HoleView() {
           </div>
 
           {holeLocked && (
-            <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-widest font-bold">
-              Final — set when you spun the Item Box
+            <p className={`text-[10px] text-center mt-2 uppercase tracking-widest font-bold ${hasSubmitted ? 'text-yellow-400/90' : 'text-muted-foreground'}`}>
+              {hasSubmitted ? 'Score submitted — scores are final' : 'Final — set when you spun the Item Box'}
             </p>
           )}
         </div>

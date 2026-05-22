@@ -9,7 +9,7 @@ const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { setTeamInfo, teamInfo } = useWFC();
+  const { setTeamInfo, teamInfo, hasSubmitted } = useWFC();
   const [teamName, setTeamName] = useState('');
   const [player1, setPlayer1] = useState('');
   const [player2, setPlayer2] = useState('');
@@ -37,7 +37,7 @@ export default function Home() {
     setLocation('/hole');
   };
 
-  const showForm = !teamInfo || editing;
+  const showForm = !teamInfo || (editing && !hasSubmitted);
 
   return (
     <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center bg-background relative overflow-hidden px-6">
@@ -109,14 +109,22 @@ export default function Home() {
               Continue Round
             </button>
 
-            <div className="mt-3">
-              <button
-                onClick={() => setEditing(true)}
-                className="w-full py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
-              >
-                Change Team
-              </button>
-            </div>
+            {!hasSubmitted ? (
+              <div className="mt-3">
+                <button
+                  onClick={() => setEditing(true)}
+                  className="w-full py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
+                >
+                  Change Team
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 w-full py-3 rounded-full border border-primary/40 bg-primary/10 flex items-center justify-center gap-2">
+                <span className="font-condensed font-bold uppercase tracking-widest text-xs text-primary">
+                  Round Submitted — Team Locked
+                </span>
+              </div>
+            )}
           </div>
         )}
 

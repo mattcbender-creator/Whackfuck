@@ -6,7 +6,7 @@ import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import WheelModal from '@/components/WheelModal';
 import { getWheelItem } from '@/lib/wheel';
@@ -212,6 +212,7 @@ export default function Scorecard() {
   const {
     teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
+    hasSubmitted, submitFinal,
   } = useWFC();
   const [, setLocation] = useLocation();
   // Default to the first unscored hole so the scorecard opens on the hole
@@ -228,22 +229,11 @@ export default function Scorecard() {
   const [wheelOpen, setWheelOpen] = useState(false);
   const [confirmFinishOpen, setConfirmFinishOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(() => {
-    try { return localStorage.getItem('wfc-submitted') === 'true'; } catch { return false; }
-  });
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
   const [finishLoading, setFinishLoading] = useState(false);
   const [finishChirp, setFinishChirp] = useState('');
   const [totalTeams, setTotalTeams] = useState(0);
   const { toast } = useToast();
-
-  // Clear submitted flag if admin resets and team is wiped
-  useEffect(() => {
-    if (!teamInfo) {
-      setHasSubmitted(false);
-      try { localStorage.removeItem('wfc-submitted'); } catch { /* ignore */ }
-    }
-  }, [teamInfo]);
 
   // Note: front-9 lock happens INSIDE the wheel modal when the user actually
   // taps "Spin Item Box". Until that moment they can dismiss the modal and
@@ -363,7 +353,7 @@ export default function Scorecard() {
       // and the leaderboard.
       await setDoc(doc(db, 'teams', teamId), {
         ...teamInfo, scores, netScore, holesPlayed, currentTee,
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: serverTimestamp(),
       }, { merge: true });
       toast({ title: 'Synced', description: 'Scores pushed to leaderboard.' });
     } catch {
@@ -381,7 +371,7 @@ export default function Scorecard() {
       try {
         await setDoc(doc(db, 'teams', teamId), {
           ...teamInfo, scores, netScore, holesPlayed, currentTee,
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: serverTimestamp(),
         }, { merge: true });
       } catch { /* non-fatal */ }
     }
@@ -934,7 +924,7 @@ export default function Scorecard() {
 
             {/* Close */}
             <button
-              onClick={() => { setFinishOpen(false); setHasSubmitted(true); try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ } }}
+              onClick={() => { setFinishOpen(false); submitFinal(); }}
               className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
             >
               <X className="w-5 h-5 text-white" />
@@ -995,13 +985,13 @@ export default function Scorecard() {
             {/* Actions */}
             <div className="w-full max-w-xs space-y-3">
               <button
-                onClick={() => { setFinishOpen(false); setHasSubmitted(true); try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ } }}
+                onClick={() => { setFinishOpen(false); submitFinal(); }}
                 className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
               >
                 Back to Scorecard
               </button>
               <button
-                onClick={() => { setFinishOpen(false); setHasSubmitted(true); try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ } setLocation('/leaderboard'); }}
+                onClick={() => { setFinishOpen(false); submitFinal(); setLocation('/leaderboard'); }}
                 className="w-full h-12 rounded-full border border-white/20 text-white/70 font-condensed font-bold text-sm uppercase tracking-widest hover:bg-white/5 transition-colors"
               >
                 View Full Leaderboard

@@ -34,6 +34,8 @@ export interface WFCState {
   wheelSpin: WheelSpinRecord | null;
   wheelAdjustment: number;
   targetedBy: TargetedByEntry[];
+  hasSubmitted: boolean;
+  submittedAt: number | null;
   setTeamInfo: (info: TeamInfo) => void;
   setScore: (hole: number, score: number | null) => void;
   resetScores: () => void;
@@ -41,6 +43,7 @@ export interface WFCState {
   recordWheelSpin: (record: WheelSpinRecord) => Promise<void>;
   applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
   applyEffectToSelf: (delta: number) => void;
+  submitFinal: () => void;
   listTeamsOnce: () => Promise<TeamSnapshot[]>;
   logEvent: (event: Record<string, unknown>) => void;
 }
@@ -81,6 +84,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [wheelSpin, setWheelSpin] = useState<WheelSpinRecord | null>(null);
   const [wheelAdjustment, setWheelAdjustment] = useState(0);
   const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [submittedAt, setSubmittedAt] = useState<number | null>(null);
   const hydratedRef = useRef(false);
 
   // ── Hydrate from localStorage ──
@@ -95,7 +100,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (parsed.wheelSpin) setWheelSpin(parsed.wheelSpin);
         if (typeof parsed.wheelAdjustment === 'number') setWheelAdjustment(parsed.wheelAdjustment);
         if (Array.isArray(parsed.targetedBy)) setTargetedBy(parsed.targetedBy);
+        if (typeof parsed.hasSubmitted === 'boolean') setHasSubmitted(parsed.hasSubmitted);
+        if (typeof parsed.submittedAt === 'number') setSubmittedAt(parsed.submittedAt);
       }
+      // Legacy flag from older versions — honor it so existing submitted teams stay locked.
+      if (localStorage.getItem('wfc-submitted') === 'true') setHasSubmitted(true);
     } catch (e) {
       console.error('Failed to load store', e);
     }
@@ -138,6 +147,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (typeof data.frontNineConfirmed === 'boolean') {
         setFrontNineConfirmed(prev => prev === data.frontNineConfirmed ? prev : data.frontNineConfirmed);
       }
+      // Submission lock is sticky once Firestore confirms it — even clearing
+      // localStorage on the device won't let a team unlock and re-edit scores.
+      if (data.hasSubmitted === true) {
+        setHasSubmitted(prev => prev ? prev : true);
+        if (typeof data.submittedAt === 'number') {
+          setSubmittedAt(prev => prev ?? data.submittedAt);
+        }
+      }
     });
     return () => unsub();
   }, [teamId]);
@@ -160,9 +177,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setWheelSpin(null);
         setWheelAdjustment(0);
         setTargetedBy([]);
+        setHasSubmitted(false);
+        setSubmittedAt(null);
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: null, scores: emptyScores }));
           localStorage.setItem(JOINED_AT_KEY, String(resetAt + 1));
+          localStorage.removeItem('wfc-submitted');
         } catch { /* ignore */ }
       }
     }, (err) => console.error('Reset listener error', err));
@@ -176,11 +196,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     wheelSpin: WheelSpinRecord | null;
     wheelAdjustment: number;
     targetedBy: TargetedByEntry[];
+    hasSubmitted: boolean;
+    submittedAt: number | null;
   }>) => {
     try {
       const current = {
         teamInfo, scores, frontNineConfirmed, wheelSpin,
-        wheelAdjustment, targetedBy,
+        wheelAdjustment, targetedBy, hasSubmitted, submittedAt,
       };
       const next = { ...current, ...overrides };
       localStorage.setItem(STORE_KEY, JSON.stringify(next));
@@ -256,7 +278,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (v !== undefined) cleanWheelSpin[k] = v;
       }
     }
-    setDoc(ref, {
+    // Monotonic lock: once hasSubmitted is true (locally OR on the server),
+    // NEVER write false back. Clearing localStorage on a device must not
+    // unlock the round. We only include the submission fields in the merge
+    // payload when locally true so a stale client can't downgrade the server.
+    const payload: Record<string, unknown> = {
       teamName: teamInfo.teamName,
       player1: teamInfo.player1,
       player2: teamInfo.player2,
@@ -269,10 +295,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // wheelAdjustment/booActive/targetedBy are owned by Firestore once any
       // cross-team effect lands — only write them on first creation.
       lastUpdated: serverTimestamp(),
-    }, { merge: true }).catch(err => console.error('Firestore sync failed', err));
-  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin]);
+    };
+    if (hasSubmitted) {
+      payload.hasSubmitted = true;
+      payload.submittedAt = submittedAt ?? Date.now();
+    }
+    setDoc(ref, payload, { merge: true }).catch(err => console.error('Firestore sync failed', err));
+  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin, hasSubmitted, submittedAt]);
 
   const updateTeamInfo = (info: TeamInfo) => {
+    // Once submitted, the team identity is frozen for audit integrity.
+    if (hasSubmitted) {
+      toast({
+        title: 'Round already submitted',
+        description: 'Team info is locked once a final score is in. Ask the tournament admin to make changes.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setTeamInfo(info);
     saveToLocal({ teamInfo: info });
     try { localStorage.setItem(JOINED_AT_KEY, String(Date.now())); } catch { /* ignore */ }
@@ -325,6 +365,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const setScore = (hole: number, score: number | null) => {
+    if (hasSubmitted) return; // sticky lock — silent ignore (UI also blocks)
     const newScores = [...scores];
     newScores[hole - 1] = score;
     setScoresState(newScores);
@@ -339,18 +380,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWheelSpin(null);
     setWheelAdjustment(0);
     setTargetedBy([]);
+    setHasSubmitted(false);
+    setSubmittedAt(null);
     saveToLocal({
       teamInfo: null, scores: newScores, frontNineConfirmed: false,
       wheelSpin: null, wheelAdjustment: 0, targetedBy: [],
+      hasSubmitted: false, submittedAt: null,
     });
+    try { localStorage.removeItem('wfc-submitted'); } catch { /* ignore */ }
   };
 
   const confirmFrontNine = () => {
+    if (hasSubmitted) return;
     setFrontNineConfirmed(true);
     saveToLocal({ frontNineConfirmed: true });
   };
 
+  const submitFinal = () => {
+    if (hasSubmitted) return;
+    const at = Date.now();
+    setHasSubmitted(true);
+    setSubmittedAt(at);
+    saveToLocal({ hasSubmitted: true, submittedAt: at });
+    try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ }
+  };
+
   const recordWheelSpin = async (record: WheelSpinRecord) => {
+    if (hasSubmitted) return;
     // Build a clean copy with no undefined fields (Firestore rejects them).
     const cleanRecord: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(record)) {
@@ -478,6 +534,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         wheelSpin,
         wheelAdjustment,
         targetedBy,
+        hasSubmitted,
+        submittedAt,
         setTeamInfo: updateTeamInfo,
         setScore,
         resetScores,
@@ -485,6 +543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         recordWheelSpin,
         applyEffectToOthers,
         applyEffectToSelf,
+        submitFinal,
         listTeamsOnce,
         logEvent,
       }}
