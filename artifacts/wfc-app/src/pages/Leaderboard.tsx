@@ -47,18 +47,40 @@ function WheelBadge({ item, label }: { item: WheelItemId; label: string }) {
   );
 }
 
-function HitBadge({ item, from }: { item: WheelItemId; from: string }) {
+function HitBadge({ item, count, fromList }: { item: WheelItemId; count: number; fromList: string[] }) {
   const w = getWheelItem(item);
   if (!w) return null;
+  const title = count === 1
+    ? `Hit by ${w.label} from ${fromList[0]}`
+    : `Hit by ${w.label} ×${count} — from ${fromList.join(', ')}`;
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-white/10 bg-white/5 text-white/80"
-      title={`Hit by ${w.label} from ${from}`}
+      title={title}
     >
       <Target className="w-2.5 h-2.5" style={{ color: w.color }} />
-      Hit by {w.label}
+      Hit by {w.label}{count > 1 ? ` ×${count}` : ''}
     </span>
   );
+}
+
+// Aggregate targetedBy entries by item so identical hits collapse into one
+// badge with a count instead of N duplicate badges. Returns the items in
+// descending count order so the most-hit shows first.
+function aggregateHits(hits: TargetedByEntry[]): { item: WheelItemId; count: number; fromList: string[] }[] {
+  const buckets = new Map<WheelItemId, { count: number; fromList: string[] }>();
+  for (const h of hits) {
+    const cur = buckets.get(h.item);
+    if (cur) {
+      cur.count += 1;
+      cur.fromList.push(h.fromTeam);
+    } else {
+      buckets.set(h.item, { count: 1, fromList: [h.fromTeam] });
+    }
+  }
+  return [...buckets.entries()]
+    .map(([item, v]) => ({ item, count: v.count, fromList: v.fromList }))
+    .sort((a, b) => b.count - a.count);
 }
 
 export default function Leaderboard() {
@@ -198,7 +220,9 @@ export default function Leaderboard() {
             )}
 
             {teams.map((team, idx) => {
-              const hits = (team.targetedBy ?? []).slice(-3);
+              const allHits = team.targetedBy ?? [];
+              const aggregated = aggregateHits(allHits);
+              const totalHits = allHits.length;
               return (
                 <div key={team.id} className="grid grid-cols-12 gap-2 p-3 items-center hover:bg-secondary/20 transition-colors">
                   <div className="col-span-1 flex justify-center">
@@ -211,7 +235,7 @@ export default function Leaderboard() {
                   <div className="col-span-6 flex flex-col gap-1 min-w-0">
                     <span className="font-bold text-sm truncate">{team.teamName}</span>
                     <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
-                    {(team.wheelSpin || hits.length > 0 || team.booActive) && (
+                    {(team.wheelSpin || totalHits > 0 || team.booActive) && (
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {team.wheelSpin && (
                           <WheelBadge item={team.wheelSpin.item} label={`Spun ${team.wheelSpin.item}`} />
@@ -221,8 +245,8 @@ export default function Leaderboard() {
                             Boo · worst hole hidden
                           </span>
                         )}
-                        {hits.map((h, i) => (
-                          <HitBadge key={`${h.at}-${i}`} item={h.item} from={h.fromTeam} />
+                        {aggregated.map(h => (
+                          <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
                         ))}
                       </div>
                     )}
@@ -237,6 +261,7 @@ export default function Leaderboard() {
                     {typeof team.wheelAdjustment === 'number' && team.wheelAdjustment !== 0 && (
                       <div className={`text-[9px] font-bold tracking-wider mt-0.5 ${team.wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
                         {team.wheelAdjustment > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment} wheel
+                        {totalHits > 1 && <span className="text-muted-foreground/70 ml-1">({totalHits} hits)</span>}
                       </div>
                     )}
                   </div>
