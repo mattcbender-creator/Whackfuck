@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "gffHNzDy0UO-G_HoSvpU4"
@@ -108,3 +107,27 @@ id = "rXClniKoFZn9rgmbNVJe6"
 uri = "file://artifacts/wfc-app/public/holes/18.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "KgTq2pz5im3t0r3dMRnV0"
+uri = "file://screenshots/leaderboard.jpg"
+type = "image"
+title = "Live Leaderboard"
+
+[[outputs]]
+id = "J0gDz2pjdIqwgeDAyTGC0"
+uri = "file://screenshots/scorecard.jpg"
+type = "image"
+title = "Hole-by-Hole Scorecard"
+
+[[outputs]]
+id = "ZljoamgC99BmZnlelVSJu"
+uri = "file://screenshots/rules.jpg"
+type = "image"
+title = "Rule Deck"
+
+[[outputs]]
+id = "1mV6awnXdC7pJu6sYTUgw"
+uri = "file://screenshots/home.jpg"
+type = "image"
+title = "Home — Team Registration"
