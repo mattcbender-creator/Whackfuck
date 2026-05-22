@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Image, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Flag } from 'lucide-react';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
@@ -31,13 +31,9 @@ function fmtNet(net: number) {
   return net > 0 ? `+${net}` : `${net}`;
 }
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
-
 export default function HoleView() {
   const { teamInfo, scores, currentTee, netScore, holesPlayed, setScore } = useWFC();
   const [holeIdx, setHoleIdx] = useState(0);
-  const [imgLoaded, setImgLoaded] = useState(false);
-  const [showImage, setShowImage] = useState(false);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
@@ -47,9 +43,6 @@ export default function HoleView() {
     if (firstUnscored !== -1) setHoleIdx(firstUnscored);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Reset image loaded state and close modal on hole change
-  useEffect(() => { setImgLoaded(false); setShowImage(false); }, [holeIdx]);
 
   const hole = HOLES[holeIdx];
   const score = scores[holeIdx];
@@ -89,7 +82,7 @@ export default function HoleView() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* ── Sticky Header ── */}
+      {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border">
         <div className="flex items-center justify-between px-5 py-3 max-w-md mx-auto">
           <div className="min-w-0">
@@ -160,98 +153,77 @@ export default function HoleView() {
         </div>
       </div>
 
-      {/* ── Hole Image Modal ── */}
-      {showImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-          onClick={() => setShowImage(false)}
-        >
-          {/* Close button */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="font-condensed text-sm font-black text-white uppercase tracking-widest">
-              Hole {hole.hole} — Par {hole.par} · {yardage} YDS
-            </span>
-            <button
-              onClick={() => setShowImage(false)}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors"
-            >
-              <X className="w-5 h-5 text-white" />
-            </button>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-5 pt-5 gap-4">
+
+        {/* Hole Stats Card */}
+        <div className="bg-card border border-border rounded-3xl p-6 relative overflow-hidden">
+          {/* Background hole number */}
+          <div
+            className="absolute -top-6 -right-2 font-condensed font-black text-primary/[0.06] pointer-events-none select-none leading-none"
+            style={{ fontSize: '200px' }}
+          >
+            {hole.hole.toString().padStart(2, '0')}
           </div>
-          {/* Image */}
-          <div className="flex-1 flex items-center justify-center px-2 pb-4">
-            {!imgLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+
+          <div className="relative">
+            {/* Par hero */}
+            <div className="flex items-end gap-3">
+              <span className="font-condensed text-[88px] font-black leading-[0.85] text-foreground">
+                {hole.par}
+              </span>
+              <div className="pb-2">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Par</p>
+                <p className="text-xs font-bold text-foreground/80 uppercase tracking-widest mt-1">Hdcp {hole.hdcp}</p>
               </div>
-            )}
-            <img
-              key={hole.hole}
-              src={`${BASE}/holes/${hole.hole}.jpg`}
-              alt={`Hole ${hole.hole} satellite view`}
-              className={`max-w-full max-h-full object-contain transition-opacity duration-500 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-              onLoad={() => setImgLoaded(true)}
-            />
+            </div>
+
+            {/* Tee yardages */}
+            <div className="grid grid-cols-3 gap-2 mt-6">
+              {[
+                { key: 'tips', label: 'Tips', val: hole.tips },
+                { key: 'mid', label: 'Mid', val: hole.mid },
+                { key: 'womens', label: "Women's", val: hole.womens },
+              ].map(({ key, label, val }) => {
+                const isActive =
+                  (key === 'tips' && currentTee === 'tips') ||
+                  (key === 'womens' && currentTee === 'womens');
+                return (
+                  <div
+                    key={key}
+                    className={`rounded-2xl p-3 text-center border transition-colors ${
+                      isActive
+                        ? 'bg-primary/10 border-primary/60'
+                        : 'bg-secondary/40 border-transparent'
+                    }`}
+                  >
+                    <div className={`text-[10px] font-bold uppercase tracking-widest ${
+                      isActive ? 'text-primary' : 'text-muted-foreground'
+                    }`}>
+                      {label}
+                    </div>
+                    <div className={`font-condensed text-2xl font-black mt-1 leading-none ${
+                      isActive ? 'text-primary' : 'text-foreground/70'
+                    }`}>
+                      {val}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest mt-1">yds</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      )}
-
-      {/* ── Main Content ── */}
-      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 gap-3 pt-2">
-
-        {/* Tee yardages */}
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { key: 'tips', label: 'Tips', val: hole.tips },
-            { key: 'mid', label: 'Mid', val: hole.mid },
-            { key: 'womens', label: "Women's", val: hole.womens },
-          ].map(({ key, label, val }) => {
-            const isActive =
-              (key === 'tips' && currentTee === 'tips') ||
-              (key === 'womens' && currentTee === 'womens');
-            return (
-              <div
-                key={key}
-                className={`rounded-2xl p-3 text-center border transition-colors ${
-                  isActive
-                    ? 'bg-primary/10 border-primary/60'
-                    : 'bg-card border-border/50'
-                }`}
-              >
-                <div className={`text-[10px] font-bold uppercase tracking-widest ${
-                  isActive ? 'text-primary' : 'text-muted-foreground'
-                }`}>
-                  {label}
-                </div>
-                <div className={`font-condensed text-2xl font-black mt-0.5 leading-none ${
-                  isActive ? 'text-primary' : 'text-foreground/70'
-                }`}>
-                  {val}
-                </div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-widest mt-0.5">yds</div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Show Hole button */}
-        <button
-          onClick={() => { setImgLoaded(false); setShowImage(true); }}
-          className="flex items-center justify-center gap-2 mx-auto px-5 py-2 rounded-full bg-secondary border border-border/60 active:scale-95 active:bg-secondary/60 transition-all"
-        >
-          <Image className="w-4 h-4 text-primary" />
-          <span className="text-xs font-bold text-foreground uppercase tracking-widest">Show Hole</span>
-        </button>
 
         {/* Rule Card */}
-        <div className="bg-card border border-primary/30 rounded-3xl p-4 relative overflow-hidden">
-          <div className="flex items-center gap-2 mb-1.5">
+        <div className="bg-card border border-primary/30 rounded-3xl p-5 relative overflow-hidden">
+          <div className="flex items-center gap-2 mb-2">
             <Flag className="w-3.5 h-3.5 text-primary" />
             <p className="text-[10px] font-black text-primary uppercase tracking-widest">
               Hole Rule
             </p>
           </div>
-          <h3 className="font-condensed text-xl font-black uppercase tracking-tight leading-tight text-foreground mb-1">
+          <h3 className="font-condensed text-2xl font-black uppercase tracking-tight leading-tight text-foreground mb-2">
             {hole.ruleName}
           </h3>
           <p className="text-sm text-foreground/75 leading-relaxed">
@@ -260,8 +232,8 @@ export default function HoleView() {
         </div>
 
         {/* Score Entry */}
-        <div className="bg-card border border-border rounded-3xl p-4">
-          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-3">
+        <div className="bg-card border border-border rounded-3xl p-5">
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-4">
             Enter Score
           </p>
 
@@ -295,14 +267,14 @@ export default function HoleView() {
             </button>
           </div>
 
-          <div className="flex justify-center gap-8 mt-4 pt-3 border-t border-border/50">
+          <div className="flex justify-center gap-8 mt-5 pt-4 border-t border-border/50">
             <div className="text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Par</p>
               <p className="font-condensed text-lg font-bold text-foreground mt-1">{hole.par}</p>
             </div>
             <div className="text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Hdcp</p>
-              <p className="font-condensed text-lg font-bold text-foreground mt-1">{hole.hdcp}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Your Yds</p>
+              <p className="font-condensed text-lg font-bold text-foreground mt-1">{yardage}</p>
             </div>
             <div className="text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Vs Par</p>
@@ -313,6 +285,33 @@ export default function HoleView() {
           </div>
         </div>
 
+        {/* Up next strip */}
+        {holeIdx < 17 && (
+          <div>
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-2 px-1">Up next</p>
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {HOLES.slice(holeIdx + 1, Math.min(holeIdx + 6, 18)).map((h, i) => {
+                const s = scores[holeIdx + 1 + i];
+                const d = s !== null ? s - h.par : null;
+                return (
+                  <button
+                    key={h.hole}
+                    onClick={() => setHoleIdx(holeIdx + 1 + i)}
+                    className="shrink-0 flex flex-col items-center bg-card border border-border rounded-2xl px-4 py-2 min-w-[60px] hover:border-primary/40 transition-colors"
+                  >
+                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">H{h.hole}</span>
+                    <span className="font-condensed text-lg font-black text-foreground leading-none mt-1">P{h.par}</span>
+                    {d !== null && (
+                      <span className={`text-[10px] font-bold mt-0.5 ${scoreColor(d)}`}>
+                        {d === 0 ? 'E' : d > 0 ? `+${d}` : d}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
