@@ -21,6 +21,7 @@ const queryClient = new QueryClient();
 function Router() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
+      <LiveTicker />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/scorecard" component={Scorecard} />
@@ -31,7 +32,6 @@ function Router() {
         <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
       </Switch>
-      <LiveTicker />
       <BottomNav />
     </div>
   );

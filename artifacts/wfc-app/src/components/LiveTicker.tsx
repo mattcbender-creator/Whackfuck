@@ -71,7 +71,7 @@ export function LiveTicker() {
   if (!current) return null;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur px-4 py-1.5">
+    <div className="border-b border-border/60 bg-background/95 px-4 py-1.5">
       <div className="max-w-md mx-auto flex items-center gap-2.5">
         <span className="text-[8px] font-black text-primary uppercase tracking-widest shrink-0 border border-primary/40 rounded px-1 py-0.5">
           LIVE
