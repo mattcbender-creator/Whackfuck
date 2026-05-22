@@ -114,7 +114,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
       }
       if (Array.isArray(data.targetedBy)) {
-        setTargetedBy(prev => prev.length === data.targetedBy.length ? prev : data.targetedBy as TargetedByEntry[]);
+        setTargetedBy(prev => {
+          const incoming = data.targetedBy as TargetedByEntry[];
+          // Compare by serialised content so we never miss an incoming hit even
+          // if the array happens to be the same length as the current local state.
+          return JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming;
+        });
       }
       if (data.wheelSpin) {
         // Only update if item/at actually changed — avoids object-ref churn loops.
