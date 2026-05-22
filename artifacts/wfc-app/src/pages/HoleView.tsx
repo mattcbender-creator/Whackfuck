@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
 import { useToast } from '@/hooks/use-toast';
+import { pickChirp } from '@/lib/chirps';
 
 function ordinal(n: number): string {
   if (n === 1) return '1st';
@@ -56,6 +57,7 @@ export default function HoleView() {
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
   const [finishLoading, setFinishLoading] = useState(false);
   const [totalTeams, setTotalTeams] = useState(0);
+  const [finishChirp, setFinishChirp] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(() => {
     try { return localStorage.getItem('wfc-submitted') === 'true'; } catch { return false; }
   });
@@ -82,7 +84,10 @@ export default function HoleView() {
   useEffect(() => {
     if (!(holesPlayed === 18 && !hasSubmitted && !finishShownRef.current)) return;
     finishShownRef.current = true;
-    const t = setTimeout(() => setFinishOpen(true), 700);
+    const t = setTimeout(() => {
+      setFinishChirp(pickChirp(scores, netScore));
+      setFinishOpen(true);
+    }, 700);
     return () => clearTimeout(t);
   }, [holesPlayed, hasSubmitted]);
 
@@ -114,6 +119,7 @@ export default function HoleView() {
     }
     logEvent({ type: 'finish', teamName: teamInfo.teamName, netScore, position: pos, totalTeams: total });
     if (netScore <= 0) fireEagleConfetti();
+    setFinishChirp(pickChirp(scores, netScore));
     setFinishLoading(false);
     setFinishOpen(true);
   };
@@ -503,6 +509,14 @@ export default function HoleView() {
                 {finishPosition === 1 && (
                   <p className="text-xs text-yellow-400 font-bold mt-1 uppercase tracking-widest">You are leading the tournament</p>
                 )}
+              </div>
+            )}
+            {finishChirp && (
+              <div className="w-full max-w-sm mb-6 px-5 py-5 rounded-2xl bg-white/5 border border-white/10">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-3">The Verdict</p>
+                <p className="text-base text-white/90 leading-relaxed font-medium text-left">
+                  {finishChirp}
+                </p>
               </div>
             )}
             <div className="w-full max-w-xs space-y-3">
