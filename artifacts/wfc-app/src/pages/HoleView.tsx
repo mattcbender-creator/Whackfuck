@@ -1,11 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock, Trophy, X } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { getWheelItem } from '@/lib/wheel';
+import { db } from '@/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
 import { useToast } from '@/hooks/use-toast';
+
+function ordinal(n: number): string {
+  if (n === 1) return '1st';
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return `${n}th`;
+}
 
 function diffOf(score: number | null, par: number) {
   return score === null ? null : score - par;
@@ -36,14 +46,77 @@ function fmtNet(net: number) {
 
 export default function HoleView() {
   const {
-    teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
-    frontNineConfirmed, wheelSpin,
+    teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
+    frontNineConfirmed, wheelSpin, listTeamsOnce, logEvent,
   } = useWFC();
+  const [, setLocation] = useLocation();
   const [holeIdx, setHoleIdx] = useState(0);
   const [wheelOpen, setWheelOpen] = useState(false);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishPosition, setFinishPosition] = useState<number | null>(null);
+  const [finishLoading, setFinishLoading] = useState(false);
+  const [totalTeams, setTotalTeams] = useState(0);
+  const [hasSubmitted, setHasSubmitted] = useState(() => {
+    try { return localStorage.getItem('wfc-submitted') === 'true'; } catch { return false; }
+  });
+  const finishShownRef = useRef(false);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const { toast } = useToast();
+
+  const markSubmitted = () => {
+    setHasSubmitted(true);
+    try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ }
+  };
+
+  // Clear submitted flag on admin reset
+  useEffect(() => {
+    if (!teamInfo) {
+      setHasSubmitted(false);
+      finishShownRef.current = false;
+      try { localStorage.removeItem('wfc-submitted'); } catch { /* ignore */ }
+    }
+  }, [teamInfo]);
+
+  // Auto-trigger finish modal the first time hole 18 is completed
+  useEffect(() => {
+    if (!(holesPlayed === 18 && !hasSubmitted && !finishShownRef.current)) return;
+    finishShownRef.current = true;
+    const t = setTimeout(() => setFinishOpen(true), 700);
+    return () => clearTimeout(t);
+  }, [holesPlayed, hasSubmitted]);
+
+  const handleSubmitFinal = async () => {
+    if (!teamInfo) return;
+    setFinishLoading(true);
+    // Flush latest score to Firestore so position lookup is accurate
+    if (db) {
+      try {
+        await setDoc(doc(db, 'teams', teamId), {
+          teamName: teamInfo.teamName, player1: teamInfo.player1, player2: teamInfo.player2,
+          scores, netScore, holesPlayed, currentTee,
+          lastUpdated: new Date().toISOString(),
+        }, { merge: true });
+      } catch { /* non-fatal */ }
+    }
+    let pos: number | null = null;
+    let total = 0;
+    try {
+      const snap = await listTeamsOnce();
+      const sorted = [...snap].sort((a, b) => a.netScore - b.netScore);
+      total = sorted.length;
+      const idx = sorted.findIndex(t => t.id === teamId);
+      pos = idx >= 0 ? idx + 1 : null;
+      setTotalTeams(total);
+      setFinishPosition(pos);
+    } catch {
+      setFinishPosition(null);
+    }
+    logEvent({ type: 'finish', teamName: teamInfo.teamName, netScore, position: pos, totalTeams: total });
+    if (netScore <= 0) fireEagleConfetti();
+    setFinishLoading(false);
+    setFinishOpen(true);
+  };
 
   // Auto-jump to first unscored hole on mount
   useEffect(() => {
@@ -100,20 +173,25 @@ export default function HoleView() {
   };
 
   const handleScore = (delta: number) => {
+    if (hasSubmitted) {
+      toast({ title: 'Score locked', description: 'You already submitted your final score.' });
+      return;
+    }
     if (holeLocked) {
-      toast({
-        title: 'Front 9 locked',
-        description: 'You already spun the Item Box — scores 1–9 are final.',
-      });
+      toast({ title: 'Front 9 locked', description: 'You already spun the Item Box — scores 1–9 are final.' });
       return;
     }
     const current = scores[holeIdx];
+    const prevDiff = current !== null ? current - hole.par : null;
     let next = current === null ? hole.par + delta : current + delta;
     if (next < 1) next = 1;
     setScore(holeIdx + 1, next);
     const d = next - hole.par;
     if (d <= -2) fireEagleConfetti();
     else if (d === -1) fireBirdieConfetti();
+    if (teamInfo && d <= -1 && (prevDiff === null || prevDiff > -1)) {
+      logEvent({ type: 'score', subtype: d <= -2 ? 'eagle' : 'birdie', teamName: teamInfo.teamName, hole: holeIdx + 1, score: next, par: hole.par });
+    }
   };
 
   const goPrev = () => setHoleIdx(i => Math.max(0, i - 1));
@@ -386,9 +464,81 @@ export default function HoleView() {
             </div>
           </div>
         )}
+
+        {/* Submit Final Score button — appears when all 18 done */}
+        {holesPlayed === 18 && !hasSubmitted && (
+          <button
+            onClick={handleSubmitFinal}
+            disabled={finishLoading}
+            className="w-full h-16 rounded-2xl bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-yellow-500/30 disabled:opacity-60"
+          >
+            <Trophy className="w-6 h-6" />
+            {finishLoading ? 'Submitting…' : 'Submit Final Score'}
+          </button>
+        )}
+        {hasSubmitted && holesPlayed === 18 && (
+          <div className="w-full h-12 rounded-2xl bg-card border border-primary/30 flex items-center justify-center gap-2">
+            <Trophy className="w-4 h-4 text-primary" />
+            <span className="font-condensed text-sm font-bold text-primary uppercase tracking-widest">Score Submitted</span>
+          </div>
+        )}
       </div>
 
       <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} />
+
+      {/* ── Final Score Modal ── */}
+      {finishOpen && (
+        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur flex flex-col overflow-y-auto">
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 text-center min-h-[100dvh]">
+            <button
+              onClick={() => setFinishOpen(false)}
+              className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+            <div className="mb-6">
+              <Trophy className="w-12 h-12 text-yellow-400 mx-auto mb-3" style={{ filter: 'drop-shadow(0 0 12px #facc15)' }} />
+              <h2 className="font-condensed text-4xl font-black uppercase tracking-widest text-white">Round Complete</h2>
+              <p className="text-sm text-white/50 mt-1 uppercase tracking-widest font-bold">{teamInfo?.teamName}</p>
+            </div>
+            <div className="mb-6">
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">Final Net Score</p>
+              <span
+                className={`font-condensed text-8xl font-black leading-none ${netScore < 0 ? 'text-primary' : netScore > 0 ? 'text-orange-400' : 'text-white'}`}
+                style={netScore < 0 ? { textShadow: '0 0 30px #39FF14' } : {}}
+              >
+                {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
+              </span>
+            </div>
+            {finishPosition !== null && (
+              <div className="mb-8 px-6 py-4 rounded-2xl border border-white/15 bg-white/5 w-full max-w-xs">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">Current Standing</p>
+                <p className="font-condensed text-3xl font-black text-white">
+                  <span className="text-yellow-400">{ordinal(finishPosition)}</span>
+                  <span className="text-white/40 text-lg font-bold"> / {totalTeams} teams</span>
+                </p>
+                {finishPosition === 1 && (
+                  <p className="text-xs text-yellow-400 font-bold mt-1 uppercase tracking-widest">You are leading the tournament</p>
+                )}
+              </div>
+            )}
+            <div className="w-full max-w-xs space-y-3">
+              <button
+                onClick={() => { setFinishOpen(false); markSubmitted(); }}
+                className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
+              >
+                Lock It In
+              </button>
+              <button
+                onClick={() => { setFinishOpen(false); markSubmitted(); setLocation('/leaderboard'); }}
+                className="w-full h-12 rounded-full border border-white/20 text-white/70 font-condensed font-bold text-sm uppercase tracking-widest hover:bg-white/5 transition-colors"
+              >
+                View Full Leaderboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

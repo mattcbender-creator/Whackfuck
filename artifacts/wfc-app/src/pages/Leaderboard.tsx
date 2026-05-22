@@ -1,11 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { Crown, X, Flame, Target, Sparkles, Megaphone } from 'lucide-react';
+import { Crown, X, Flame, Target, Sparkles, Megaphone, Star, Zap, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
 import type { WheelSpinRecord, TargetedByEntry } from '@/lib/store';
+
+interface FeedEvent {
+  id: string;
+  type: string;
+  subtype?: string;
+  teamName?: string;
+  hole?: number;
+  score?: number;
+  par?: number;
+  netScore?: number;
+  position?: number | null;
+  message?: string;
+  tsMs: number;
+}
+
+function formatTicker(e: FeedEvent): string {
+  if (e.type === 'score' && e.teamName && e.hole) {
+    const sub = (e.subtype ?? '').toUpperCase();
+    return `${e.teamName} — ${sub} · Hole ${e.hole}`;
+  }
+  if (e.type === 'finish' && e.teamName) {
+    const net = e.netScore === 0 ? 'E' : (e.netScore ?? 0) > 0 ? `+${e.netScore}` : `${e.netScore}`;
+    return `${e.teamName} finished at ${net}`;
+  }
+  return '';
+}
+
+function timeAgo(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60000) return 'just now';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
 
 
 interface TeamData {
@@ -82,31 +116,63 @@ export default function Leaderboard() {
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(isFirebaseConfigured);
   const [showSetup, setShowSetup] = useState(false);
-  const [broadcastMsg, setBroadcastMsg] = useState<string | null>(null);
   const [broadcastDismissed, setBroadcastDismissed] = useState<string | null>(null);
+  const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
+  const [tickerIdx, setTickerIdx] = useState(0);
+  const prevPositionsRef = useRef<Record<string, number>>({});
+  const [posChanges, setPosChanges] = useState<Record<string, number>>({});
 
-  // ── Listen for admin broadcasts ──
+  // ── Single events listener: powers both broadcast banner and live ticker ──
   useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
-    const q = query(
-      collection(db, 'events'),
-      orderBy('timestamp', 'desc'),
-      limit(1)
-    );
+    const q = query(collection(db, 'events'), orderBy('timestamp', 'desc'), limit(20));
     const unsub = onSnapshot(q, snap => {
-      if (snap.empty) return;
-      const d = snap.docs[0].data();
-      if (d.type === 'broadcast' && d.message) {
-        const key = `${d.message}|${d.timestamp}`;
-        setBroadcastMsg(d.message as string);
-        setBroadcastDismissed(prev => prev === key ? prev : null); // reset dismissed if new msg
-      }
+      const events: FeedEvent[] = snap.docs
+        .filter(d => d.data().type)
+        .map(d => {
+          const data = d.data();
+          return { id: d.id, tsMs: data.timestamp?.toMillis?.() ?? Date.now(), ...data } as FeedEvent;
+        });
+      setFeedEvents(events);
     });
     return () => unsub();
   }, []);
 
-  const broadcastKey = broadcastMsg ? `${broadcastMsg}|` : null;
-  const showBroadcast = broadcastMsg && broadcastDismissed !== broadcastKey;
+  // Derive broadcast and ticker events from the unified feed
+  const latestBroadcast = feedEvents.find(e => e.type === 'broadcast');
+  const tickerEvents = feedEvents.filter(e => e.type === 'score' || e.type === 'finish');
+
+  // Auto-cycle ticker every 3 s
+  useEffect(() => {
+    if (tickerEvents.length <= 1) return;
+    const t = setInterval(() => setTickerIdx(i => (i + 1) % tickerEvents.length), 3000);
+    return () => clearInterval(t);
+  }, [tickerEvents.length]);
+
+  const currentTickerEvent = tickerEvents.length > 0 ? tickerEvents[tickerIdx % tickerEvents.length] : null;
+
+  const broadcastKey = latestBroadcast ? `${latestBroadcast.message}|${latestBroadcast.tsMs}` : null;
+  const showBroadcast = latestBroadcast?.message && broadcastDismissed !== broadcastKey;
+
+  // ── Track position changes ──
+  useEffect(() => {
+    if (teams.length === 0) return;
+    const newPositions: Record<string, number> = {};
+    teams.forEach((team, idx) => { newPositions[team.id] = idx + 1; });
+    if (Object.keys(prevPositionsRef.current).length > 0) {
+      const newChanges: Record<string, number> = {};
+      teams.forEach((team, idx) => {
+        const prevPos = prevPositionsRef.current[team.id];
+        if (prevPos !== undefined && prevPos !== idx + 1) {
+          newChanges[team.id] = prevPos - (idx + 1); // positive = moved up
+        }
+      });
+      if (Object.keys(newChanges).length > 0) {
+        setPosChanges(prev => ({ ...prev, ...newChanges }));
+      }
+    }
+    prevPositionsRef.current = newPositions;
+  }, [teams]);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !db) {
@@ -162,13 +228,39 @@ export default function Leaderboard() {
         <div className="border-b border-primary/40 bg-primary/10 px-4 py-3">
           <div className="max-w-md mx-auto flex items-start gap-3">
             <Megaphone className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-            <p className="flex-1 text-sm font-bold text-foreground leading-snug">{broadcastMsg}</p>
+            <p className="flex-1 text-sm font-bold text-foreground leading-snug">{latestBroadcast?.message}</p>
             <button
-              onClick={() => setBroadcastDismissed(broadcastKey)}
+              onClick={() => setBroadcastDismissed(broadcastKey!)}
               className="shrink-0 text-muted-foreground hover:text-foreground"
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Live Ticker ── */}
+      {currentTickerEvent && (
+        <div className="border-b border-border/60 bg-card/60 px-4 py-2">
+          <div className="max-w-md mx-auto flex items-center gap-2.5">
+            <span className="text-[8px] font-black text-primary uppercase tracking-widest shrink-0 border border-primary/40 rounded px-1 py-0.5">
+              LIVE
+            </span>
+            {currentTickerEvent.type === 'score' && currentTickerEvent.subtype === 'eagle' && (
+              <Zap className="w-3 h-3 text-yellow-400 shrink-0" />
+            )}
+            {currentTickerEvent.type === 'score' && currentTickerEvent.subtype === 'birdie' && (
+              <Star className="w-3 h-3 text-primary shrink-0" />
+            )}
+            {currentTickerEvent.type === 'finish' && (
+              <Flag className="w-3 h-3 text-white/50 shrink-0" />
+            )}
+            <p className="flex-1 text-xs font-bold text-foreground/90 truncate">
+              {formatTicker(currentTickerEvent)}
+            </p>
+            <span className="text-[9px] text-muted-foreground/70 shrink-0">
+              {timeAgo(currentTickerEvent.tsMs)}
+            </span>
           </div>
         </div>
       )}
@@ -212,11 +304,16 @@ export default function Leaderboard() {
               const totalHits = allHits.length;
               return (
                 <div key={team.id} className="grid grid-cols-12 gap-2 p-3 items-center hover:bg-secondary/20 transition-colors">
-                  <div className="col-span-1 flex justify-center">
+                  <div className="col-span-1 flex flex-col justify-center items-center gap-0.5">
                     {idx === 0 ? (
                       <Crown className="w-4 h-4 text-yellow-400" />
                     ) : (
                       <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
+                    )}
+                    {posChanges[team.id] !== undefined && posChanges[team.id] !== 0 && (
+                      <span className={`text-[8px] font-black leading-none ${posChanges[team.id] > 0 ? 'text-primary' : 'text-red-400'}`}>
+                        {posChanges[team.id] > 0 ? `▲${posChanges[team.id]}` : `▼${Math.abs(posChanges[team.id])}`}
+                      </span>
                     )}
                   </div>
                   <div className="col-span-6 flex flex-col gap-1 min-w-0">

@@ -4,7 +4,7 @@ import { db, isFirebaseConfigured } from './firebase';
 import {
   doc, setDoc, onSnapshot, serverTimestamp,
   collection, writeBatch, increment, arrayUnion, query, orderBy, getDocs,
-  runTransaction,
+  runTransaction, addDoc,
 } from 'firebase/firestore';
 import type { WheelItemId } from './wheel';
 
@@ -41,6 +41,7 @@ export interface WFCState {
   applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
   applyEffectToSelf: (delta: number) => void;
   listTeamsOnce: () => Promise<TeamSnapshot[]>;
+  logEvent: (event: Record<string, unknown>) => void;
 }
 
 export interface TeamSnapshot {
@@ -397,6 +398,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const logEvent = (event: Record<string, unknown>) => {
+    if (!isFirebaseConfigured || !db) return;
+    addDoc(collection(db, 'events'), {
+      ...event,
+      timestamp: serverTimestamp(),
+    }).catch(() => { /* non-fatal */ });
+  };
+
   const listTeamsOnce = async (): Promise<TeamSnapshot[]> => {
     if (!isFirebaseConfigured || !db) {
       // Offline: return only ourselves
@@ -446,6 +455,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         applyEffectToOthers,
         applyEffectToSelf,
         listTeamsOnce,
+        logEvent,
       }}
     >
       {children}

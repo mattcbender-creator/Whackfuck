@@ -211,7 +211,7 @@ function pickChirp(scores: (number | null)[], netScore: number): string {
 export default function Scorecard() {
   const {
     teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
-    frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce,
+    frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
   } = useWFC();
   const [, setLocation] = useLocation();
   const [half, setHalf] = useState<Half>('front');
@@ -220,12 +220,22 @@ export default function Scorecard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(() => {
+    try { return localStorage.getItem('wfc-submitted') === 'true'; } catch { return false; }
+  });
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
   const [finishLoading, setFinishLoading] = useState(false);
   const [finishChirp, setFinishChirp] = useState('');
   const [totalTeams, setTotalTeams] = useState(0);
   const { toast } = useToast();
+
+  // Clear submitted flag if admin resets and team is wiped
+  useEffect(() => {
+    if (!teamInfo) {
+      setHasSubmitted(false);
+      try { localStorage.removeItem('wfc-submitted'); } catch { /* ignore */ }
+    }
+  }, [teamInfo]);
 
   // Note: front-9 lock happens INSIDE the wheel modal when the user actually
   // taps "Spin Item Box". Until that moment they can dismiss the modal and
@@ -305,11 +315,23 @@ export default function Scorecard() {
       return;
     }
     const cur = scores[selectedIdx];
+    const prevDiff = cur !== null ? cur - selHole.par : null;
     let next = cur === null ? selHole.par + delta : cur + delta;
     if (next < 1) next = 1;
     setScore(selectedIdx + 1, next);
-    if (next - selHole.par <= -2) fireEagleConfetti();
-    else if (next - selHole.par === -1) fireBirdieConfetti();
+    const newDiff = next - selHole.par;
+    if (newDiff <= -2) fireEagleConfetti();
+    else if (newDiff === -1) fireBirdieConfetti();
+    if (teamInfo && newDiff <= -1 && (prevDiff === null || prevDiff > -1)) {
+      logEvent({
+        type: 'score',
+        subtype: newDiff <= -2 ? 'eagle' : 'birdie',
+        teamName: teamInfo.teamName,
+        hole: selectedIdx + 1,
+        score: next,
+        par: selHole.par,
+      });
+    }
   };
 
   // True if entering a score for this hole would be out-of-order
@@ -348,12 +370,16 @@ export default function Scorecard() {
       } catch { /* non-fatal */ }
     }
     // Fetch leaderboard to find our position
+    let finPos: number | null = null;
+    let finTotal = 0;
     try {
       const snap = await listTeamsOnce();
       const sorted = [...snap].sort((a, b) => a.netScore - b.netScore);
-      const pos = sorted.findIndex(t => t.id === teamId);
-      setFinishPosition(pos >= 0 ? pos + 1 : null);
-      setTotalTeams(sorted.length);
+      const idx = sorted.findIndex(t => t.id === teamId);
+      finPos = idx >= 0 ? idx + 1 : null;
+      finTotal = sorted.length;
+      setFinishPosition(finPos);
+      setTotalTeams(finTotal);
     } catch {
       setFinishPosition(null);
     }
@@ -361,6 +387,9 @@ export default function Scorecard() {
     setFinishLoading(false);
     setFinishOpen(true);
     if (netScore <= 0) fireEagleConfetti();
+    if (teamInfo) {
+      logEvent({ type: 'finish', teamName: teamInfo.teamName, netScore, position: finPos, totalTeams: finTotal });
+    }
   };
 
   // How many more strokes under par needed to reach Tips threshold (-5)
@@ -840,7 +869,7 @@ export default function Scorecard() {
 
             {/* Close */}
             <button
-              onClick={() => { setFinishOpen(false); setHasSubmitted(true); }}
+              onClick={() => { setFinishOpen(false); setHasSubmitted(true); try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ } }}
               className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
             >
               <X className="w-5 h-5 text-white" />
@@ -901,13 +930,13 @@ export default function Scorecard() {
             {/* Actions */}
             <div className="w-full max-w-xs space-y-3">
               <button
-                onClick={() => { setFinishOpen(false); setHasSubmitted(true); }}
+                onClick={() => { setFinishOpen(false); setHasSubmitted(true); try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ } }}
                 className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
               >
                 Back to Scorecard
               </button>
               <button
-                onClick={() => { setFinishOpen(false); setHasSubmitted(true); setLocation('/leaderboard'); }}
+                onClick={() => { setFinishOpen(false); setHasSubmitted(true); try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ } setLocation('/leaderboard'); }}
                 className="w-full h-12 rounded-full border border-white/20 text-white/70 font-condensed font-bold text-sm uppercase tracking-widest hover:bg-white/5 transition-colors"
               >
                 View Full Leaderboard
