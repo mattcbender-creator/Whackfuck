@@ -303,13 +303,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (currentTee === 'tips') {
       toast({
         title: 'Tee unlocked: Tips',
-        description: 'Your scorecard is under par. Next hole plays from the longest yardage.',
+        description: 'Your raw score is under par. Next hole plays from the longest yardage.',
         className: teeToastClass,
       });
     } else {
       toast({
         title: 'Tee switched to Women\u2019s',
-        description: 'Your scorecard is at par or over. Next hole plays from the shortest yardage.',
+        description: 'Your raw score is at or over par. Next hole plays from the shortest yardage.',
         className: teeToastClass,
       });
     }
