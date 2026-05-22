@@ -214,6 +214,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured || !db) return;
     if (!teamInfo) return;
     const ref = doc(db, 'teams', teamId);
+    // Firestore rejects `undefined`. Strip undefined fields from nested
+    // wheelSpin (e.g. targetTeam isn't set for self-only items).
+    let cleanWheelSpin: Record<string, unknown> | null = null;
+    if (wheelSpin) {
+      cleanWheelSpin = {};
+      for (const [k, v] of Object.entries(wheelSpin)) {
+        if (v !== undefined) cleanWheelSpin[k] = v;
+      }
+    }
     setDoc(ref, {
       teamName: teamInfo.teamName,
       player1: teamInfo.player1,
@@ -223,7 +232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       holesPlayed,
       currentTee,
       frontNineConfirmed,
-      wheelSpin,
+      wheelSpin: cleanWheelSpin,
       // wheelAdjustment/booActive/targetedBy are owned by Firestore once any
       // cross-team effect lands — only write them on first creation.
       lastUpdated: serverTimestamp(),
