@@ -167,9 +167,10 @@ export default function Leaderboard() {
           newChanges[team.id] = prevPos - (idx + 1); // positive = moved up
         }
       });
-      if (Object.keys(newChanges).length > 0) {
-        setPosChanges(prev => ({ ...prev, ...newChanges }));
-      }
+      // REPLACE (not merge): only show arrows for the most recent shift.
+      // Merging caused stale ▼ arrows to pile up from older shifts while
+      // newer ▲ moves overwrote each other — net effect was "down only".
+      setPosChanges(newChanges);
     }
     prevPositionsRef.current = newPositions;
   }, [teams]);

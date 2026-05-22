@@ -14,6 +14,7 @@ import Stats from "@/pages/Stats";
 import Admin from "@/pages/Admin";
 import NotFound from "@/pages/not-found";
 import { BottomNav } from "@/components/BottomNav";
+import { LiveTicker } from "@/components/LiveTicker";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ function Router() {
         <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
       </Switch>
+      <LiveTicker />
       <BottomNav />
     </div>
   );
