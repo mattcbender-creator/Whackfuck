@@ -237,9 +237,10 @@ export default function WheelModal({ open, onClose }: Props) {
             <button
               onClick={handleSpin}
               data-testid="button-wheel-spin"
-              className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
+              className="w-full h-16 rounded-full bg-primary text-primary-foreground font-condensed font-black text-xl uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-primary/40 flex items-center justify-center gap-2"
             >
-              Spin the Wheel
+              <Sparkles className="w-6 h-6" />
+              Spin Item Box
             </button>
           </div>
         )}

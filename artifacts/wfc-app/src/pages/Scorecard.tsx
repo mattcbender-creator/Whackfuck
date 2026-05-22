@@ -3,7 +3,7 @@ import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
+import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -86,7 +86,12 @@ export default function Scorecard() {
     if (selectedIdx >= 9 && half !== 'back') setHalf('back');
   }, [selectedIdx, half]);
 
+  // Front 9 is locked once the team has confirmed (so they can't edit after spinning).
+  const isHoleLocked = (idx: number) => frontNineConfirmed && idx < 9;
+  const selLocked = isHoleLocked(selectedIdx);
+
   const handleChange = (delta: number) => {
+    if (selLocked) return;
     const cur = scores[selectedIdx];
     let next = cur === null ? selHole.par + delta : cur + delta;
     if (next < 1) next = 1;
@@ -355,15 +360,26 @@ export default function Scorecard() {
           </span>
         </div>
 
-        {/* ── Confirm Front 9 → trigger Mario Kart wheel ── */}
+        {/* ── Confirm Front 9 → lock + trigger Mario Kart wheel ── */}
         {half === 'front' && front9Complete && !frontNineConfirmed && (
           <button
             onClick={confirmFrontNine}
             data-testid="button-confirm-front-nine"
             className="mt-4 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-base uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
           >
+            <Lock className="w-5 h-5" />
+            Lock Front 9 & Spin Item Box
+          </button>
+        )}
+
+        {/* Re-open the wheel if confirmed but not yet spun (rare — page refresh) */}
+        {frontNineConfirmed && !wheelSpin && (
+          <button
+            onClick={() => setWheelOpen(true)}
+            className="mt-4 w-full h-14 rounded-2xl bg-primary text-primary-foreground font-condensed font-black text-base uppercase tracking-widest flex items-center justify-center gap-2"
+          >
             <Sparkles className="w-5 h-5" />
-            Confirm Front 9 — Spin the Wheel
+            Spin Item Box
           </button>
         )}
 
@@ -420,13 +436,14 @@ export default function Scorecard() {
 
           {/* Score stepper */}
           <div className="px-4 py-4">
-            <div className="flex items-center justify-between bg-background/60 rounded-xl p-2 border border-border/50">
+            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${selLocked ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
               <button
                 data-testid={`score-decrease-hole-${selHole.hole}`}
                 onClick={() => handleChange(-1)}
-                className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground"
+                disabled={selLocked}
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
-                <Minus className="w-6 h-6" />
+                {selLocked ? <Lock className="w-5 h-5" /> : <Minus className="w-6 h-6" />}
               </button>
 
               <div className="flex flex-col items-center min-w-[96px]">
@@ -436,19 +453,27 @@ export default function Scorecard() {
                 >
                   {selScore ?? '—'}
                 </span>
-                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mt-1 h-4">
-                  {scoreLabel(selDiff)}
+                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mt-1 h-4 flex items-center gap-1">
+                  {selLocked && <Lock className="w-3 h-3 text-primary" />}
+                  {selLocked ? 'LOCKED' : scoreLabel(selDiff)}
                 </span>
               </div>
 
               <button
                 data-testid={`score-increase-hole-${selHole.hole}`}
                 onClick={() => handleChange(1)}
-                className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground"
+                disabled={selLocked}
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
-                <Plus className="w-6 h-6" />
+                {selLocked ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
               </button>
             </div>
+            {selLocked && (
+              <p className="text-[10px] text-muted-foreground/80 text-center mt-2 uppercase tracking-widest font-bold">
+                <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5 text-primary" />
+                Front 9 locked after the spin
+              </p>
+            )}
           </div>
 
           {/* Hole navigation */}
