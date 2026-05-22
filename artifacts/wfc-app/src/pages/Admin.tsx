@@ -21,6 +21,8 @@ const DEMO_TEAM_NAMES = [
   'Bunker Bros', 'Fairway Felons', 'Eagle Eyes', 'Slice Society', 'Hook Hooligans',
   'Putt Pirates', 'Tee Time Titans', 'The Shankopotamuses', 'Divot Demons', 'Chip Shots',
   'Iron Sheikhs', 'Wedge Warriors', 'The Yips', 'Lost Ball Legends', 'Cart Path Crew',
+  'Grip It & Rip It', 'Tin Cups', 'Albatross Alliance', 'Rough Riders', 'Pin Seekers',
+  'Green Goblins', 'Stroke of Genius', 'Par-Tee Animals', 'Driving Range Rangers', 'Whiff Whisperers',
 ];
 
 const DEMO_FIRST_NAMES = [
@@ -235,7 +237,7 @@ export default function Admin() {
       toast({ title: 'Firebase not configured', variant: 'destructive' });
       return;
     }
-    const n = Math.max(2, Math.min(20, demoCount));
+    const n = Math.max(2, Math.min(30, demoCount));
     setSeeding(true);
     try {
       const fdb = db;
@@ -658,14 +660,14 @@ export default function Admin() {
               id="demo-count"
               type="range"
               min={2}
-              max={20}
+              max={30}
               value={demoCount}
               onChange={e => setDemoCount(Number(e.target.value))}
               className="w-full accent-primary"
               data-testid="slider-demo-count"
             />
             <div className="flex justify-between text-[9px] text-muted-foreground/60 uppercase tracking-widest">
-              <span>2</span><span>20</span>
+              <span>2</span><span>30</span>
             </div>
           </div>
 
