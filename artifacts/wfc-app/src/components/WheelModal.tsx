@@ -41,6 +41,7 @@ export default function WheelModal({ open, onClose }: Props) {
   const [landed, setLanded] = useState<WheelItem | null>(null);
   const [teams, setTeams] = useState<TeamSnapshot[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false); // Two-tap confirm before spin
   const spinTimer = useRef<number | null>(null);
   const spinLockRef = useRef(false); // Guards against rapid double-taps of spin
 
@@ -59,6 +60,7 @@ export default function WheelModal({ open, onClose }: Props) {
         setLanded(null);
       }
       setError(null);
+      setConfirming(false);
       spinLockRef.current = false;
     }
     return () => {
@@ -256,7 +258,7 @@ export default function WheelModal({ open, onClose }: Props) {
         )}
 
         {/* INTRO */}
-        {phase === 'intro' && (
+        {phase === 'intro' && !confirming && (
           <div className="max-w-sm w-full text-center">
             <h2 className="font-condensed text-3xl font-black text-white uppercase tracking-wider mb-2">
               Front 9 Done
@@ -267,7 +269,7 @@ export default function WheelModal({ open, onClose }: Props) {
               <span className="text-white/50 text-xs">Once you tap spin, your front 9 scores are locked.</span>
             </p>
             <button
-              onClick={handleSpin}
+              onClick={() => setConfirming(true)}
               data-testid="button-wheel-spin"
               className="w-full h-16 rounded-full bg-primary text-primary-foreground font-condensed font-black text-xl uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-primary/40 flex items-center justify-center gap-2"
             >
@@ -280,6 +282,38 @@ export default function WheelModal({ open, onClose }: Props) {
               className="mt-3 text-white/50 text-xs font-bold uppercase tracking-widest hover:text-white/80 transition-colors py-2"
             >
               Wait — let me fix a front 9 score first
+            </button>
+          </div>
+        )}
+
+        {/* INTRO → CONFIRM (final chance to back out before locking) */}
+        {phase === 'intro' && confirming && (
+          <div className="max-w-sm w-full text-center">
+            <div className="rounded-2xl border-2 border-red-500/60 bg-red-950/30 px-5 py-5 mb-5">
+              <h2 className="font-condensed text-2xl font-black text-white uppercase tracking-wider mb-2">
+                Lock Front 9?
+              </h2>
+              <p className="text-sm text-white/85 leading-relaxed">
+                Tapping <span className="font-black text-primary">SPIN NOW</span> will permanently lock your front 9 scores and trigger the wheel.
+              </p>
+              <p className="text-xs text-white/60 mt-3">
+                Double-check holes 1–9 are correct. There is no undo.
+              </p>
+            </div>
+            <button
+              onClick={handleSpin}
+              data-testid="button-wheel-spin-confirm"
+              className="w-full h-16 rounded-full bg-primary text-primary-foreground font-condensed font-black text-xl uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-primary/40 flex items-center justify-center gap-2"
+            >
+              <Sparkles className="w-6 h-6" />
+              Spin Now — Lock In
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              data-testid="button-wheel-cancel-confirm"
+              className="mt-3 text-white/70 text-sm font-bold uppercase tracking-widest hover:text-white transition-colors py-2"
+            >
+              Back — recheck scores
             </button>
           </div>
         )}

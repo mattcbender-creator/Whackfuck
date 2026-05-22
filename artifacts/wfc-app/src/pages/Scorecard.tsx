@@ -39,7 +39,7 @@ function scoreLabel(diff: number | null) {
 export default function Scorecard() {
   const {
     teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
-    frontNineConfirmed, wheelSpin, confirmFrontNine,
+    frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy,
   } = useWFC();
   const [half, setHalf] = useState<Half>('front');
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -89,6 +89,10 @@ export default function Scorecard() {
   const isHoleLocked = (idx: number) => frontNineConfirmed && idx < 9;
   const selLocked = isHoleLocked(selectedIdx);
 
+  // First hole that hasn't been scored yet (0-17). 18 means all scored.
+  const firstUnscoredIdx = scores.findIndex(s => s === null);
+  const firstUnscored = firstUnscoredIdx === -1 ? 18 : firstUnscoredIdx;
+
   // Gate any attempt to move into the back 9 — must spin the Item Box first.
   const tryGoToBack = (targetIdx: number): boolean => {
     if (!front9Complete) {
@@ -110,6 +114,17 @@ export default function Scorecard() {
 
   const handleChange = (delta: number) => {
     if (selLocked) return;
+    // STRICT IN-ORDER: cannot enter a score for a hole when any prior hole is
+    // still blank. Snap them back to the first unscored hole and tell them.
+    if (selectedIdx > firstUnscored) {
+      toast({
+        title: `Score hole ${firstUnscored + 1} first`,
+        description: 'Enter scores in order — no skipping holes.',
+        variant: 'destructive',
+      });
+      setSelectedIdx(firstUnscored);
+      return;
+    }
     const cur = scores[selectedIdx];
     let next = cur === null ? selHole.par + delta : cur + delta;
     if (next < 1) next = 1;
@@ -117,6 +132,10 @@ export default function Scorecard() {
     if (next - selHole.par <= -2) fireEagleConfetti();
     else if (next - selHole.par === -1) fireBirdieConfetti();
   };
+
+  // True if entering a score for this hole would be out-of-order
+  const isOutOfOrder = (idx: number) => idx > firstUnscored;
+  const selOutOfOrder = isOutOfOrder(selectedIdx);
 
   const handleSync = async () => {
     if (!db || !teamInfo) return;
@@ -397,25 +416,59 @@ export default function Scorecard() {
           </button>
         )}
 
-        {/* Show what you spun (subtle) */}
+        {/* Show what you spun — tap to re-open the wheel modal for details */}
         {spunItem && (
           <button
-            onClick={() => setWheelOpen(false)}
-            className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-card border border-border"
+            onClick={() => setWheelOpen(true)}
+            data-testid="button-show-spun-item"
+            className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2"
+            style={{
+              background: `linear-gradient(135deg, ${spunItem.color}22, transparent)`,
+              borderColor: `${spunItem.color}66`,
+            }}
           >
             <div
-              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 border border-white/10"
+              className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 border border-white/20 shadow-lg"
               style={{ background: spunItem.color, color: spunItem.textColor }}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-5 h-5" />
             </div>
             <div className="text-left min-w-0 flex-1">
-              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">You spun</p>
-              <p className="font-condensed text-base font-black uppercase tracking-wider text-foreground truncate">
+              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Your Item</p>
+              <p className="font-condensed text-lg font-black uppercase tracking-wider text-foreground truncate">
                 {spunItem.label}
               </p>
+              <p className="text-[10px] text-muted-foreground/80 truncate">{spunItem.description}</p>
             </div>
           </button>
+        )}
+
+        {/* Show hits received from other teams (so people know they got smacked) */}
+        {targetedBy.length > 0 && (
+          <div className="mt-3 rounded-2xl bg-red-950/30 border border-red-900/50 px-4 py-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-red-400 mb-2">
+              Hits Received · +{targetedBy.length} stroke{targetedBy.length === 1 ? '' : 's'} total
+            </p>
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {[...targetedBy].sort((a, b) => b.at - a.at).map((hit, i) => {
+                const item = getWheelItem(hit.item);
+                return (
+                  <div key={`${hit.fromTeam}-${hit.at}-${i}`} className="flex items-center gap-2 text-xs">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ background: item?.color ?? '#666' }}
+                    />
+                    <span className="font-bold text-foreground/90 truncate flex-1">
+                      {hit.fromTeam}
+                    </span>
+                    <span className="text-muted-foreground/70 uppercase tracking-wider text-[10px] shrink-0">
+                      {item?.label ?? hit.item}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 
@@ -450,11 +503,11 @@ export default function Scorecard() {
 
           {/* Score stepper */}
           <div className="px-4 py-4">
-            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${selLocked ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
+            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${selLocked || selOutOfOrder ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
               <button
                 data-testid={`score-decrease-hole-${selHole.hole}`}
                 onClick={() => handleChange(-1)}
-                disabled={selLocked}
+                disabled={selLocked || selOutOfOrder}
                 className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
                 {selLocked ? <Lock className="w-5 h-5" /> : <Minus className="w-6 h-6" />}
@@ -469,14 +522,14 @@ export default function Scorecard() {
                 </span>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mt-1 h-4 flex items-center gap-1">
                   {selLocked && <Lock className="w-3 h-3 text-primary" />}
-                  {selLocked ? 'LOCKED' : scoreLabel(selDiff)}
+                  {selLocked ? 'LOCKED' : selOutOfOrder ? 'BLOCKED' : scoreLabel(selDiff)}
                 </span>
               </div>
 
               <button
                 data-testid={`score-increase-hole-${selHole.hole}`}
                 onClick={() => handleChange(1)}
-                disabled={selLocked}
+                disabled={selLocked || selOutOfOrder}
                 className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
                 {selLocked ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
@@ -487,6 +540,14 @@ export default function Scorecard() {
                 <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5 text-primary" />
                 Front 9 locked after the spin
               </p>
+            )}
+            {selOutOfOrder && !selLocked && (
+              <button
+                onClick={() => setSelectedIdx(firstUnscored)}
+                className="block mx-auto mt-2 text-[10px] text-primary/90 hover:text-primary uppercase tracking-widest font-bold"
+              >
+                Score hole {firstUnscored + 1} first →
+              </button>
             )}
           </div>
 
