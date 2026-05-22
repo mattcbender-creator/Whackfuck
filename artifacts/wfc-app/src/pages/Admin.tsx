@@ -91,7 +91,7 @@ export default function Admin() {
     setSeeding(true);
     try {
       const fdb = db;
-      // First wipe any existing demo_* teams so re-seeding doesn't pile up.
+      // First wipe any existing demo teams so re-seeding doesn't pile up.
       const existing = await getDocs(query(collection(fdb, 'teams'), where('isDemo', '==', true)));
       if (!existing.empty) {
         const wipeBatch = writeBatch(fdb);
@@ -101,50 +101,171 @@ export default function Admin() {
 
       const names = shuffle(DEMO_TEAM_NAMES).slice(0, n);
       const firsts = shuffle(DEMO_FIRST_NAMES);
-      const batch = writeBatch(fdb);
       const now = Date.now();
 
-      names.forEach((teamName, i) => {
-        // Random progress through the course: 1-18 holes complete
+      // ── Phase 1: build base team data ──────────────────────────────────────
+      interface DemoTeam {
+        id: string;
+        teamName: string;
+        player1: string;
+        player2: string;
+        scores: (number | null)[];
+        holesPlayed: number;
+        frontNineConfirmed: boolean;
+        wheelSpin: { item: WheelItemId; at: number; targetTeam?: string } | null;
+        wheelAdjustment: number;
+        netScore: number;
+        currentTee: string;
+        targetedBy: { item: WheelItemId; fromTeam: string; at: number }[];
+      }
+
+      const teams: DemoTeam[] = names.map((teamName, i) => {
         const holesPlayed = 1 + Math.floor(Math.random() * 18);
         const scores: (number | null)[] = Array(18).fill(null);
         for (let h = 0; h < holesPlayed; h++) {
           scores[h] = randomHoleScore(HOLES[h].par);
         }
         const playedPar = HOLES.slice(0, holesPlayed).reduce((s, h) => s + h.par, 0);
-        const playedScore = scores.slice(0, holesPlayed).reduce<number>(
-          (s, v) => s + (v ?? 0), 0
-        );
+        const playedScore = scores.slice(0, holesPlayed).reduce<number>((s, v) => s + (v ?? 0), 0);
         const rawNet = playedScore - playedPar;
-        const netScore = rawNet; // demo teams start with no wheelAdjustment
-        const currentTee = netScore <= -5 ? 'tips' : 'womens';
-
-        // Teams past hole 9 already spun the wheel — random item, recent timestamp.
         const spun = holesPlayed >= 9;
-        const wheelItem: WheelItemId | null = spun
-          ? WHEEL_ITEMS[pickRandomIndex()].id
-          : null;
-
-        const ref = doc(fdb, 'teams', `demo_${i}_${now}`);
-        batch.set(ref, {
+        const wheelItemId: WheelItemId | null = spun ? WHEEL_ITEMS[pickRandomIndex()].id : null;
+        return {
+          id: `demo_${i}_${now}`,
           teamName,
           player1: firsts[i * 2 % firsts.length],
           player2: firsts[(i * 2 + 1) % firsts.length],
           scores,
-          netScore,
           holesPlayed,
-          currentTee,
           frontNineConfirmed: spun,
-          wheelSpin: wheelItem
-            ? { item: wheelItem, at: now - Math.floor(Math.random() * 1000 * 60 * 30) }
+          wheelSpin: wheelItemId
+            ? { item: wheelItemId, at: now - Math.floor(Math.random() * 1000 * 60 * 30) }
             : null,
           wheelAdjustment: 0,
+          netScore: rawNet,
+          currentTee: rawNet <= -5 ? 'tips' : 'womens',
           targetedBy: [],
+        };
+      });
+
+      // ── Phase 2: apply wheel effects so scores & hit-badges match spins ────
+      for (const spinner of teams) {
+        if (!spinner.wheelSpin) continue;
+        const { item, at } = spinner.wheelSpin;
+        const others = teams.filter(t => t.id !== spinner.id);
+        const fromTeam = spinner.teamName;
+
+        const hit = (t: DemoTeam, src: WheelItemId) => {
+          t.wheelAdjustment += 1;
+          t.netScore += 1;
+          t.targetedBy.push({ item: src, fromTeam, at });
+        };
+
+        switch (item) {
+          case 'lightning':
+            // All other teams +1
+            for (const t of others) hit(t, 'lightning');
+            break;
+          case 'boo': {
+            // Steal: random other +1, self -1
+            const target = pick(others);
+            if (target) {
+              hit(target, 'boo');
+              spinner.wheelSpin.targetTeam = target.teamName;
+            }
+            spinner.wheelAdjustment -= 1;
+            spinner.netScore -= 1;
+            break;
+          }
+          case 'mushroom':
+            // Self -1
+            spinner.wheelAdjustment -= 1;
+            spinner.netScore -= 1;
+            break;
+          case 'super_star':
+            // Self -2
+            spinner.wheelAdjustment -= 2;
+            spinner.netScore -= 2;
+            break;
+          case 'green_shell': {
+            // Random other +1
+            const target = pick(others);
+            if (target) {
+              hit(target, 'green_shell');
+              spinner.wheelSpin.targetTeam = target.teamName;
+            }
+            break;
+          }
+          case 'red_shell': {
+            // Random other +1 (picker in real game, random for demo)
+            const target = pick(others);
+            if (target) {
+              hit(target, 'red_shell');
+              spinner.wheelSpin.targetTeam = target.teamName;
+            }
+            break;
+          }
+          case 'blue_shell': {
+            // Leader +1 (or self if leading)
+            const sorted = [...teams].sort((a, b) => a.netScore - b.netScore);
+            const leader = sorted[0];
+            if (leader) {
+              if (leader.id === spinner.id) {
+                spinner.wheelAdjustment += 1;
+                spinner.netScore += 1;
+              } else {
+                hit(leader, 'blue_shell');
+              }
+              spinner.wheelSpin.targetTeam = leader.teamName;
+            }
+            break;
+          }
+          case 'banana': {
+            // Random team behind (fewer holes played) +1, fizzles if none
+            const behind = others.filter(t => t.holesPlayed < spinner.holesPlayed);
+            const target = pick(behind);
+            if (target) {
+              hit(target, 'banana');
+              spinner.wheelSpin.targetTeam = target.teamName;
+            }
+            break;
+          }
+        }
+      }
+
+      // ── Phase 3: recompute currentTee now that adjustments are final ───────
+      for (const t of teams) {
+        t.currentTee = t.netScore <= -5 ? 'tips' : 'womens';
+      }
+
+      // ── Phase 4: write to Firestore ────────────────────────────────────────
+      const batch = writeBatch(fdb);
+      for (const t of teams) {
+        const ref = doc(fdb, 'teams', t.id);
+        // Clean wheelSpin: strip undefined fields (Firestore rejects them)
+        let cleanSpin: Record<string, unknown> | null = null;
+        if (t.wheelSpin) {
+          cleanSpin = {};
+          for (const [k, v] of Object.entries(t.wheelSpin)) {
+            if (v !== undefined) cleanSpin[k] = v;
+          }
+        }
+        batch.set(ref, {
+          teamName: t.teamName,
+          player1: t.player1,
+          player2: t.player2,
+          scores: t.scores,
+          netScore: t.netScore,
+          holesPlayed: t.holesPlayed,
+          currentTee: t.currentTee,
+          frontNineConfirmed: t.frontNineConfirmed,
+          wheelSpin: cleanSpin,
+          wheelAdjustment: t.wheelAdjustment,
+          targetedBy: t.targetedBy,
           isDemo: true,
           lastUpdated: serverTimestamp(),
         });
-      });
-
+      }
       await batch.commit();
       toast({
         title: `Seeded ${n} demo teams`,
