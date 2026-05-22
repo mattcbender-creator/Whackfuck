@@ -246,20 +246,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // be replayed from the Firestore IndexedDB cache and the snapshot listener
     // will resurrect it locally, making the next spin appear non-random.
     if (isFirebaseConfigured && db) {
-      const ref = doc(db, 'teams', teamId);
-      setDoc(ref, {
-        teamName: info.teamName,
-        player1: info.player1,
-        player2: info.player2,
-        scores: Array(18).fill(null),
-        netScore: 0,
-        holesPlayed: 0,
-        currentTee: 'womens',
-        frontNineConfirmed: false,
-        wheelSpin: null,
-        wheelAdjustment: 0,
-        targetedBy: [],
-      }, { merge: true }).catch(() => {});
+      const fdb = db;
+      const ref = doc(fdb, 'teams', teamId);
+      // Fire-and-forget: scan for retroactive lightning strikes from teams that
+      // spun BEFORE this team registered. Late joiners must still take the hit.
+      (async () => {
+        let initialWheelAdj = 0;
+        let initialTargetedBy: TargetedByEntry[] = [];
+        try {
+          const teamsSnap = await getDocs(collection(fdb, 'teams'));
+          const lightningTeams = teamsSnap.docs.filter(
+            d => d.id !== teamId && (d.data()?.wheelSpin as { item?: string } | undefined)?.item === 'lightning'
+          );
+          if (lightningTeams.length > 0) {
+            initialWheelAdj = lightningTeams.length;
+            initialTargetedBy = lightningTeams.map(d => ({
+              item: 'lightning' as WheelItemId,
+              fromTeam: (d.data().teamName as string | undefined) ?? 'Unknown',
+              at: ((d.data().wheelSpin as { at?: number } | undefined)?.at) ?? Date.now(),
+            }));
+            setWheelAdjustment(initialWheelAdj);
+            setTargetedBy(initialTargetedBy);
+            saveToLocal({ wheelAdjustment: initialWheelAdj, targetedBy: initialTargetedBy });
+          }
+        } catch { /* non-fatal — fall back to zero adjustment */ }
+        setDoc(ref, {
+          teamName: info.teamName,
+          player1: info.player1,
+          player2: info.player2,
+          scores: Array(18).fill(null),
+          netScore: initialWheelAdj,
+          holesPlayed: 0,
+          currentTee: 'womens',
+          frontNineConfirmed: false,
+          wheelSpin: null,
+          wheelAdjustment: initialWheelAdj,
+          targetedBy: initialTargetedBy,
+        }, { merge: true }).catch(() => {});
+      })();
     }
   };
 

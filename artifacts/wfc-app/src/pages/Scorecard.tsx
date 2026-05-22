@@ -220,6 +220,7 @@ export default function Scorecard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
   const [finishLoading, setFinishLoading] = useState(false);
   const [finishChirp, setFinishChirp] = useState('');
@@ -678,7 +679,7 @@ export default function Scorecard() {
         )}
 
         {/* ── Submit Final Score ── */}
-        {holesPlayed === 18 && (
+        {holesPlayed === 18 && !hasSubmitted && (
           <button
             onClick={handleSubmitFinal}
             disabled={finishLoading}
@@ -839,7 +840,7 @@ export default function Scorecard() {
 
             {/* Close */}
             <button
-              onClick={() => setFinishOpen(false)}
+              onClick={() => { setFinishOpen(false); setHasSubmitted(true); }}
               className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
             >
               <X className="w-5 h-5 text-white" />
@@ -900,13 +901,13 @@ export default function Scorecard() {
             {/* Actions */}
             <div className="w-full max-w-xs space-y-3">
               <button
-                onClick={() => setFinishOpen(false)}
+                onClick={() => { setFinishOpen(false); setHasSubmitted(true); }}
                 className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
               >
                 Back to Scorecard
               </button>
               <button
-                onClick={() => { setFinishOpen(false); setLocation('/leaderboard'); }}
+                onClick={() => { setFinishOpen(false); setHasSubmitted(true); setLocation('/leaderboard'); }}
                 className="w-full h-12 rounded-full border border-white/20 text-white/70 font-condensed font-bold text-sm uppercase tracking-widest hover:bg-white/5 transition-colors"
               >
                 View Full Leaderboard

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { Crown, X, Flame, Target, Sparkles } from 'lucide-react';
+import { Crown, X, Flame, Target, Sparkles, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
 import type { WheelSpinRecord, TargetedByEntry } from '@/lib/store';
@@ -82,6 +82,31 @@ export default function Leaderboard() {
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(isFirebaseConfigured);
   const [showSetup, setShowSetup] = useState(false);
+  const [broadcastMsg, setBroadcastMsg] = useState<string | null>(null);
+  const [broadcastDismissed, setBroadcastDismissed] = useState<string | null>(null);
+
+  // ── Listen for admin broadcasts ──
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const q = query(
+      collection(db, 'events'),
+      orderBy('timestamp', 'desc'),
+      limit(1)
+    );
+    const unsub = onSnapshot(q, snap => {
+      if (snap.empty) return;
+      const d = snap.docs[0].data();
+      if (d.type === 'broadcast' && d.message) {
+        const key = `${d.message}|${d.timestamp}`;
+        setBroadcastMsg(d.message as string);
+        setBroadcastDismissed(prev => prev === key ? prev : null); // reset dismissed if new msg
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const broadcastKey = broadcastMsg ? `${broadcastMsg}|` : null;
+  const showBroadcast = broadcastMsg && broadcastDismissed !== broadcastKey;
 
   useEffect(() => {
     if (!isFirebaseConfigured || !db) {
@@ -131,6 +156,22 @@ export default function Leaderboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Broadcast Banner ── */}
+      {showBroadcast && (
+        <div className="border-b border-primary/40 bg-primary/10 px-4 py-3">
+          <div className="max-w-md mx-auto flex items-start gap-3">
+            <Megaphone className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+            <p className="flex-1 text-sm font-bold text-foreground leading-snug">{broadcastMsg}</p>
+            <button
+              onClick={() => setBroadcastDismissed(broadcastKey)}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-md mx-auto p-4">
         {!isFirebaseConfigured && (
