@@ -226,6 +226,7 @@ export default function Scorecard() {
   const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
+  const [confirmFinishOpen, setConfirmFinishOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(() => {
     try { return localStorage.getItem('wfc-submitted') === 'true'; } catch { return false; }
@@ -714,10 +715,10 @@ export default function Scorecard() {
           </div>
         )}
 
-        {/* ── Submit Final Score ── */}
+        {/* ── Submit Final Score (opens a confirmation first, never auto-locks) ── */}
         {holesPlayed === 18 && !hasSubmitted && (
           <button
-            onClick={handleSubmitFinal}
+            onClick={() => setConfirmFinishOpen(true)}
             disabled={finishLoading}
             data-testid="button-submit-final"
             className="mt-4 w-full h-16 rounded-2xl bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-yellow-500/30 disabled:opacity-60"
@@ -868,6 +869,62 @@ export default function Scorecard() {
 
       {/* ── Mario Kart Item Wheel ── */}
       <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} />
+
+      {/* ── Final Submit CONFIRMATION (gate before the actual lock) ── */}
+      {confirmFinishOpen && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/85 backdrop-blur flex items-center justify-center px-6"
+          onClick={() => !finishLoading && setConfirmFinishOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-card border border-yellow-500/40 rounded-3xl p-6 shadow-2xl shadow-yellow-500/10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-full bg-yellow-500/15 border border-yellow-500/40 flex items-center justify-center mb-3">
+                <Trophy className="w-7 h-7 text-yellow-400" />
+              </div>
+              <h3 className="font-condensed text-2xl font-black uppercase tracking-widest text-foreground">
+                Lock In Your Round?
+              </h3>
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                Once you submit, your scores are final and sent to the leaderboard. You won't be able to change them.
+              </p>
+              <div className="mt-4 px-5 py-3 rounded-2xl bg-background/50 border border-border/60">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Final Net</p>
+                <span
+                  className={`font-condensed text-5xl font-black leading-none ${
+                    netScore < 0 ? 'text-primary' : netScore > 0 ? 'text-orange-400' : 'text-foreground'
+                  }`}
+                >
+                  {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={async () => {
+                  setConfirmFinishOpen(false);
+                  await handleSubmitFinal();
+                }}
+                disabled={finishLoading}
+                data-testid="button-confirm-final"
+                className="w-full h-14 rounded-full bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-condensed font-black text-base uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                <Trophy className="w-5 h-5" />
+                {finishLoading ? 'Submitting…' : 'Yes, Lock It In'}
+              </button>
+              <button
+                onClick={() => setConfirmFinishOpen(false)}
+                disabled={finishLoading}
+                className="w-full h-11 rounded-full border border-border text-muted-foreground font-condensed font-bold text-sm uppercase tracking-widest hover:bg-white/5 transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Final Score Submission Modal ── */}
       {finishOpen && (
