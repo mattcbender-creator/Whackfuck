@@ -48,10 +48,9 @@ export default function Scorecard() {
   const [wheelOpen, setWheelOpen] = useState(false);
   const { toast } = useToast();
 
-  // Auto-open wheel as soon as the team confirms the front 9 (and hasn't spun).
-  useEffect(() => {
-    if (frontNineConfirmed && !wheelSpin) setWheelOpen(true);
-  }, [frontNineConfirmed, wheelSpin]);
+  // Note: front-9 lock happens INSIDE the wheel modal when the user actually
+  // taps "Spin Item Box". Until that moment they can dismiss the modal and
+  // edit their front-9 scores.
 
   const front9Complete = scores.slice(0, 9).every(s => s !== null);
   const spunItem = getWheelItem(wheelSpin?.item);
@@ -101,13 +100,8 @@ export default function Scorecard() {
       return false;
     }
     if (!wheelSpin) {
-      // Confirm (if not yet) and force the wheel open. Navigation will resume after the spin.
-      if (!frontNineConfirmed) confirmFrontNine();
+      // Just open the wheel. Locking happens inside the modal when they actually spin.
       setWheelOpen(true);
-      toast({
-        title: 'Spin the Item Box',
-        description: 'You need to spin before starting the back 9.',
-      });
       return false;
     }
     setSelectedIdx(targetIdx);
@@ -389,23 +383,12 @@ export default function Scorecard() {
           </span>
         </div>
 
-        {/* ── Confirm Front 9 → lock + trigger Mario Kart wheel ── */}
-        {half === 'front' && front9Complete && !frontNineConfirmed && (
-          <button
-            onClick={confirmFrontNine}
-            data-testid="button-confirm-front-nine"
-            className="mt-4 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-base uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
-          >
-            <Lock className="w-5 h-5" />
-            Lock Front 9 & Spin Item Box
-          </button>
-        )}
-
-        {/* Re-open the wheel if confirmed but not yet spun (rare — page refresh) */}
-        {frontNineConfirmed && !wheelSpin && (
+        {/* ── Front 9 complete → offer to open Item Box (no auto-lock) ── */}
+        {half === 'front' && front9Complete && !wheelSpin && (
           <button
             onClick={() => setWheelOpen(true)}
-            className="mt-4 w-full h-14 rounded-2xl bg-primary text-primary-foreground font-condensed font-black text-base uppercase tracking-widest flex items-center justify-center gap-2"
+            data-testid="button-confirm-front-nine"
+            className="mt-4 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-base uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
           >
             <Sparkles className="w-5 h-5" />
             Spin Item Box

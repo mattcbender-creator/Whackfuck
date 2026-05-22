@@ -32,6 +32,7 @@ function iconFor(id: WheelItemId) {
 export default function WheelModal({ open, onClose }: Props) {
   const {
     teamId, teamInfo, netScore,
+    confirmFrontNine, frontNineConfirmed,
     recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
   } = useWFC();
 
@@ -58,6 +59,8 @@ export default function WheelModal({ open, onClose }: Props) {
 
   const handleSpin = async () => {
     if (phase !== 'intro') return;
+    // LOCK THE FRONT 9 NOW — the moment they commit to spinning, edits stop.
+    if (!frontNineConfirmed) confirmFrontNine();
     // Load teams snapshot synchronously so targeting uses fresh data
     // (don't rely on React state being updated by the time spin resolves).
     let snap: TeamSnapshot[] = [];
@@ -182,11 +185,12 @@ export default function WheelModal({ open, onClose }: Props) {
             Mario Kart Turn
           </span>
         </div>
-        {phase === 'applied' && (
+        {(phase === 'intro' || phase === 'applied') && (
           <button
             onClick={onClose}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
             data-testid="button-wheel-close"
+            aria-label="Close"
           >
             <X className="w-5 h-5 text-white" />
           </button>
@@ -229,10 +233,12 @@ export default function WheelModal({ open, onClose }: Props) {
         {phase === 'intro' && (
           <div className="max-w-sm w-full text-center">
             <h2 className="font-condensed text-3xl font-black text-white uppercase tracking-wider mb-2">
-              Front 9 Locked In
+              Front 9 Done
             </h2>
             <p className="text-sm text-white/70 mb-6 leading-relaxed">
-              Spin the item wheel. Whatever you land on applies immediately to your back 9 — or to another team. Good luck.
+              Spin the Item Box to unlock the back 9. Whatever you land on applies immediately — to you or to another team.
+              <br />
+              <span className="text-white/50 text-xs">Once you tap spin, your front 9 scores are locked.</span>
             </p>
             <button
               onClick={handleSpin}
@@ -241,6 +247,13 @@ export default function WheelModal({ open, onClose }: Props) {
             >
               <Sparkles className="w-6 h-6" />
               Spin Item Box
+            </button>
+            <button
+              onClick={onClose}
+              data-testid="button-wheel-edit-front-nine"
+              className="mt-3 text-white/50 text-xs font-bold uppercase tracking-widest hover:text-white/80 transition-colors py-2"
+            >
+              Wait — let me fix a front 9 score first
             </button>
           </div>
         )}
