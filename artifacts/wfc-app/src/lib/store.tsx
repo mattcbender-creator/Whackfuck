@@ -37,6 +37,8 @@ export interface WFCState {
   targetedBy: TargetedByEntry[];
   hasSubmitted: boolean;
   submittedAt: number | null;
+  serverTeamMissing: boolean;
+  resetDevice: () => void;
   setTeamInfo: (info: TeamInfo) => void;
   setScore: (hole: number, score: number | null) => void;
   resetScores: () => void;
@@ -87,6 +89,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
+  // True once we've confirmed (via a server-authoritative snapshot) that the
+  // team doc does NOT exist on Firestore. Used to power the "Start fresh on
+  // this device" escape hatch — only shown when the server has clearly
+  // dropped this team (e.g. admin deleted them), so genuinely-submitted
+  // teams can't accidentally unlock themselves.
+  const [serverTeamMissing, setServerTeamMissing] = useState(false);
   const hydratedRef = useRef(false);
 
   // ── Hydrate from localStorage ──
@@ -138,7 +146,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         lockResolvedRef.current = true;
         setLockResolved(true);
       }
-      if (!snap.exists()) return;
+      // Only trust missing-doc snapshots that came from the SERVER, not the
+      // local Firestore cache. Otherwise a cold-boot cache snapshot can
+      // false-positive `serverTeamMissing` for a fraction of a second and
+      // briefly expose the "Start Fresh" escape hatch to genuinely
+      // submitted teams.
+      const serverConfirmed = snap.metadata.fromCache === false;
+      if (!snap.exists()) {
+        if (serverConfirmed) {
+          // Server-confirmed: no doc for this teamId. Could mean (a) never
+          // registered, or (b) admin deleted the team. Either way, surface
+          // this so the Home screen can offer a recovery path for a stale
+          // hasSubmitted=true device.
+          setServerTeamMissing(prev => prev ? prev : true);
+        }
+        return;
+      }
+      // Doc exists — clear the missing flag (and only trust this when
+      // server-confirmed, to symmetrically avoid cache flicker).
+      if (serverConfirmed) {
+        setServerTeamMissing(prev => prev ? false : prev);
+      }
       const data = snap.data();
       if (typeof data.wheelAdjustment === 'number') {
         setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
@@ -274,14 +302,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       '[&>div>div:first-child]:uppercase [&>div>div:first-child]:tracking-widest';
     if (currentTee === 'tips') {
       toast({
-        title: 'Tee moved to Tips — you went under par',
-        description: 'Your scorecard is below par. Play the longest yardage from here on.',
+        title: 'Tee unlocked: Tips',
+        description: 'Your scorecard is under par. Next hole plays from the longest yardage.',
         className: teeToastClass,
       });
     } else {
       toast({
-        title: 'Back to the Women\u2019s tees',
-        description: 'Your scorecard is back at par or over. Play the shortest yardage.',
+        title: 'Tee switched to Women\u2019s',
+        description: 'Your scorecard is at par or over. Next hole plays from the shortest yardage.',
         className: teeToastClass,
       });
     }
@@ -543,6 +571,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }).catch(() => { /* non-fatal */ });
   };
 
+  // Escape hatch: wipe ALL local state for this device and reload. Used by
+  // the Home screen when a device is locked (hasSubmitted=true) but the
+  // server has no doc for this teamId (admin deleted them, or test data).
+  // Genuinely-submitted teams whose server doc still exists won't see the
+  // button that triggers this, so the submission lock stays sticky.
+  const resetDevice = () => {
+    try {
+      localStorage.removeItem(STORE_KEY);
+      localStorage.removeItem(TEAM_ID_KEY);
+      localStorage.removeItem(JOINED_AT_KEY);
+      localStorage.removeItem('wfc-submitted');
+    } catch { /* ignore */ }
+    window.location.reload();
+  };
+
   const listTeamsOnce = async (): Promise<TeamSnapshot[]> => {
     if (!isFirebaseConfigured || !db) {
       // Offline: return only ourselves
@@ -581,6 +624,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         netScore,
         rawNet,
         holesPlayed,
+        serverTeamMissing,
+        resetDevice,
         frontNineConfirmed,
         wheelSpin,
         wheelAdjustment,

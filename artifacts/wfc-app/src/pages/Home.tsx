@@ -9,7 +9,7 @@ const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { setTeamInfo, teamInfo, hasSubmitted } = useWFC();
+  const { setTeamInfo, teamInfo, hasSubmitted, serverTeamMissing, resetDevice } = useWFC();
   const [teamName, setTeamName] = useState('');
   const [player1, setPlayer1] = useState('');
   const [player2, setPlayer2] = useState('');
@@ -141,6 +141,37 @@ export default function Home() {
               <p className="text-xs text-muted-foreground leading-relaxed">
                 A final score for this device is already on the leaderboard. See the tournament admin if something looks wrong.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Escape hatch: device says "submitted" but the server has no
+            record of this team (admin deleted them, or it's a stale test
+            device). Lets the user wipe local state and re-register from
+            scratch. Hidden for genuinely-submitted teams whose server doc
+            still exists. ── */}
+        {hasSubmitted && serverTeamMissing && (
+          <div className={`w-full transition-all duration-700 delay-300 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+            <div className="bg-card/40 border border-border/40 rounded-xl p-4 text-center space-y-3">
+              <div className="text-left">
+                <p className="font-condensed text-sm font-bold uppercase tracking-widest text-foreground/80 mb-1">
+                  This team isn't on the server
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Looks like an admin deleted this team, or this is a test device. You can wipe this device and register again.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (window.confirm('Wipe this device and start over? Your local data will be cleared and the page will reload.')) {
+                    resetDevice();
+                  }
+                }}
+                data-testid="button-reset-device"
+                className="w-full py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
+              >
+                Start Fresh on This Device
+              </button>
             </div>
           </div>
         )}

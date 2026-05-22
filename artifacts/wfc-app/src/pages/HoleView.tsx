@@ -47,7 +47,7 @@ function fmtNet(net: number) {
 
 export default function HoleView() {
   const {
-    teamId, teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
+    teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
   } = useWFC();
@@ -224,12 +224,24 @@ export default function HoleView() {
             <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
               Thru {holesPlayed} · {currentTee === 'tips' ? 'Tips' : "Women's"} tees
             </p>
+            {/* Raw-vs-par chip: shows the value that actually drives the tee
+                assignment, so a player who sees TOTAL +2 / TIPS isn't
+                confused. Updates live as scores are entered. */}
+            <p className="text-[10px] uppercase tracking-widest mt-1">
+              <span className="text-muted-foreground/70 font-bold">Raw vs Par&nbsp;</span>
+              <span className={`font-black ${rawNet < 0 ? 'text-primary' : 'text-foreground/80'}`}>
+                {rawNet === 0 ? 'E' : rawNet > 0 ? `+${rawNet}` : rawNet}
+              </span>
+              <span className="text-muted-foreground/50 normal-case tracking-normal ml-1">
+                — drives your tee
+              </span>
+            </p>
           </div>
           <div className="text-right">
             <div className={`font-condensed text-3xl font-black leading-none ${netScore < 0 ? 'text-primary' : 'text-foreground'}`}>
               {fmtNet(netScore)}
             </div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Total</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Net Total</p>
           </div>
         </div>
 
