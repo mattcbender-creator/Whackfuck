@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
@@ -407,27 +407,6 @@ export default function Scorecard() {
       logEvent({ type: 'finish', teamName: teamInfo.teamName, netScore, position: finPos, totalTeams: finTotal });
     }
   };
-
-  // Notify the user only when their tee block flips (Women's ↔ Tips).
-  // Skip the initial mount so we don't toast on page load.
-  const teeMountRef = useRef(false);
-  useEffect(() => {
-    if (!teeMountRef.current) {
-      teeMountRef.current = true;
-      return;
-    }
-    if (currentTee === 'tips') {
-      toast({
-        title: 'You moved to the Tips tees',
-        description: 'You went under par. Play from the longest yardage from here on.',
-      });
-    } else {
-      toast({
-        title: 'Back to the Women\u2019s tees',
-        description: 'You\u2019re no longer under par. Play from the shortest yardage.',
-      });
-    }
-  }, [currentTee, toast]);
 
   const CELL = 'px-3 py-2 text-center cursor-pointer select-none transition-colors';
   const STICKY = 'sticky left-0 z-10 bg-[#0d0d0d] px-3 py-2 text-[10px] font-bold uppercase tracking-widest';

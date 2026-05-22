@@ -212,7 +212,7 @@ export default function HoleView() {
 
   return (
     <div
-      className="min-h-[100dvh] bg-background flex flex-col pb-24 select-none"
+      className="min-h-[100dvh] bg-background flex flex-col pb-20 select-none"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -295,37 +295,39 @@ export default function HoleView() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-5 pt-5 gap-4">
+      {/* Main Content — tightened spacing so everything important fits without
+          scrolling on a typical phone (par/yds, rule, score stepper). */}
+      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3">
 
-        {/* Hole Stats Card */}
-        <div className="bg-card border border-border rounded-3xl p-6 relative overflow-hidden">
+        {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
+            single row beside it instead of below, saving a full row of height. */}
+        <div className="bg-card border border-border rounded-2xl p-4 relative overflow-hidden">
           {/* Background hole number */}
           <div
-            className="absolute -top-6 -right-2 font-condensed font-black text-primary/[0.06] pointer-events-none select-none leading-none"
-            style={{ fontSize: '200px' }}
+            className="absolute -top-4 -right-2 font-condensed font-black text-primary/[0.06] pointer-events-none select-none leading-none"
+            style={{ fontSize: '140px' }}
           >
             {hole.hole.toString().padStart(2, '0')}
           </div>
 
-          <div className="relative">
+          <div className="relative flex items-center gap-3">
             {/* Par hero */}
-            <div className="flex items-end gap-3">
-              <span className="font-condensed text-[88px] font-black leading-[0.85] text-foreground">
+            <div className="flex items-end gap-2 shrink-0">
+              <span className="font-condensed text-[60px] font-black leading-[0.85] text-foreground">
                 {hole.par}
               </span>
-              <div className="pb-2">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Par</p>
-                <p className="text-xs font-bold text-foreground/80 uppercase tracking-widest mt-1">Hdcp {hole.hdcp}</p>
+              <div className="pb-1">
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Par</p>
+                <p className="text-[10px] font-bold text-foreground/80 uppercase tracking-widest">Hdcp {hole.hdcp}</p>
               </div>
             </div>
 
-            {/* Tee yardages */}
-            <div className="grid grid-cols-3 gap-2 mt-6">
+            {/* Tee yardages — compact column on the right */}
+            <div className="flex-1 grid grid-cols-3 gap-1.5">
               {[
                 { key: 'tips', label: 'Tips', val: hole.tips },
                 { key: 'mid', label: 'Mid', val: hole.mid },
-                { key: 'womens', label: "Women's", val: hole.womens },
+                { key: 'womens', label: "Wmn's", val: hole.womens },
               ].map(({ key, label, val }) => {
                 const isActive =
                   (key === 'tips' && currentTee === 'tips') ||
@@ -333,23 +335,22 @@ export default function HoleView() {
                 return (
                   <div
                     key={key}
-                    className={`rounded-2xl p-3 text-center border transition-colors ${
+                    className={`rounded-lg px-1.5 py-1.5 text-center border ${
                       isActive
                         ? 'bg-primary/10 border-primary/60'
                         : 'bg-secondary/40 border-transparent'
                     }`}
                   >
-                    <div className={`text-[10px] font-bold uppercase tracking-widest ${
+                    <div className={`text-[9px] font-bold uppercase tracking-wider ${
                       isActive ? 'text-primary' : 'text-muted-foreground'
                     }`}>
                       {label}
                     </div>
-                    <div className={`font-condensed text-2xl font-black mt-1 leading-none ${
+                    <div className={`font-condensed text-lg font-black leading-none mt-0.5 ${
                       isActive ? 'text-primary' : 'text-foreground/70'
                     }`}>
                       {val}
                     </div>
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest mt-1">yds</div>
                   </div>
                 );
               })}
@@ -357,25 +358,24 @@ export default function HoleView() {
           </div>
         </div>
 
-        {/* Rule Card */}
-        <div className="bg-card border border-primary/30 rounded-3xl p-5 relative overflow-hidden">
-          <div className="flex items-center gap-2 mb-2">
-            <Flag className="w-3.5 h-3.5 text-primary" />
-            <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-              Hole Rule
-            </p>
+        {/* Rule Card — tighter padding & label rolled into the same row */}
+        <div className="bg-card border border-primary/30 rounded-2xl p-4 relative overflow-hidden">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Flag className="w-3 h-3 text-primary" />
+            <p className="text-[9px] font-black text-primary uppercase tracking-widest">Hole Rule</p>
           </div>
-          <h3 className="font-condensed text-2xl font-black uppercase tracking-tight leading-tight text-foreground mb-2">
+          <h3 className="font-condensed text-xl font-black uppercase tracking-tight leading-tight text-foreground mb-1.5">
             {hole.ruleName}
           </h3>
-          <p className="text-sm text-foreground/75 leading-relaxed">
+          <p className="text-[13px] text-foreground/75 leading-snug">
             {hole.rule}
           </p>
         </div>
 
-        {/* Score Entry */}
-        <div className={`bg-card border rounded-3xl p-5 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
-          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-4 flex items-center justify-center gap-1.5">
+        {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown
+            above) so the stepper fits without scrolling on most phones. */}
+        <div className={`bg-card border rounded-2xl p-4 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-3 flex items-center justify-center gap-1.5">
             {holeLocked && <Lock className="w-3 h-3 text-primary" />}
             {holeLocked ? 'Front 9 Locked' : 'Enter Score'}
           </p>
@@ -385,19 +385,19 @@ export default function HoleView() {
               data-testid={`score-decrease-hole-${hole.hole}`}
               onClick={() => handleScore(-1)}
               disabled={holeLocked}
-              className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              {holeLocked ? <Lock className="w-6 h-6 text-foreground/60" /> : <Minus className="w-7 h-7 text-foreground" />}
+              {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Minus className="w-6 h-6 text-foreground" />}
             </button>
 
-            <div className="flex flex-col items-center w-28">
+            <div className="flex flex-col items-center w-24">
               <span
                 data-testid={`score-value-hole-${hole.hole}`}
-                className={`font-condensed text-7xl font-black leading-none transition-colors ${scoreColor(diff)}`}
+                className={`font-condensed text-6xl font-black leading-none transition-colors ${scoreColor(diff)}`}
               >
                 {score === null ? '—' : score}
               </span>
-              <span className={`text-[11px] font-black uppercase tracking-widest mt-2 transition-colors ${sLabelColor}`}>
+              <span className={`text-[10px] font-black uppercase tracking-widest mt-1.5 transition-colors ${sLabelColor}`}>
                 {sLabel}
               </span>
             </div>
@@ -406,34 +406,17 @@ export default function HoleView() {
               data-testid={`score-increase-hole-${hole.hole}`}
               onClick={() => handleScore(1)}
               disabled={holeLocked}
-              className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              {holeLocked ? <Lock className="w-6 h-6 text-foreground/60" /> : <Plus className="w-7 h-7 text-foreground" />}
+              {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Plus className="w-6 h-6 text-foreground" />}
             </button>
           </div>
 
           {holeLocked && (
-            <p className="text-[10px] text-muted-foreground text-center mt-3 uppercase tracking-widest font-bold">
+            <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-widest font-bold">
               Final — set when you spun the Item Box
             </p>
           )}
-
-          <div className="flex justify-center gap-8 mt-5 pt-4 border-t border-border/50">
-            <div className="text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Par</p>
-              <p className="font-condensed text-lg font-bold text-foreground mt-1">{hole.par}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Your Yds</p>
-              <p className="font-condensed text-lg font-bold text-foreground mt-1">{yardage}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Vs Par</p>
-              <p className={`font-condensed text-lg font-bold mt-1 ${scoreColor(diff)}`}>
-                {diff === null ? '—' : diff === 0 ? 'E' : diff > 0 ? `+${diff}` : diff}
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* Big LOCK CTA when front 9 done & no spin yet — user must tap this

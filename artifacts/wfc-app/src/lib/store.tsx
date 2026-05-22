@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { HOLES } from './holes';
 import { db, isFirebaseConfigured } from './firebase';
+import { useToast } from '@/hooks/use-toast';
 import {
   doc, setDoc, onSnapshot, serverTimestamp,
   collection, writeBatch, increment, arrayUnion, query, orderBy, getDocs,
@@ -209,6 +210,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   void worstBack9Diff;
   const netScore = (holesPlayed > 0 ? totalScore - parPlayed : 0) + wheelAdjustment;
   const currentTee: 'tips' | 'womens' = netScore < 0 ? 'tips' : 'womens';
+
+  // ── Global tee-change notification: fires on any tab (Hole, Scorecard, etc.)
+  // because this lives in the provider, not in a page component. Skips the
+  // first render so we don't toast on app load.
+  const { toast } = useToast();
+  const teeMountRef = useRef(false);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (!teeMountRef.current) {
+      teeMountRef.current = true;
+      return;
+    }
+    if (currentTee === 'tips') {
+      toast({
+        title: 'You moved to the Tips tees',
+        description: 'You went under par. Play from the longest yardage from here on.',
+      });
+    } else {
+      toast({
+        title: 'Back to the Women\u2019s tees',
+        description: 'You\u2019re no longer under par. Play from the shortest yardage.',
+      });
+    }
+  }, [currentTee, toast]);
 
   // ── Push own changes to Firestore ──
   useEffect(() => {

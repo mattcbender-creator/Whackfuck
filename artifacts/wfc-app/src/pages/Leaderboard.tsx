@@ -70,8 +70,10 @@ function scoreColor(score: number | null | undefined, par: number): string {
 }
 
 // Compact horizontal scorecard shown when a leaderboard row is expanded.
+// All 18 holes in a single horizontally-scrollable row, with OUT / IN / TOT
+// totals tucked into the same table so the user can scrub across the whole
+// round without jumping between blocks.
 function MiniScorecard({ scores }: { scores: (number | null)[] }) {
-  const half = (start: number, end: number) => HOLES.slice(start, end);
   const playedSum = (start: number, end: number) => {
     let s = 0; let any = false;
     for (let i = start; i < end; i++) {
@@ -83,53 +85,78 @@ function MiniScorecard({ scores }: { scores: (number | null)[] }) {
   const parSum = (start: number, end: number) =>
     HOLES.slice(start, end).reduce((a, h) => a + h.par, 0);
 
-  const renderNine = (label: string, start: number, end: number) => {
-    const sum = playedSum(start, end);
-    const par = parSum(start, end);
-    return (
+  const outScore = playedSum(0, 9);
+  const inScore = playedSum(9, 18);
+  const totScore = (outScore ?? 0) + (inScore ?? 0);
+  const anyScored = outScore !== null || inScore !== null;
+  const outPar = parSum(0, 9);
+  const inPar = parSum(9, 18);
+  const totPar = outPar + inPar;
+
+  const totalCell = 'px-2 py-1.5 text-center border-l-2 border-primary/30 font-condensed font-black w-12';
+  const labelCell = 'sticky left-0 z-10 px-2 py-1.5 text-left text-[9px] font-bold uppercase tracking-widest w-14';
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-white/10" style={{ background: '#0d0d0d' }}>
       <table className="w-max border-collapse text-[11px]">
         <tbody>
+          {/* Hole numbers */}
           <tr className="border-b border-white/10">
-            <td className="px-2 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 w-12">Hole</td>
-            {half(start, end).map(h => (
-              <td key={h.hole} className="px-2 py-1 text-center font-condensed font-black w-8 text-foreground/70">{h.hole}</td>
+            <td className={`${labelCell} text-muted-foreground/70 bg-[#0d0d0d]`}>Hole</td>
+            {HOLES.slice(0, 9).map(h => (
+              <td key={h.hole} className="px-2 py-1.5 text-center font-condensed font-black w-8 text-foreground/70">{h.hole}</td>
             ))}
-            <td className="px-2 py-1 text-center text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 border-l border-white/10 w-10">{label}</td>
+            <td className={`${totalCell} text-[9px] tracking-widest text-muted-foreground/70`}>Out</td>
+            {HOLES.slice(9, 18).map(h => (
+              <td key={h.hole} className="px-2 py-1.5 text-center font-condensed font-black w-8 text-foreground/70">{h.hole}</td>
+            ))}
+            <td className={`${totalCell} text-[9px] tracking-widest text-muted-foreground/70`}>In</td>
+            <td className={`${totalCell} text-[9px] tracking-widest text-muted-foreground/70`}>Tot</td>
           </tr>
+          {/* Par row */}
           <tr className="border-b border-white/8">
-            <td className="px-2 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Par</td>
-            {half(start, end).map(h => (
-              <td key={h.hole} className="px-2 py-1 text-center text-muted-foreground/60">{h.par}</td>
+            <td className={`${labelCell} text-muted-foreground/60 bg-[#0d0d0d]`}>Par</td>
+            {HOLES.slice(0, 9).map(h => (
+              <td key={h.hole} className="px-2 py-1.5 text-center text-muted-foreground/60">{h.par}</td>
             ))}
-            <td className="px-2 py-1 text-center text-muted-foreground/60 border-l border-white/10 font-bold">{par}</td>
+            <td className={`${totalCell} text-muted-foreground/60`}>{outPar}</td>
+            {HOLES.slice(9, 18).map(h => (
+              <td key={h.hole} className="px-2 py-1.5 text-center text-muted-foreground/60">{h.par}</td>
+            ))}
+            <td className={`${totalCell} text-muted-foreground/60`}>{inPar}</td>
+            <td className={`${totalCell} text-muted-foreground/60`}>{totPar}</td>
           </tr>
+          {/* Score row */}
           <tr>
-            <td className="px-2 py-1.5 text-left text-[9px] font-bold uppercase tracking-widest text-foreground/80">Score</td>
-            {half(start, end).map((h, i) => {
-              const s = scores[start + i] ?? null;
+            <td className={`${labelCell} text-foreground/80 bg-[#0d0d0d]`}>Score</td>
+            {HOLES.slice(0, 9).map((h, i) => {
+              const s = scores[i] ?? null;
               return (
-                <td key={h.hole} className={`px-2 py-1.5 text-center font-condensed text-base font-black ${scoreColor(s, h.par)}`}>
+                <td key={h.hole} className={`px-2 py-2 text-center font-condensed text-base font-black ${scoreColor(s, h.par)}`}>
                   {s ?? '—'}
                 </td>
               );
             })}
-            <td className="px-2 py-1.5 text-center border-l border-white/10 font-condensed text-base font-black text-foreground/80">
-              {sum ?? ''}
+            <td className={`${totalCell} text-base text-foreground/80 py-2`}>
+              {outScore ?? ''}
+            </td>
+            {HOLES.slice(9, 18).map((h, i) => {
+              const s = scores[i + 9] ?? null;
+              return (
+                <td key={h.hole} className={`px-2 py-2 text-center font-condensed text-base font-black ${scoreColor(s, h.par)}`}>
+                  {s ?? '—'}
+                </td>
+              );
+            })}
+            <td className={`${totalCell} text-base text-foreground/80 py-2`}>
+              {inScore ?? ''}
+            </td>
+            <td className={`${totalCell} text-base py-2 ${anyScored ? 'text-primary' : 'text-foreground/80'}`}>
+              {anyScored ? totScore : ''}
             </td>
           </tr>
         </tbody>
       </table>
-    );
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto rounded-lg border border-white/10" style={{ background: '#0d0d0d' }}>
-        {renderNine('Out', 0, 9)}
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-white/10" style={{ background: '#0d0d0d' }}>
-        {renderNine('In', 9, 18)}
-      </div>
     </div>
   );
 }
