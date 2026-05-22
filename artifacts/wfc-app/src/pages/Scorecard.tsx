@@ -3,10 +3,12 @@ import { useWFC } from '@/lib/store';
 import { HOLES } from '@/lib/holes';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import WheelModal from '@/components/WheelModal';
+import { getWheelItem } from '@/lib/wheel';
 
 type Half = 'front' | 'back';
 
@@ -35,12 +37,24 @@ function scoreLabel(diff: number | null) {
 }
 
 export default function Scorecard() {
-  const { teamInfo, scores, currentTee, netScore, holesPlayed, setScore } = useWFC();
+  const {
+    teamInfo, scores, currentTee, netScore, holesPlayed, setScore,
+    frontNineConfirmed, wheelSpin, confirmFrontNine,
+  } = useWFC();
   const [half, setHalf] = useState<Half>('front');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [wheelOpen, setWheelOpen] = useState(false);
   const { toast } = useToast();
+
+  // Auto-open wheel as soon as the team confirms the front 9 (and hasn't spun).
+  useEffect(() => {
+    if (frontNineConfirmed && !wheelSpin) setWheelOpen(true);
+  }, [frontNineConfirmed, wheelSpin]);
+
+  const front9Complete = scores.slice(0, 9).every(s => s !== null);
+  const spunItem = getWheelItem(wheelSpin?.item);
 
   const offset = half === 'front' ? 0 : 9;
   const halfHoles = HOLES.slice(offset, offset + 9);
@@ -340,6 +354,39 @@ export default function Scorecard() {
             {halfNet === null ? '' : `${fmtNet(halfNet)} this nine`}
           </span>
         </div>
+
+        {/* ── Confirm Front 9 → trigger Mario Kart wheel ── */}
+        {half === 'front' && front9Complete && !frontNineConfirmed && (
+          <button
+            onClick={confirmFrontNine}
+            data-testid="button-confirm-front-nine"
+            className="mt-4 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-base uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
+          >
+            <Sparkles className="w-5 h-5" />
+            Confirm Front 9 — Spin the Wheel
+          </button>
+        )}
+
+        {/* Show what you spun (subtle) */}
+        {spunItem && (
+          <button
+            onClick={() => setWheelOpen(false)}
+            className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-card border border-border"
+          >
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 border border-white/10"
+              style={{ background: spunItem.color, color: spunItem.textColor }}
+            >
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="text-left min-w-0 flex-1">
+              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">You spun</p>
+              <p className="font-condensed text-base font-black uppercase tracking-wider text-foreground truncate">
+                {spunItem.label}
+              </p>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* ── Score Entry Panel ── */}
@@ -455,6 +502,9 @@ export default function Scorecard() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* ── Mario Kart Item Wheel ── */}
+      <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} />
     </div>
   );
 }

@@ -1,9 +1,25 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { HOLES } from './holes';
 import { db, isFirebaseConfigured } from './firebase';
-import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import {
+  doc, setDoc, onSnapshot, serverTimestamp,
+  collection, writeBatch, increment, arrayUnion, query, orderBy, getDocs
+} from 'firebase/firestore';
+import type { WheelItemId } from './wheel';
 
 export interface TeamInfo { teamName: string; player1: string; player2: string; }
+
+export interface TargetedByEntry {
+  item: WheelItemId;
+  fromTeam: string;
+  at: number;
+}
+
+export interface WheelSpinRecord {
+  item: WheelItemId;
+  at: number;
+  targetTeam?: string; // team name we targeted (Green/Red/Boo)
+}
 
 export interface WFCState {
   teamId: string;
@@ -11,10 +27,30 @@ export interface WFCState {
   scores: (number | null)[];
   currentTee: 'tips' | 'womens';
   netScore: number;
+  rawNetScore: number; // before wheel adjustments
   holesPlayed: number;
+  frontNineConfirmed: boolean;
+  wheelSpin: WheelSpinRecord | null;
+  wheelAdjustment: number;
+  booActive: boolean;
+  targetedBy: TargetedByEntry[];
   setTeamInfo: (info: TeamInfo) => void;
   setScore: (hole: number, score: number | null) => void;
   resetScores: () => void;
+  confirmFrontNine: () => void;
+  recordWheelSpin: (record: WheelSpinRecord) => Promise<void>;
+  applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
+  applyEffectToSelf: (delta: number, booActive?: boolean) => void;
+  listTeamsOnce: () => Promise<TeamSnapshot[]>;
+}
+
+export interface TeamSnapshot {
+  id: string;
+  teamName: string;
+  player1: string;
+  player2: string;
+  netScore: number;
+  holesPlayed: number;
 }
 
 const StoreContext = createContext<WFCState | null>(null);
@@ -40,8 +76,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [teamId] = useState<string>(() => getOrCreateTeamId());
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
   const [scores, setScoresState] = useState<(number | null)[]>(Array(18).fill(null));
+  const [frontNineConfirmed, setFrontNineConfirmed] = useState(false);
+  const [wheelSpin, setWheelSpin] = useState<WheelSpinRecord | null>(null);
+  const [wheelAdjustment, setWheelAdjustment] = useState(0);
+  const [booActive, setBooActive] = useState(false);
+  const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
   const hydratedRef = useRef(false);
 
+  // ── Hydrate from localStorage ──
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORE_KEY);
@@ -49,6 +91,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(stored);
         if (parsed.teamInfo) setTeamInfo(parsed.teamInfo);
         if (parsed.scores && Array.isArray(parsed.scores)) setScoresState(parsed.scores);
+        if (typeof parsed.frontNineConfirmed === 'boolean') setFrontNineConfirmed(parsed.frontNineConfirmed);
+        if (parsed.wheelSpin) setWheelSpin(parsed.wheelSpin);
+        if (typeof parsed.wheelAdjustment === 'number') setWheelAdjustment(parsed.wheelAdjustment);
+        if (typeof parsed.booActive === 'boolean') setBooActive(parsed.booActive);
+        if (Array.isArray(parsed.targetedBy)) setTargetedBy(parsed.targetedBy);
       }
     } catch (e) {
       console.error('Failed to load store', e);
@@ -56,10 +103,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     hydratedRef.current = true;
   }, []);
 
-  // ── Listen for admin tournament reset signal ──────────────────────────────
-  // When an admin wipes the tournament they write a `resetAt` timestamp to
-  // config/tournament. Any device whose `joinedAt` is BEFORE that timestamp
-  // knows it's been reset and clears its own localStorage automatically.
+  // ── Listen to our own Firestore doc — picks up cross-device effects (Lightning, Shells, etc.) ──
+  // Skips local-cache-only events to avoid feedback loops with our own writes.
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const ref = doc(db, 'teams', teamId);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      // Only react to confirmed server state; ignore optimistic local-cache events.
+      if (snap.metadata.hasPendingWrites) return;
+      const data = snap.data();
+      if (typeof data.wheelAdjustment === 'number') {
+        setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
+      }
+      if (typeof data.booActive === 'boolean') {
+        setBooActive(prev => prev === data.booActive ? prev : data.booActive);
+      }
+      if (Array.isArray(data.targetedBy)) {
+        setTargetedBy(prev => prev.length === data.targetedBy.length ? prev : data.targetedBy as TargetedByEntry[]);
+      }
+      if (data.wheelSpin) {
+        // Only update if item/at actually changed — avoids object-ref churn loops.
+        setWheelSpin(prev => {
+          const incoming = data.wheelSpin as WheelSpinRecord;
+          if (prev && prev.item === incoming.item && prev.at === incoming.at) return prev;
+          return incoming;
+        });
+      }
+      if (typeof data.frontNineConfirmed === 'boolean') {
+        setFrontNineConfirmed(prev => prev === data.frontNineConfirmed ? prev : data.frontNineConfirmed);
+      }
+    });
+    return () => unsub();
+  }, [teamId]);
+
+  // ── Admin reset listener ──
   useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
     const ref = doc(db, 'config', 'tournament');
@@ -67,50 +145,70 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!snap.exists()) return;
       const data = snap.data();
       if (!data?.resetAt) return;
-
-      // resetAt is a Firestore Timestamp
       const resetAt: number = data.resetAt.toMillis?.() ?? Number(data.resetAt);
       const joinedAt: number = parseInt(localStorage.getItem(JOINED_AT_KEY) ?? '0', 10);
-
       if (resetAt > joinedAt) {
-        // This device's data pre-dates the reset — wipe it silently
         const emptyScores = Array(18).fill(null);
         setScoresState(emptyScores);
         setTeamInfo(null);
+        setFrontNineConfirmed(false);
+        setWheelSpin(null);
+        setWheelAdjustment(0);
+        setBooActive(false);
+        setTargetedBy([]);
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: null, scores: emptyScores }));
-          // Update joinedAt so we don't keep re-triggering
           localStorage.setItem(JOINED_AT_KEY, String(resetAt + 1));
         } catch { /* ignore */ }
       }
     }, (err) => console.error('Reset listener error', err));
-
     return () => unsub();
   }, []);
 
-  const saveToLocal = (t: TeamInfo | null, s: (number | null)[]) => {
+  const saveToLocal = (overrides: Partial<{
+    teamInfo: TeamInfo | null;
+    scores: (number | null)[];
+    frontNineConfirmed: boolean;
+    wheelSpin: WheelSpinRecord | null;
+    wheelAdjustment: number;
+    booActive: boolean;
+    targetedBy: TargetedByEntry[];
+  }>) => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: t, scores: s }));
+      const current = {
+        teamInfo, scores, frontNineConfirmed, wheelSpin,
+        wheelAdjustment, booActive, targetedBy,
+      };
+      const next = { ...current, ...overrides };
+      localStorage.setItem(STORE_KEY, JSON.stringify(next));
     } catch (e) {
       console.error('Failed to save store', e);
     }
   };
 
-  // Derive aggregates
+  // ── Derive aggregates ──
   let totalScore = 0;
   let parPlayed = 0;
   let holesPlayed = 0;
+  let worstBack9Diff = 0;
   scores.forEach((s, i) => {
     if (s !== null) {
       totalScore += s;
       parPlayed += HOLES[i].par;
       holesPlayed += 1;
+      if (i >= 9) {
+        const d = s - HOLES[i].par;
+        if (d > worstBack9Diff) worstBack9Diff = d;
+      }
     }
   });
-  const netScore = holesPlayed > 0 ? totalScore - parPlayed : 0;
+  const rawNetScore = holesPlayed > 0 ? totalScore - parPlayed : 0;
+  // Boo: drop worst back-9 hole (only effective once back-9 has scores)
+  const booDrop = booActive ? worstBack9Diff : 0;
+  const netScore = rawNetScore + wheelAdjustment - booDrop;
   const currentTee: 'tips' | 'womens' = netScore <= -5 ? 'tips' : 'womens';
 
-  // ── Live Firestore sync — push this device's scores whenever they change ──
+  // ── Push own changes to Firestore ──
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (!isFirebaseConfigured || !db) return;
@@ -124,29 +222,134 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       netScore,
       holesPlayed,
       currentTee,
+      frontNineConfirmed,
+      wheelSpin,
+      // wheelAdjustment/booActive/targetedBy are owned by Firestore once any
+      // cross-team effect lands — only write them on first creation.
       lastUpdated: serverTimestamp(),
     }, { merge: true }).catch(err => console.error('Firestore sync failed', err));
-  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee]);
+  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin]);
 
   const updateTeamInfo = (info: TeamInfo) => {
     setTeamInfo(info);
-    saveToLocal(info, scores);
-    // Record when this team joined so we can compare against reset signals
+    saveToLocal({ teamInfo: info });
     try { localStorage.setItem(JOINED_AT_KEY, String(Date.now())); } catch { /* ignore */ }
+    // Ensure baseline fields exist on our doc (so other devices can target us)
+    if (isFirebaseConfigured && db) {
+      const ref = doc(db, 'teams', teamId);
+      setDoc(ref, {
+        teamName: info.teamName,
+        wheelAdjustment: 0,
+        booActive: false,
+        targetedBy: [],
+      }, { merge: true }).catch(() => {});
+    }
   };
 
   const setScore = (hole: number, score: number | null) => {
     const newScores = [...scores];
     newScores[hole - 1] = score;
     setScoresState(newScores);
-    saveToLocal(teamInfo, newScores);
+    saveToLocal({ scores: newScores });
   };
 
   const resetScores = () => {
     const newScores = Array(18).fill(null);
     setScoresState(newScores);
     setTeamInfo(null);
-    saveToLocal(null, newScores);
+    setFrontNineConfirmed(false);
+    setWheelSpin(null);
+    setWheelAdjustment(0);
+    setBooActive(false);
+    setTargetedBy([]);
+    saveToLocal({
+      teamInfo: null, scores: newScores, frontNineConfirmed: false,
+      wheelSpin: null, wheelAdjustment: 0, booActive: false, targetedBy: [],
+    });
+  };
+
+  const confirmFrontNine = () => {
+    setFrontNineConfirmed(true);
+    saveToLocal({ frontNineConfirmed: true });
+  };
+
+  const recordWheelSpin = async (record: WheelSpinRecord) => {
+    setWheelSpin(record);
+    saveToLocal({ wheelSpin: record });
+    if (isFirebaseConfigured && db && teamInfo) {
+      try {
+        await setDoc(doc(db, 'teams', teamId), { wheelSpin: record }, { merge: true });
+      } catch (e) { console.error('Failed to record wheel spin', e); }
+    }
+  };
+
+  const applyEffectToSelf = (delta: number, booActiveFlag?: boolean) => {
+    // Optimistic local update — snapshot listener will reconcile with server.
+    setWheelAdjustment(prev => prev + delta);
+    if (booActiveFlag) setBooActive(true);
+    saveToLocal({
+      wheelAdjustment: wheelAdjustment + delta,
+      booActive: booActiveFlag ?? booActive,
+    });
+    // Use Firestore atomic increment so concurrent writes don't lose updates.
+    if (isFirebaseConfigured && db && teamInfo) {
+      setDoc(doc(db, 'teams', teamId), {
+        wheelAdjustment: increment(delta),
+        ...(booActiveFlag ? { booActive: true } : {}),
+      }, { merge: true }).catch(e => console.error('Self effect sync failed', e));
+    }
+  };
+
+  const applyEffectToOthers = async (item: WheelItemId, targetIds: string[]) => {
+    if (!isFirebaseConfigured || !db || !teamInfo) return;
+    if (targetIds.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      const now = Date.now();
+      for (const tid of targetIds) {
+        if (tid === teamId) continue;
+        const ref = doc(db, 'teams', tid);
+        batch.set(ref, {
+          wheelAdjustment: increment(1),
+          targetedBy: arrayUnion({
+            item,
+            fromTeam: teamInfo.teamName,
+            at: now,
+          }),
+        }, { merge: true });
+      }
+      await batch.commit();
+    } catch (e) {
+      console.error('Cross-team effect failed', e);
+    }
+  };
+
+  const listTeamsOnce = async (): Promise<TeamSnapshot[]> => {
+    if (!isFirebaseConfigured || !db) {
+      // Offline: return only ourselves
+      if (!teamInfo) return [];
+      return [{
+        id: teamId,
+        teamName: teamInfo.teamName,
+        player1: teamInfo.player1,
+        player2: teamInfo.player2,
+        netScore,
+        holesPlayed,
+      }];
+    }
+    const q = query(collection(db, 'teams'), orderBy('netScore', 'asc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        teamName: data.teamName ?? 'Team',
+        player1: data.player1 ?? '',
+        player2: data.player2 ?? '',
+        netScore: typeof data.netScore === 'number' ? data.netScore : 0,
+        holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
+      };
+    });
   };
 
   return (
@@ -157,10 +360,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         scores,
         currentTee,
         netScore,
+        rawNetScore,
         holesPlayed,
+        frontNineConfirmed,
+        wheelSpin,
+        wheelAdjustment,
+        booActive,
+        targetedBy,
         setTeamInfo: updateTeamInfo,
         setScore,
-        resetScores
+        resetScores,
+        confirmFrontNine,
+        recordWheelSpin,
+        applyEffectToOthers,
+        applyEffectToSelf,
+        listTeamsOnce,
       }}
     >
       {children}

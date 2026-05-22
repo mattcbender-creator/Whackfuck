@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { collection, onSnapshot, query, orderBy, getDocs, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { Crown, X, Trash2, Flame, CheckCircle2 } from 'lucide-react';
+import { Crown, X, Trash2, Flame, CheckCircle2, Target, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { fireEagleConfetti } from '@/lib/confetti';
+import { getWheelItem, type WheelItemId } from '@/lib/wheel';
+import type { WheelSpinRecord, TargetedByEntry } from '@/lib/store';
 
 // ⚙️ ADMIN RESET PASSWORD — change this string to rotate the reset password.
 // Also referenced in README.md ("Change the admin reset password" section).
@@ -20,6 +22,43 @@ interface TeamData {
   holesPlayed: number;
   currentTee: string;
   lastUpdated?: string;
+  wheelSpin?: WheelSpinRecord | null;
+  targetedBy?: TargetedByEntry[];
+  wheelAdjustment?: number;
+  booActive?: boolean;
+}
+
+function WheelBadge({ item, label }: { item: WheelItemId; label: string }) {
+  const w = getWheelItem(item);
+  if (!w) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border"
+      style={{
+        background: `${w.color}26`,
+        color: w.color,
+        borderColor: `${w.color}66`,
+      }}
+      title={label}
+    >
+      <Sparkles className="w-2.5 h-2.5" />
+      {w.label}
+    </span>
+  );
+}
+
+function HitBadge({ item, from }: { item: WheelItemId; from: string }) {
+  const w = getWheelItem(item);
+  if (!w) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-white/10 bg-white/5 text-white/80"
+      title={`Hit by ${w.label} from ${from}`}
+    >
+      <Target className="w-2.5 h-2.5" style={{ color: w.color }} />
+      Hit by {w.label}
+    </span>
+  );
 }
 
 export default function Leaderboard() {
@@ -158,29 +197,52 @@ export default function Leaderboard() {
               </div>
             )}
 
-            {teams.map((team, idx) => (
-              <div key={team.id} className="grid grid-cols-12 gap-2 p-3 items-center hover:bg-secondary/20 transition-colors">
-                <div className="col-span-1 flex justify-center">
-                  {idx === 0 ? (
-                    <Crown className="w-4 h-4 text-yellow-400" />
-                  ) : (
-                    <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
-                  )}
+            {teams.map((team, idx) => {
+              const hits = (team.targetedBy ?? []).slice(-3);
+              return (
+                <div key={team.id} className="grid grid-cols-12 gap-2 p-3 items-center hover:bg-secondary/20 transition-colors">
+                  <div className="col-span-1 flex justify-center">
+                    {idx === 0 ? (
+                      <Crown className="w-4 h-4 text-yellow-400" />
+                    ) : (
+                      <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
+                    )}
+                  </div>
+                  <div className="col-span-6 flex flex-col gap-1 min-w-0">
+                    <span className="font-bold text-sm truncate">{team.teamName}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
+                    {(team.wheelSpin || hits.length > 0 || team.booActive) && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {team.wheelSpin && (
+                          <WheelBadge item={team.wheelSpin.item} label={`Spun ${team.wheelSpin.item}`} />
+                        )}
+                        {team.booActive && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-purple-500/40 bg-purple-500/15 text-purple-300">
+                            Boo · worst hole hidden
+                          </span>
+                        )}
+                        {hits.map((h, i) => (
+                          <HitBadge key={`${h.at}-${i}`} item={h.item} from={h.fromTeam} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="col-span-2 text-center font-condensed font-bold text-muted-foreground">
+                    {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
+                  </div>
+                  <div className="col-span-3 text-right font-condensed text-xl font-black">
+                    <span className={team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}>
+                      {team.netScore === 0 ? 'E' : team.netScore > 0 ? `+${team.netScore}` : team.netScore}
+                    </span>
+                    {typeof team.wheelAdjustment === 'number' && team.wheelAdjustment !== 0 && (
+                      <div className={`text-[9px] font-bold tracking-wider mt-0.5 ${team.wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
+                        {team.wheelAdjustment > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment} wheel
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="col-span-6 flex flex-col">
-                  <span className="font-bold text-sm truncate">{team.teamName}</span>
-                  <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
-                </div>
-                <div className="col-span-2 text-center font-condensed font-bold text-muted-foreground">
-                  {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
-                </div>
-                <div className="col-span-3 text-right font-condensed text-xl font-black">
-                  <span className={team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}>
-                    {team.netScore === 0 ? 'E' : team.netScore > 0 ? `+${team.netScore}` : team.netScore}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
