@@ -9,7 +9,8 @@ import { fireBirdieConfetti, fireEagleConfetti } from '@/lib/confetti';
 
 const wheelImg = `${import.meta.env.BASE_URL}wheel/mariokart-wheel.png`;
 
-type Phase = 'intro' | 'spinning' | 'picking' | 'applied';
+// 'resolving' = wheel stopped, item known, async effects in-flight
+type Phase = 'intro' | 'spinning' | 'resolving' | 'picking' | 'applied';
 
 interface Props {
   open: boolean;
@@ -105,10 +106,12 @@ export default function WheelModal({ open, onClose }: Props) {
     setAngle(finalAngle);
     setPhase('spinning');
 
-    spinTimer.current = window.setTimeout(async () => {
+    spinTimer.current = window.setTimeout(() => {
+      spinTimer.current = null; // mark timer as consumed so cleanup is a no-op
       setLanded(item);
       if (item.selection === 'none') {
-        await applyAutoEffect(item, snap);
+        setPhase('resolving'); // show item immediately; effects apply in background
+        applyAutoEffect(item, snap); // fire-and-forget; always ends with setPhase('applied')
       } else {
         setPhase('picking');
       }
@@ -124,13 +127,13 @@ export default function WheelModal({ open, onClose }: Props) {
     arr.length === 0 ? null : arr[Math.floor(Math.random() * arr.length)];
 
   const applyAutoEffect = async (item: WheelItem, snap: TeamSnapshot[]) => {
-    if (!teamInfo) return;
+    // Always ends with setPhase('applied') — no matter what — so the UI never freezes.
+    if (!teamInfo) { setPhase('applied'); return; }
     const others = snap.filter(t => t.id !== teamId);
     const myHolesPlayed = snap.find(t => t.id === teamId)?.holesPlayed ?? 0;
     try {
       switch (item.id) {
         case 'green_shell': {
-          // RANDOM attack on any other team.
           const target = pickRandom(others);
           if (target) {
             await applyEffectToOthers('green_shell', [target.id]);
@@ -141,14 +144,13 @@ export default function WheelModal({ open, onClose }: Props) {
           break;
         }
         case 'blue_shell': {
-          // Auto-fire at current leader (lowest netScore including self).
-          // Per spec: "hits you if you're leading".
           const sorted = [...snap].sort((a, b) => a.netScore - b.netScore);
           const leader = sorted[0];
           if (leader) {
             if (leader.id === teamId) {
-              applyEffectToSelf(+1);
+              // Record spin BEFORE self-effect to avoid a Firestore write race
               await recordSpinOnSelf(item, leader.teamName);
+              applyEffectToSelf(+1);
             } else {
               await applyEffectToOthers('blue_shell', [leader.id]);
               await recordSpinOnSelf(item, leader.teamName);
@@ -159,14 +161,12 @@ export default function WheelModal({ open, onClose }: Props) {
           break;
         }
         case 'banana': {
-          // RANDOM team physically behind you (lower hole number).
           const behind = others.filter(t => t.holesPlayed < myHolesPlayed);
           const target = pickRandom(behind);
           if (target) {
             await applyEffectToOthers('banana', [target.id]);
             await recordSpinOnSelf(item, target.teamName);
           } else {
-            // No one behind — banana fizzles. Still record the spin.
             await recordSpinOnSelf(item);
           }
           break;
@@ -178,26 +178,27 @@ export default function WheelModal({ open, onClose }: Props) {
           break;
         }
         case 'mushroom':
-          applyEffectToSelf(-1);
+          // Record spin FIRST so the transaction doesn't race with the self-effect
+          // Firestore write that the state change triggers via the sync useEffect.
           await recordSpinOnSelf(item);
+          applyEffectToSelf(-1);
           fireBirdieConfetti();
           break;
         case 'super_star':
-          applyEffectToSelf(-2);
           await recordSpinOnSelf(item);
+          applyEffectToSelf(-2);
           fireEagleConfetti();
           break;
         case 'boo': {
-          // Steal -1 from a RANDOM other team: their score +1, yours -1.
           const target = pickRandom(others);
           if (target) {
             await applyEffectToOthers('boo', [target.id]);
-            applyEffectToSelf(-1);
             await recordSpinOnSelf(item, target.teamName);
-          } else {
-            // No one to steal from — still apply the -1 to self as bonus.
             applyEffectToSelf(-1);
+          } else {
+            // Record spin FIRST before the self-effect write
             await recordSpinOnSelf(item);
+            applyEffectToSelf(-1);
           }
           break;
         }
@@ -205,7 +206,9 @@ export default function WheelModal({ open, onClose }: Props) {
       setPhase('applied');
     } catch (e) {
       console.error('Effect failed', e);
-      setError('Failed to apply effect. You can try again.');
+      // Always advance — never leave the user stuck on 'resolving' or 'spinning'
+      setError('Effect could not be applied — your spin is still recorded.');
+      setPhase('applied');
     }
   };
 
@@ -218,7 +221,8 @@ export default function WheelModal({ open, onClose }: Props) {
       setPhase('applied');
     } catch (e) {
       console.error('Target effect failed', e);
-      setError('Failed to apply effect to target.');
+      setError('Could not apply effect to target — your spin is still recorded.');
+      setPhase('applied'); // never leave stuck on 'picking'
     }
   };
 
@@ -252,8 +256,8 @@ export default function WheelModal({ open, onClose }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 flex flex-col items-center">
-        {/* Wheel + pointer (always visible until applied) */}
-        {phase !== 'applied' && (
+        {/* Wheel + pointer — hidden once we have a result (resolving or applied) */}
+        {phase !== 'applied' && phase !== 'resolving' && (
           <div className="relative w-[min(80vw,360px)] aspect-square mb-6">
             {/* Pointer */}
             <div className="absolute top-[-14px] left-1/2 -translate-x-1/2 z-10">
@@ -349,6 +353,24 @@ export default function WheelModal({ open, onClose }: Props) {
           <p className="font-condensed text-xl font-black text-white/70 uppercase tracking-widest animate-pulse">
             Spinning…
           </p>
+        )}
+
+        {/* RESOLVING — item known, async effects in-flight */}
+        {phase === 'resolving' && landed && (
+          <div className="max-w-sm w-full text-center mt-6">
+            <div
+              className="mx-auto w-24 h-24 rounded-full flex items-center justify-center mb-4 border-4 border-white/20"
+              style={{ background: landed.color, color: landed.textColor }}
+            >
+              <LandedIcon className="w-12 h-12" />
+            </div>
+            <h2 className="font-condensed text-4xl font-black text-white uppercase tracking-wider mb-2">
+              {landed.label}
+            </h2>
+            <p className="text-sm text-white/50 animate-pulse uppercase tracking-widest font-bold">
+              Applying effect…
+            </p>
+          </div>
         )}
 
         {/* PICKING */}
