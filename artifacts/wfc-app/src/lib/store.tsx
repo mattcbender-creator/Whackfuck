@@ -111,15 +111,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     hydratedRef.current = true;
   }, []);
 
+  // Flips true after the first server-confirmed snapshot for our team doc
+  // (or the first time we know the doc doesn't exist on the server). Until
+  // then we DO NOT push any sync writes — that would let a stale client
+  // overwrite server-truth gameplay data during the hydration race window.
+  const lockResolvedRef = useRef(false);
+  const [lockResolved, setLockResolved] = useState(false);
+
   // ── Listen to our own Firestore doc — picks up cross-device effects (Lightning, Shells, etc.) ──
   // Skips local-cache-only events to avoid feedback loops with our own writes.
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
+    if (!isFirebaseConfigured || !db) {
+      // No Firestore — local state is the only truth, mark resolved immediately.
+      lockResolvedRef.current = true;
+      setLockResolved(true);
+      return;
+    }
     const ref = doc(db, 'teams', teamId);
     const unsub = onSnapshot(ref, (snap) => {
-      if (!snap.exists()) return;
       // Only react to confirmed server state; ignore optimistic local-cache events.
       if (snap.metadata.hasPendingWrites) return;
+      // Mark the lock as resolved on the first server-confirmed snapshot,
+      // regardless of whether the doc exists. From here on it is safe to write.
+      if (!lockResolvedRef.current) {
+        lockResolvedRef.current = true;
+        setLockResolved(true);
+      }
+      if (!snap.exists()) return;
       const data = snap.data();
       if (typeof data.wheelAdjustment === 'number') {
         setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
@@ -268,6 +286,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!hydratedRef.current) return;
     if (!isFirebaseConfigured || !db) return;
     if (!teamInfo) return;
+    // Critical race protection: do NOT push writes until we've seen the first
+    // server snapshot. Otherwise a freshly-booted client with hasSubmitted=false
+    // locally could overwrite server gameplay state before the snapshot
+    // listener has had a chance to restore the true submitted/locked state.
+    if (!lockResolved) return;
     const ref = doc(db, 'teams', teamId);
     // Firestore rejects `undefined`. Strip undefined fields from nested
     // wheelSpin (e.g. targetTeam isn't set for self-only items).
@@ -301,7 +324,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       payload.submittedAt = submittedAt ?? Date.now();
     }
     setDoc(ref, payload, { merge: true }).catch(err => console.error('Firestore sync failed', err));
-  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin, hasSubmitted, submittedAt]);
+  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin, hasSubmitted, submittedAt, lockResolved]);
 
   const updateTeamInfo = (info: TeamInfo) => {
     // Once submitted, the team identity is frozen for audit integrity.
@@ -420,7 +443,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         const finalRecord = await runTransaction(db, async (tx) => {
           const snap = await tx.get(ref);
-          const existing = snap.exists() ? (snap.data().wheelSpin as WheelSpinRecord | undefined) : undefined;
+          const data = snap.exists() ? snap.data() : undefined;
+          // Server-authoritative submit lock: if the round is submitted on
+          // the server, refuse to record any new spin no matter what the
+          // local client believes. This closes the race window where a
+          // stale client booting with hasSubmitted=false could still write.
+          if (data?.hasSubmitted === true) {
+            const existingSpin = data.wheelSpin as WheelSpinRecord | undefined;
+            // Return existing spin if any; otherwise throw to abort.
+            if (existingSpin && existingSpin.item) return existingSpin;
+            throw new Error('submitted');
+          }
+          const existing = data?.wheelSpin as WheelSpinRecord | undefined;
           if (existing && existing.item) {
             // Another tab/device already claimed the spin. Keep theirs.
             return existing;
@@ -431,6 +465,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setWheelSpin(finalRecord);
         saveToLocal({ wheelSpin: finalRecord });
       } catch (e) {
+        const msg = e instanceof Error ? e.message : '';
+        if (msg === 'submitted') {
+          // Hard-stop: server says this team has already submitted. Never
+          // record the spin — that would corrupt the final-score audit trail.
+          console.warn('Spin refused: round already submitted on server.');
+          // Sticky local lock so the UI flips to read-only immediately.
+          setHasSubmitted(true);
+          saveToLocal({ hasSubmitted: true });
+          return;
+        }
         console.error('Failed to record wheel spin', e);
         // Fall back to local-only so the user isn't stuck.
         setWheelSpin(record);

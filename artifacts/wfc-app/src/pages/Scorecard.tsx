@@ -290,7 +290,7 @@ export default function Scorecard() {
       });
       return false;
     }
-    if (!wheelSpin) {
+    if (!wheelSpin && !hasSubmitted) {
       // Just open the wheel. Locking happens inside the modal when they actually spin.
       setWheelOpen(true);
       return false;
@@ -634,8 +634,9 @@ export default function Scorecard() {
           </span>
         </div>
 
-        {/* ── Front 9 complete → offer to open Item Box (no auto-lock) ── */}
-        {half === 'front' && front9Complete && !wheelSpin && (
+        {/* ── Front 9 complete → offer to open Item Box (no auto-lock).
+            Hidden after submit so there's no path back into the wheel. ── */}
+        {half === 'front' && front9Complete && !wheelSpin && !hasSubmitted && (
           <button
             onClick={() => setWheelOpen(true)}
             data-testid="button-confirm-front-nine"

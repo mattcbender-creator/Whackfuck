@@ -35,7 +35,7 @@ export default function WheelModal({ open, onClose }: Props) {
     teamId, teamInfo, netScore, wheelSpin: priorSpin,
     confirmFrontNine, frontNineConfirmed,
     recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
-    logEvent,
+    logEvent, hasSubmitted,
   } = useWFC();
 
   const [phase, setPhase] = useState<Phase>('intro');
@@ -49,12 +49,19 @@ export default function WheelModal({ open, onClose }: Props) {
 
   useEffect(() => {
     if (open) {
-      // If this team already spun, re-opening the modal MUST NOT allow another
-      // spin. Show the result they already got and let them dismiss.
+      // If this team already spun OR the round is submitted, re-opening the
+      // modal MUST NOT allow another spin. Show whatever they got (or a
+      // locked-out message) and let them dismiss.
       const existing = priorSpin ? WHEEL_ITEMS.find(w => w.id === priorSpin.item) ?? null : null;
       if (existing) {
         setPhase('applied');
         setLanded(existing);
+        setAngle(0);
+      } else if (hasSubmitted) {
+        // Submitted with no spin on record — extremely unusual, but bail out
+        // hard. Don't let the wheel render an 'intro' that could be tapped.
+        setPhase('applied');
+        setLanded(null);
         setAngle(0);
       } else {
         setPhase('intro');
@@ -71,14 +78,19 @@ export default function WheelModal({ open, onClose }: Props) {
         spinTimer.current = null;
       }
     };
-  }, [open, priorSpin]);
+  }, [open, priorSpin, hasSubmitted]);
 
   const otherTeams = teams.filter(t => t.id !== teamId);
 
   const handleSpin = async () => {
     if (phase !== 'intro') return;
-    // Defense in depth: NEVER allow a second spin for the same team, even if
-    // the modal somehow opens with an existing spin.
+    // Defense in depth: NEVER spin if the round was already submitted, OR if
+    // the team has any existing spin on record. Either condition is a hard
+    // stop — no recovery to 'intro' phase.
+    if (hasSubmitted) {
+      setError('Round submitted — wheel is locked.');
+      return;
+    }
     if (priorSpin) {
       setPhase('applied');
       const existing = WHEEL_ITEMS.find(w => w.id === priorSpin.item) ?? null;

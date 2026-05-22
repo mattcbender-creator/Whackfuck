@@ -128,8 +128,25 @@ export default function Home() {
           </div>
         )}
 
+        {/* ── Locked-out state: round already submitted, but no teamInfo
+            (e.g. browser data was cleared on this device). Don't show the
+            registration form — that would let someone start a brand-new round
+            from a "blank" home screen. ── */}
+        {!teamInfo && hasSubmitted && (
+          <div className={`w-full transition-all duration-700 delay-200 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+            <div className="bg-card border border-primary/40 rounded-2xl p-5 text-center">
+              <p className="font-condensed text-xl font-black uppercase tracking-wide text-primary mb-1">
+                Round Already Submitted
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                A final score for this device is already on the leaderboard. See the tournament admin if something looks wrong.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Registration form ── */}
-        {showForm && (
+        {showForm && !hasSubmitted && (
           <div className={`w-full transition-all duration-700 delay-200 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
 
             <form onSubmit={handleSubmit} className="space-y-4">

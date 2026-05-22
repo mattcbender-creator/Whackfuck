@@ -152,8 +152,9 @@ export default function HoleView() {
       setHoleIdx(missing);
       return false;
     }
-    // Back-9 lock: must have spun the Item Box.
-    if (targetIdx >= 9 && !wheelSpin) {
+    // Back-9 lock: must have spun the Item Box. Once submitted, the wheel
+    // never re-opens — navigation just goes through.
+    if (targetIdx >= 9 && !wheelSpin && !hasSubmitted) {
       if (!front9Complete) {
         toast({
           title: 'Finish the front 9 first',
@@ -417,8 +418,9 @@ export default function HoleView() {
         </div>
 
         {/* Big LOCK CTA when front 9 done & no spin yet — user must tap this
-            explicitly. No auto-pop. */}
-        {front9Complete && !wheelSpin && (
+            explicitly. No auto-pop. Hidden entirely once the round is
+            submitted so there is no path back into the wheel. */}
+        {front9Complete && !wheelSpin && !hasSubmitted && (
           <button
             onClick={() => setWheelOpen(true)}
             data-testid="button-open-item-box"
