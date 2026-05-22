@@ -90,6 +90,30 @@ export default function Scorecard() {
   const isHoleLocked = (idx: number) => frontNineConfirmed && idx < 9;
   const selLocked = isHoleLocked(selectedIdx);
 
+  // Gate any attempt to move into the back 9 — must spin the Item Box first.
+  const tryGoToBack = (targetIdx: number): boolean => {
+    if (!front9Complete) {
+      toast({
+        title: 'Finish the front 9 first',
+        description: 'Enter scores for all 9 front holes before moving on.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    if (!wheelSpin) {
+      // Confirm (if not yet) and force the wheel open. Navigation will resume after the spin.
+      if (!frontNineConfirmed) confirmFrontNine();
+      setWheelOpen(true);
+      toast({
+        title: 'Spin the Item Box',
+        description: 'You need to spin before starting the back 9.',
+      });
+      return false;
+    }
+    setSelectedIdx(targetIdx);
+    return true;
+  };
+
   const handleChange = (delta: number) => {
     if (selLocked) return;
     const cur = scores[selectedIdx];
@@ -188,8 +212,13 @@ export default function Scorecard() {
               <button
                 key={h}
                 onClick={() => {
-                  setHalf(h);
-                  setSelectedIdx(h === 'front' ? 0 : 9);
+                  if (h === 'back') {
+                    if (!tryGoToBack(9)) return;
+                    setHalf('back');
+                  } else {
+                    setHalf('front');
+                    setSelectedIdx(0);
+                  }
                 }}
                 className={`flex-1 py-2 rounded-full font-condensed font-bold text-sm uppercase tracking-wider transition-colors ${
                   half === h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
@@ -490,7 +519,14 @@ export default function Scorecard() {
               Hole {selectedIdx + 1} of 18
             </span>
             <button
-              onClick={() => setSelectedIdx(i => Math.min(17, i + 1))}
+              onClick={() => {
+                const next = Math.min(17, selectedIdx + 1);
+                if (selectedIdx === 8 && next === 9) {
+                  tryGoToBack(9);
+                  return;
+                }
+                setSelectedIdx(next);
+              }}
               disabled={selectedIdx === 17}
               className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-primary transition-colors disabled:opacity-25 uppercase tracking-wider"
             >
