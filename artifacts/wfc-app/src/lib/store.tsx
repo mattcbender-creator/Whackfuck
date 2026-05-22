@@ -65,6 +65,11 @@ const StoreContext = createContext<WFCState | null>(null);
 const STORE_KEY = 'wfc-state';
 const TEAM_ID_KEY = 'wfc-team-id';
 const JOINED_AT_KEY = 'wfc-joined-at';
+// Persisted flag: set to '1' once we've ever seen our team doc exist on the
+// server (server-confirmed snapshot). Used by the auto-wipe logic so we can
+// distinguish "admin just deleted us" (was confirmed, now missing) from
+// "never registered on server yet" (never confirmed).
+const SERVER_CONFIRMED_KEY = 'wfc-server-confirmed';
 
 function getOrCreateTeamId(): string {
   try {
@@ -163,9 +168,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       // Doc exists — clear the missing flag (and only trust this when
-      // server-confirmed, to symmetrically avoid cache flicker).
+      // server-confirmed, to symmetrically avoid cache flicker). Also
+      // persist that we've now confirmed presence on the server, so a
+      // later "missing" snapshot can be recognized as an admin delete.
       if (serverConfirmed) {
         setServerTeamMissing(prev => prev ? false : prev);
+        try { localStorage.setItem(SERVER_CONFIRMED_KEY, '1'); } catch { /* ignore */ }
       }
       const data = snap.data();
       if (typeof data.wheelAdjustment === 'number') {
@@ -582,9 +590,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(TEAM_ID_KEY);
       localStorage.removeItem(JOINED_AT_KEY);
       localStorage.removeItem('wfc-submitted');
+      localStorage.removeItem(SERVER_CONFIRMED_KEY);
     } catch { /* ignore */ }
     window.location.reload();
   };
+
+  // ── Auto-wipe on admin delete ──
+  // If the server has confirmed our team doc is missing AND we'd previously
+  // seen the doc exist on the server, an admin (or test) just deleted us.
+  // Wipe local state and reload so the device returns to a clean registration
+  // screen — that's what the user expects: "delete in admin → home asks to
+  // register again." We guard with the persisted SERVER_CONFIRMED_KEY so a
+  // brand-new device that hasn't synced yet won't false-trigger.
+  const autoWipeFiredRef = useRef(false);
+  useEffect(() => {
+    if (!serverTeamMissing) return;
+    if (!hydratedRef.current) return;
+    if (autoWipeFiredRef.current) return;
+    let wasConfirmed = false;
+    try { wasConfirmed = localStorage.getItem(SERVER_CONFIRMED_KEY) === '1'; } catch { /* ignore */ }
+    if (!wasConfirmed) return;
+    autoWipeFiredRef.current = true;
+    toast({
+      title: 'Team removed by admin',
+      description: 'Wiping this device — you can register again in a moment.',
+      variant: 'destructive',
+    });
+    const t = setTimeout(() => resetDevice(), 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverTeamMissing]);
 
   const listTeamsOnce = async (): Promise<TeamSnapshot[]> => {
     if (!isFirebaseConfigured || !db) {
