@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, getDocs, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Admin() {
@@ -74,13 +74,39 @@ export default function Admin() {
 
         <div className="bg-red-950/20 p-6 rounded-xl border border-red-900/50 space-y-4">
           <h3 className="font-bold uppercase tracking-widest text-sm text-red-500">Danger Zone</h3>
-          <Button variant="destructive" className="w-full h-12" onClick={() => {
-            if(window.confirm('Are you sure you want to reset all data?')) {
-              toast({ title: 'Not implemented in demo', description: 'This would wipe Firestore in production.' });
+          <Button variant="destructive" className="w-full h-12" onClick={async () => {
+            if (!window.confirm('Wipe ALL teams, scores, wheel spins, and the leaderboard? This cannot be undone.')) return;
+            try {
+              const fdb = db;
+              if (fdb) {
+                const wipeCollection = async (name: string) => {
+                  const snap = await getDocs(collection(fdb, name));
+                  if (snap.empty) return;
+                  const batch = writeBatch(fdb);
+                  snap.docs.forEach(d => batch.delete(d.ref));
+                  await batch.commit();
+                };
+                await Promise.all([
+                  wipeCollection('teams'),
+                  wipeCollection('events'),
+                  wipeCollection('longestDrives'),
+                ]);
+                await setDoc(doc(fdb, 'config', 'tournament'), { resetAt: serverTimestamp() }, { merge: true });
+              }
+              // 3. Wipe THIS device's local state immediately and reload.
+              localStorage.clear();
+              toast({ title: 'Tournament reset', description: 'Reloading…' });
+              setTimeout(() => window.location.href = '/', 600);
+            } catch (e) {
+              console.error(e);
+              toast({ title: 'Reset failed', description: String(e), variant: 'destructive' });
             }
           }}>
             RESET TOURNAMENT
           </Button>
+          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+            Wipes all teams, scores, wheel spins, and the leaderboard from Firestore. Every connected device will be reset to the home screen automatically.
+          </p>
         </div>
       </div>
     </div>
