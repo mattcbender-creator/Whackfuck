@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import {
   collection, addDoc, doc, setDoc, getDocs, writeBatch, serverTimestamp,
-  query, where, deleteDoc, updateDoc, onSnapshot, increment,
+  query, where, deleteDoc, updateDoc, onSnapshot, increment, Timestamp,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { HOLES } from '@/lib/holes';
@@ -31,11 +31,26 @@ const DEMO_FIRST_NAMES = [
 
 function randomHoleScore(par: number): number {
   const r = Math.random();
-  if (r < 0.05) return par - 1;
-  if (r < 0.40) return par;
-  if (r < 0.75) return par + 1;
-  if (r < 0.92) return par + 2;
-  return par + 3;
+  if (par >= 4 && r < 0.02) return par - 2; // eagle (par 4/5 only)
+  if (r < 0.07) return par - 1;             // birdie
+  if (r < 0.38) return par;                 // par
+  if (r < 0.72) return par + 1;             // bogey
+  if (r < 0.90) return par + 2;             // double
+  return par + 3;                           // triple
+}
+
+// Weighted distribution so demo teams feel mid-round:
+// ~8% very early (2-3), 15% front 9 (5-7), 22% at the turn (8-10),
+// 28% back 9 (11-13), 17% late (14-16), 10% finishing (17-18)
+function liveHolesPlayed(): number {
+  const r = Math.random();
+  if (r < 0.08) return 2 + Math.floor(Math.random() * 2);  // 2-3
+  if (r < 0.23) return 5 + Math.floor(Math.random() * 3);  // 5-7
+  if (r < 0.45) return 8 + Math.floor(Math.random() * 3);  // 8-10
+  if (r < 0.73) return 11 + Math.floor(Math.random() * 3); // 11-13
+  if (r < 0.90) return 14 + Math.floor(Math.random() * 3); // 14-16
+  if (r < 0.96) return 17;
+  return 18;
 }
 
 function pick<T>(arr: T[]): T {
@@ -248,10 +263,18 @@ export default function Admin() {
         netScore: number;
         currentTee: string;
         targetedBy: { item: WheelItemId; fromTeam: string; at: number }[];
+        _lastUpdatedMs: number;
       }
 
+      // Assign holesPlayed using a live-tournament distribution, then clamp so
+      // no two teams share the exact same hole if we have enough spread.
+      const rawHoles = names.map(() => liveHolesPlayed());
+      // Sort one copy to spread teams, then shuffle back to random order
+      const sortedHoles = [...rawHoles].sort((a, b) => a - b);
+      const assignedHoles = shuffle(sortedHoles);
+
       const demoTeams: DemoTeam[] = names.map((teamName, i) => {
-        const holesPlayed = 1 + Math.floor(Math.random() * 18);
+        const holesPlayed = assignedHoles[i];
         const scores: (number | null)[] = Array(18).fill(null);
         for (let h = 0; h < holesPlayed; h++) {
           scores[h] = randomHoleScore(HOLES[h].par);
@@ -261,6 +284,8 @@ export default function Admin() {
         const rawNet = playedScore - playedPar;
         const spun = holesPlayed >= 9;
         const wheelItemId: WheelItemId | null = spun ? WHEEL_ITEMS[pickRandomIndex()].id : null;
+        // Teams further along updated Firestore more recently (~9 min/hole variance)
+        const minsAgo = Math.max(0, (18 - holesPlayed) * 9 + Math.floor(Math.random() * 8));
         return {
           id: `demo_${i}_${now}`,
           teamName,
@@ -276,6 +301,7 @@ export default function Admin() {
           netScore: rawNet,
           currentTee: rawNet <= -5 ? 'tips' : 'womens',
           targetedBy: [],
+          _lastUpdatedMs: now - minsAgo * 60 * 1000,
         };
       });
 
@@ -382,13 +408,54 @@ export default function Admin() {
           wheelAdjustment: t.wheelAdjustment,
           targetedBy: t.targetedBy,
           isDemo: true,
-          lastUpdated: serverTimestamp(),
+          lastUpdated: Timestamp.fromDate(new Date(t._lastUpdatedMs)),
         });
       }
       await batch.commit();
+
+      // Seed recent birdie/eagle events to populate the live ticker
+      // Pick up to 6 teams that scored at least one birdie/eagle
+      interface BirdieEvent { teamName: string; hole: number; score: number; par: number; subtype: string; tsMs: number }
+      const recentEvents: BirdieEvent[] = [];
+      for (const t of demoTeams) {
+        for (let h = Math.max(0, t.holesPlayed - 3); h < t.holesPlayed; h++) {
+          const s = t.scores[h];
+          const par = HOLES[h].par;
+          if (s === null) continue;
+          const diff = s - par;
+          if (diff <= -1) {
+            // Timestamp: as if they played this hole relative to their lastUpdated
+            const holeAgo = (t.holesPlayed - 1 - h) * 9 * 60 * 1000;
+            recentEvents.push({
+              teamName: t.teamName,
+              hole: h + 1,
+              score: s,
+              par,
+              subtype: diff <= -2 ? 'eagle' : 'birdie',
+              tsMs: t._lastUpdatedMs - holeAgo,
+            });
+          }
+        }
+      }
+      // Sort newest-first, keep at most 8
+      recentEvents.sort((a, b) => b.tsMs - a.tsMs);
+      const toSeed = recentEvents.slice(0, 8);
+      await Promise.all(toSeed.map(ev =>
+        addDoc(collection(fdb, 'events'), {
+          type: 'score',
+          subtype: ev.subtype,
+          teamName: ev.teamName,
+          hole: ev.hole,
+          score: ev.score,
+          par: ev.par,
+          isDemo: true,
+          timestamp: Timestamp.fromDate(new Date(ev.tsMs)),
+        })
+      ));
+
       toast({
         title: `Seeded ${n} demo teams`,
-        description: 'Open the Live tab to see them scattered across the course.',
+        description: `Teams spread across the course. ${toSeed.length} recent events added to the ticker.`,
       });
     } catch (e) {
       console.error(e);
