@@ -41,8 +41,7 @@ export default function Rules() {
       <div className="flex-1 flex flex-col justify-center w-full relative">
         <div className="overflow-hidden" ref={emblaRef}>
           <div className="flex touch-pan-y h-full">
-            {/* ── Intro card: How Tees Work. Always the first card in the deck
-                so any "wait, why is my tee on…" question is answered here. ── */}
+            {/* ── Intro card 1: How Tees Work ── */}
             <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
               <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
                 <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
@@ -50,7 +49,7 @@ export default function Rules() {
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-start mb-6">
+                  <div className="flex justify-between items-start mb-5">
                     <span className="font-condensed text-5xl font-black text-primary leading-none">
                       HOW TEES WORK
                     </span>
@@ -58,22 +57,121 @@ export default function Rules() {
 
                   <div className="space-y-3 text-card-foreground/90 text-base leading-relaxed font-medium">
                     <p>
-                      Your tee block is set by your <span className="font-black text-primary">raw scorecard vs par</span> — nothing else.
+                      Your tee block is set by your <span className="font-black text-primary">raw scorecard vs par</span>.
                     </p>
                     <div className="bg-secondary/40 rounded-xl p-3 border border-border/50 space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="font-condensed text-base font-black text-red-400 uppercase tracking-widest w-20">Tips</span>
-                        <span className="text-sm">Raw score is under par</span>
+                        <span className="text-sm">Raw score under par</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-condensed text-base font-black text-blue-400 uppercase tracking-widest w-20">Women's</span>
-                        <span className="text-sm">Raw score is at par or over</span>
+                        <span className="text-sm">Raw score at par or over</span>
                       </div>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      Item Box hits (lightning, shells, banana, boo) add strokes to your <span className="font-bold text-foreground/80">net</span> score on the leaderboard — but they <span className="font-bold text-foreground/80">never</span> move your tee block. You earn Tips by playing well, not by avoiding the wheel.
+                    <p className="text-sm text-muted-foreground leading-snug">
+                      Wheel items hit your <span className="font-bold text-foreground/80">net</span> score only — they <span className="font-bold text-foreground/80">never</span> move your tee block.
                     </p>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Intro card 2: Item Box rules ── */}
+            <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
+              <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
+                  BOX
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-start mb-5">
+                    <span className="font-condensed text-5xl font-black text-primary leading-none">
+                      ITEM BOX RULES
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 text-card-foreground/90 text-base leading-relaxed font-medium">
+                    <p>
+                      After hole 9, every team spins the wheel <span className="font-black text-primary">once</span>.
+                    </p>
+                    <ul className="space-y-2 text-sm">
+                      <li className="flex gap-2">
+                        <span className="text-primary font-black">›</span>
+                        <span>One spin per team, per round</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-primary font-black">›</span>
+                        <span>Items add / subtract <span className="font-bold">net</span> strokes only</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-primary font-black">›</span>
+                        <span>Items <span className="font-bold">never</span> move your tee block</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-primary font-black">›</span>
+                        <span>Targets are random or auto — no opt-outs</span>
+                      </li>
+                    </ul>
+                    <p className="text-sm text-muted-foreground leading-snug">
+                      Hit appears on your scorecard. Tap it. Take your medicine.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Intro card 3: The 8 items ── */}
+            <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
+              <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
+                  8
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="font-condensed text-5xl font-black text-primary leading-none">
+                      THE 8 ITEMS
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-[13px] leading-snug font-medium">
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#2ecc40' }}>Green</span>
+                      <span className="text-card-foreground/90">+1 to a random team</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#e63946' }}>Red</span>
+                      <span className="text-card-foreground/90">Pick any team, +1</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#2a9df4' }}>Blue</span>
+                      <span className="text-card-foreground/90">+1 to current leader</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#f4d35e' }}>Banana</span>
+                      <span className="text-card-foreground/90">+1 to a random other team</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#3aa1ff' }}>Lightning</span>
+                      <span className="text-card-foreground/90">+1 to <span className="font-bold">all</span> other teams</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#ff7043' }}>Mushroom</span>
+                      <span className="text-card-foreground/90">−1 off your back 9</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#ffd700' }}>Star</span>
+                      <span className="text-card-foreground/90">−2 off your back 9</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#a05ec6' }}>Boo</span>
+                      <span className="text-card-foreground/90">Steal 1: their +1, your −1</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-snug mt-3 pt-3 border-t border-border/40">
+                    Random targets are blind — no "behind you" bias. Red Shell picker hides scores so you pick a rival, not a rank.
+                  </p>
                 </div>
               </div>
             </div>
@@ -124,12 +222,18 @@ export default function Rules() {
           </button>
           
           <div className="font-condensed text-xl font-bold tracking-widest">
-            {selectedIndex === 0 ? 'TEE' : selectedIndex} / 18
+            {selectedIndex === 0
+              ? 'TEE'
+              : selectedIndex === 1
+              ? 'BOX'
+              : selectedIndex === 2
+              ? 'ITEMS'
+              : `${selectedIndex - 2} / 18`}
           </div>
 
           <button 
             onClick={scrollNext}
-            disabled={selectedIndex === HOLES.length}
+            disabled={selectedIndex === HOLES.length + 2}
             className="w-12 h-12 flex items-center justify-center rounded-full bg-secondary text-secondary-foreground disabled:opacity-30 transition-opacity"
           >
             <ChevronRight className="w-6 h-6" />
