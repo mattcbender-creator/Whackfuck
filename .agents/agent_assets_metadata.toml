@@ -131,3 +131,9 @@ id = "1mV6awnXdC7pJu6sYTUgw"
 uri = "file://screenshots/home.jpg"
 type = "image"
 title = "Home — Team Registration"
+
+[[outputs]]
+id = "dDWG2KAvPH7ZLHW-zj06u"
+uri = "file://attached_assets/wfc-owner-guide.pdf"
+type = "pdf"
+title = "WFC – Owner Handover Guide"
