@@ -59,28 +59,14 @@ export default function HoleView() {
   const [finishLoading, setFinishLoading] = useState(false);
   const [totalTeams, setTotalTeams] = useState(0);
   const [finishChirp, setFinishChirp] = useState('');
-  const finishShownRef = useRef(false);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const { toast } = useToast();
 
   const markSubmitted = submitFinal;
 
-  // Reset finish-shown latch when admin wipes the team
-  useEffect(() => {
-    if (!teamInfo) finishShownRef.current = false;
-  }, [teamInfo]);
-
-  // Auto-trigger finish modal the first time hole 18 is completed
-  useEffect(() => {
-    if (!(holesPlayed === 18 && !hasSubmitted && !finishShownRef.current)) return;
-    finishShownRef.current = true;
-    const t = setTimeout(() => {
-      setFinishChirp(pickChirp(scores, netScore));
-      setFinishOpen(true);
-    }, 700);
-    return () => clearTimeout(t);
-  }, [holesPlayed, hasSubmitted]);
+  // Round-complete modal is opened only by the Submit Final Score button.
+  // (Previously auto-opened on holesPlayed===18, which blocked score edits.)
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
