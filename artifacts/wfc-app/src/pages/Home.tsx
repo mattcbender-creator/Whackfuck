@@ -5,6 +5,96 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Users, ShieldAlert } from 'lucide-react';
 
+// June 27 2026, 7:00 AM Eastern (UTC-4 in summer / EDT)
+const EVENT_START = new Date('2026-06-27T07:00:00-04:00');
+
+function useCountdown() {
+  const [parts, setParts] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
+
+  useEffect(() => {
+    function tick() {
+      const diff = EVENT_START.getTime() - Date.now();
+      if (diff <= 0) {
+        setParts(null);
+        return;
+      }
+      const totalSecs = Math.floor(diff / 1000);
+      setParts({
+        d: Math.floor(totalSecs / 86400),
+        h: Math.floor((totalSecs % 86400) / 3600),
+        m: Math.floor((totalSecs % 3600) / 60),
+        s: totalSecs % 60,
+      });
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return parts;
+}
+
+function Countdown() {
+  const parts = useCountdown();
+  if (!parts) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    <div className="w-full bg-card/50 border border-primary/30 rounded-2xl px-4 py-3 flex flex-col items-center gap-1.5">
+      <span className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">
+        Tournament Starts In
+      </span>
+      <div className="flex items-end gap-2">
+        {parts.d > 0 && (
+          <>
+            <div className="flex flex-col items-center">
+              <span
+                className="font-condensed font-black text-foreground leading-none"
+                style={{ fontSize: 'clamp(2rem, 10vw, 2.8rem)' }}
+              >
+                {parts.d}
+              </span>
+              <span className="text-[9px] text-muted-foreground uppercase tracking-widest mt-0.5">
+                {parts.d === 1 ? 'day' : 'days'}
+              </span>
+            </div>
+            <span className="font-condensed font-black text-primary/60 text-3xl mb-2">:</span>
+          </>
+        )}
+        <div className="flex flex-col items-center">
+          <span
+            className="font-condensed font-black text-foreground leading-none tabular-nums"
+            style={{ fontSize: 'clamp(2rem, 10vw, 2.8rem)' }}
+          >
+            {pad(parts.h)}
+          </span>
+          <span className="text-[9px] text-muted-foreground uppercase tracking-widest mt-0.5">hrs</span>
+        </div>
+        <span className="font-condensed font-black text-primary/60 text-3xl mb-2">:</span>
+        <div className="flex flex-col items-center">
+          <span
+            className="font-condensed font-black text-foreground leading-none tabular-nums"
+            style={{ fontSize: 'clamp(2rem, 10vw, 2.8rem)' }}
+          >
+            {pad(parts.m)}
+          </span>
+          <span className="text-[9px] text-muted-foreground uppercase tracking-widest mt-0.5">min</span>
+        </div>
+        <span className="font-condensed font-black text-primary/60 text-3xl mb-2">:</span>
+        <div className="flex flex-col items-center">
+          <span
+            className="font-condensed font-black text-primary leading-none tabular-nums"
+            style={{ fontSize: 'clamp(2rem, 10vw, 2.8rem)' }}
+          >
+            {pad(parts.s)}
+          </span>
+          <span className="text-[9px] text-muted-foreground uppercase tracking-widest mt-0.5">sec</span>
+        </div>
+      </div>
+      <span className="text-[9px] text-muted-foreground">Jun 27 · Dundee CC</span>
+    </div>
+  );
+}
+
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
 export default function Home() {
@@ -81,6 +171,11 @@ export default function Home() {
           <p className="mt-3 text-muted-foreground tracking-widest text-[11px] uppercase font-medium">
             Dundee Country Club · Under par = Tips
           </p>
+        </div>
+
+        {/* Countdown timer — auto-hides at 7am day of event */}
+        <div className={`w-full transition-all duration-700 delay-150 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+          <Countdown />
         </div>
 
         {/* ── Team already registered ── */}
