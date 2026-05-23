@@ -176,16 +176,29 @@ export default function Rules() {
               </div>
             </div>
 
-            {HOLES.map((hole) => (
-              <div key={hole.hole} className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
-                <div className="h-full bg-card border border-border rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
-                  {/* Big background number */}
-                  <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
-                    {hole.hole}
-                  </div>
+            {HOLES.map((hole) => {
+              const ruleLen = hole.rule.length;
+              const ruleNameLen = hole.ruleName.length;
+              // Tighten spacing and shrink text for longer rules
+              const isLong = ruleLen > 130;
+              const isVeryLong = ruleLen > 200;
+              const headerMb = isLong ? 'mb-3' : 'mb-6';
+              const titleMb = isLong ? 'mb-3' : 'mb-5';
+              const titleSize = ruleNameLen > 22 ? 'text-3xl' : 'text-4xl';
+              const ruleTextClass = isVeryLong
+                ? 'text-sm leading-snug'
+                : isLong
+                ? 'text-[15px] leading-snug'
+                : 'text-base leading-relaxed';
+              return (
+                <div key={hole.hole} className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
+                  <div className="h-full bg-card border border-border rounded-2xl p-5 flex flex-col shadow-xl relative overflow-hidden">
+                    {/* Big background number */}
+                    <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
+                      {hole.hole}
+                    </div>
 
-                  <div>
-                    <div className="flex justify-between items-start mb-8">
+                    <div className={`flex justify-between items-start ${headerMb}`}>
                       <span className="font-condensed text-6xl font-black text-primary leading-none">
                         #{hole.hole.toString().padStart(2, '0')}
                       </span>
@@ -195,17 +208,19 @@ export default function Rules() {
                       </div>
                     </div>
 
-                    <h3 className="font-condensed text-4xl font-bold uppercase tracking-tight leading-none mb-6">
-                      {hole.ruleName}
-                    </h3>
-                    
-                    <p className="text-lg text-card-foreground/90 leading-relaxed font-medium">
+                    {hole.ruleName && (
+                      <h3 className={`font-condensed ${titleSize} font-bold uppercase tracking-tight leading-none ${titleMb}`}>
+                        {hole.ruleName}
+                      </h3>
+                    )}
+
+                    <p className={`${ruleTextClass} text-card-foreground/90 font-medium`}>
                       {hole.rule}
                     </p>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {/* Empty padding at the end to allow last slide to center */}
             <div className="flex-[0_0_15%] min-w-0" />
           </div>
