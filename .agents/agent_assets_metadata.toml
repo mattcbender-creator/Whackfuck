@@ -137,3 +137,9 @@ id = "dDWG2KAvPH7ZLHW-zj06u"
 uri = "file://attached_assets/wfc-owner-guide.pdf"
 type = "pdf"
 title = "WFC – Owner Handover Guide"
+
+[[outputs]]
+id = "s5P8akuxKjv26onLCPeob"
+uri = "file://attached_assets/wfc-product-brief.pdf"
+type = "pdf"
+title = "WFC — Product Brief & Monetization Analysis"
