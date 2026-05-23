@@ -70,7 +70,7 @@ export const WHEEL_ITEMS: WheelItem[] = [
     textColor: '#1a1a1a',
     selection: 'none',
     flavor: 'Slipped!',
-    description: '+1 stroke to a random team physically behind you (lower hole number).',
+    description: '+1 stroke to a random other team on the course.',
   },
   {
     id: 'lightning',

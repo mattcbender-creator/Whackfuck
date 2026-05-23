@@ -156,7 +156,6 @@ export default function WheelModal({ open, onClose }: Props) {
     // Always ends with setPhase('applied') — no matter what — so the UI never freezes.
     if (!teamInfo) { setPhase('applied'); return; }
     const others = snap.filter(t => t.id !== teamId);
-    const myHolesPlayed = snap.find(t => t.id === teamId)?.holesPlayed ?? 0;
     try {
       switch (item.id) {
         case 'green_shell': {
@@ -187,8 +186,7 @@ export default function WheelModal({ open, onClose }: Props) {
           break;
         }
         case 'banana': {
-          const behind = others.filter(t => t.holesPlayed < myHolesPlayed);
-          const target = pickRandom(behind);
+          const target = pickRandom(others);
           if (target) {
             await applyEffectToOthers('banana', [target.id]);
             await recordSpinOnSelf(item, target.teamName);
@@ -446,15 +444,10 @@ export default function WheelModal({ open, onClose }: Props) {
                     <div className="text-left min-w-0">
                       <p className="font-bold text-sm text-white truncate">{t.teamName}</p>
                       <p className="text-[11px] text-white/50 truncate">
-                        {t.player1} & {t.player2} · Thru {t.holesPlayed}
+                        {t.player1} & {t.player2}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className={`font-condensed text-lg font-black ${
-                        t.netScore < 0 ? 'text-primary' : t.netScore > 0 ? 'text-orange-400' : 'text-white'
-                      }`}>
-                        {t.netScore === 0 ? 'E' : t.netScore > 0 ? `+${t.netScore}` : t.netScore}
-                      </span>
                       <ChevronRight className="w-4 h-4 text-white/40" />
                     </div>
                   </button>
@@ -517,8 +510,8 @@ export default function WheelModal({ open, onClose }: Props) {
           : 'Blue shell — no other teams to hit.';
       case 'banana':
         return last
-          ? `Banana slipped onto ${last} (behind you). +1 stroke on them.`
-          : 'Banana fizzled — no teams physically behind you.';
+          ? `Banana slipped onto ${last}. +1 stroke on them.`
+          : 'Banana fizzled — no other teams on the course.';
       case 'lightning':
         return 'Lightning struck every other team. +1 stroke each.';
       case 'mushroom':
