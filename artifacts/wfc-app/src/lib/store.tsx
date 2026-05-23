@@ -214,6 +214,84 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [teamId]);
 
+  // ── Continuous reconciliation of cross-team wheel hits ──
+  // Subscribes to the ENTIRE teams collection. For each OTHER team's wheelSpin
+  // that should hit us (lightning = hits everyone; shells/banana/boo = hits
+  // their targetTeam by name), verify it's reflected in our own targetedBy.
+  // Missing hits get applied via a Firestore transaction so two clients
+  // reconciling simultaneously can never double-count. arrayUnion + a
+  // transactional re-read of targetedBy guarantee idempotency. This is the
+  // backstop that protects late joiners (registered AFTER a lightning was
+  // spun) and any device that was offline when a hit was dispatched.
+  const reconcileInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    if (!lockResolved) return;
+    if (!teamInfo) return;
+    const fdb = db;
+    const ourTeamName = teamInfo.teamName;
+    const unsub = onSnapshot(collection(fdb, 'teams'), async (snap) => {
+      if (reconcileInFlightRef.current) return;
+      // Build the set of hits that SHOULD be on us based on every other team's
+      // recorded wheelSpin. Each hit is uniquely keyed by (fromTeam, at).
+      const expected: { item: WheelItemId; fromTeam: string; at: number }[] = [];
+      for (const d of snap.docs) {
+        if (d.id === teamId) continue;
+        const data = d.data();
+        const spin = data?.wheelSpin as { item?: WheelItemId; at?: number; targetTeam?: string } | undefined;
+        if (!spin || !spin.item || typeof spin.at !== 'number') continue;
+        const fromTeam = (data.teamName as string | undefined) ?? 'Unknown';
+        if (spin.item === 'lightning') {
+          expected.push({ item: 'lightning', fromTeam, at: spin.at });
+        } else if (
+          (spin.item === 'green_shell' || spin.item === 'red_shell' ||
+           spin.item === 'blue_shell' || spin.item === 'banana' ||
+           spin.item === 'boo') &&
+          spin.targetTeam === ourTeamName
+        ) {
+          expected.push({ item: spin.item, fromTeam, at: spin.at });
+        }
+      }
+      if (expected.length === 0) return;
+      // Quick local-state check — skip the transaction entirely if our
+      // current targetedBy already contains every expected hit.
+      const localKeys = new Set(targetedBy.map(t => `${t.fromTeam}|${t.at}`));
+      const possiblyMissing = expected.filter(e => !localKeys.has(`${e.fromTeam}|${e.at}`));
+      if (possiblyMissing.length === 0) return;
+      reconcileInFlightRef.current = true;
+      try {
+        const ref = doc(fdb, 'teams', teamId);
+        await runTransaction(fdb, async (tx) => {
+          const ourSnap = await tx.get(ref);
+          if (!ourSnap.exists()) return;
+          const ourData = ourSnap.data();
+          // Never reconcile a submitted round — final scores are locked.
+          if (ourData.hasSubmitted === true) return;
+          const currentTargeted = Array.isArray(ourData.targetedBy)
+            ? ourData.targetedBy as TargetedByEntry[]
+            : [];
+          const serverKeys = new Set(currentTargeted.map(t => `${t.fromTeam}|${t.at}`));
+          const toAdd = possiblyMissing.filter(e => !serverKeys.has(`${e.fromTeam}|${e.at}`));
+          if (toAdd.length === 0) return;
+          tx.set(ref, {
+            wheelAdjustment: increment(toAdd.length),
+            netScore: increment(toAdd.length),
+            targetedBy: arrayUnion(...toAdd),
+          }, { merge: true });
+        });
+      } catch (e) {
+        console.error('Hit reconciliation failed', e);
+      } finally {
+        reconcileInFlightRef.current = false;
+      }
+    }, (err) => console.error('Teams reconcile listener error', err));
+    return () => unsub();
+    // teamInfo + lockResolved are the only things that gate this; targetedBy
+    // is read inside the snapshot callback via a fresh closure on each event,
+    // so it doesn't need to be in deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, teamInfo, lockResolved]);
+
   // ── Admin reset listener ──
   useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
@@ -333,6 +411,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // locally could overwrite server gameplay state before the snapshot
     // listener has had a chance to restore the true submitted/locked state.
     if (!lockResolved) return;
+    // Submission lock: once submitted, NEVER push scores/wheelSpin/etc again.
+    // This is defense-in-depth in case any code path mutates local state
+    // post-submission (devtools, race, future bug).
+    if (hasSubmitted) return;
     const ref = doc(db, 'teams', teamId);
     // Firestore rejects `undefined`. Strip undefined fields from nested
     // wheelSpin (e.g. targetTeam isn't set for self-only items).
