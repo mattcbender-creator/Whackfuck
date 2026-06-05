@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { useCourse } from '@/lib/tournamentContext';
@@ -216,17 +216,25 @@ export default function Scorecard() {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
+    holeOrder, startingHole, isShotgun,
   } = useWFC();
   const [, setLocation] = useLocation();
-  // Default to the first unscored hole so the scorecard opens on the hole
-  // the user is actually playing — not always hole 1.
-  const initialIdx = (() => {
-    const idx = scores.findIndex(s => s === null);
-    if (idx === -1) return 17;
-    return Math.min(idx, 17);
+  // Default to the first unscored hole in PLAY order so the scorecard opens on
+  // the hole the user is actually playing. For a normal start holeOrder is
+  // [1..18] so this collapses to the original "first null score" behaviour.
+  const initialPos = (() => {
+    const pos = holeOrder.findIndex(n => scores[n - 1] === null);
+    return pos === -1 ? 17 : pos;
   })();
-  const [half, setHalf] = useState<Half>(initialIdx >= 9 ? 'back' : 'front');
+  const initialIdx = holeOrder[initialPos] - 1;
+  const [half, setHalf] = useState<Half>(initialPos >= 9 ? 'back' : 'front');
   const [selectedIdx, setSelectedIdx] = useState(initialIdx);
+  const userNavigatedRef = useRef(false);
+  // Mark a manual selection so the auto-jump effect won't override it.
+  const selectCell = (idx: number) => {
+    userNavigatedRef.current = true;
+    setSelectedIdx(idx);
+  };
   const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
@@ -242,12 +250,24 @@ export default function Scorecard() {
   // taps "Spin Item Box". Until that moment they can dismiss the modal and
   // edit their front-9 scores.
 
-  const front9Complete = scores.slice(0, 9).every(s => s !== null);
+  const front9Complete = holeOrder.slice(0, 9).every(n => scores[n - 1] !== null);
   const spunItem = getWheelItem(wheelSpin?.item);
 
-  const offset = half === 'front' ? 0 : 9;
-  const halfHoles = HOLES.slice(offset, offset + 9);
-  const halfScores = scores.slice(offset, offset + 9);
+  // Play-order halves: first 9 played holes vs last 9, by hole index. For a
+  // normal start these are [0..8] / [9..17]; a shotgun start wraps around.
+  const frontIdxs = holeOrder.slice(0, 9).map(n => n - 1);
+  const backIdxs = holeOrder.slice(9, 18).map(n => n - 1);
+  const halfIdxs = half === 'front' ? frontIdxs : backIdxs;
+  const halfHoles = halfIdxs.map(idx => HOLES[idx]);
+  const halfScores = halfIdxs.map(idx => scores[idx]);
+
+  // Play position (0–17) of a given hole index, and the position of the first
+  // hole still unscored (18 when the round is complete).
+  const playPos = (idx: number) => holeOrder.indexOf(idx + 1);
+  const firstUnscoredPos = (() => {
+    const p = holeOrder.findIndex(n => scores[n - 1] === null);
+    return p === -1 ? 18 : p;
+  })();
 
   // Running cumulative to-par within this half
   let running = 0;
@@ -269,22 +289,37 @@ export default function Scorecard() {
   const selScore = scores[selectedIdx];
   const selDiff = selScore !== null ? selScore - selHole.par : null;
 
-  // Sync selected half with selectedIdx
+  // Sync selected half with the play position of the selected hole.
   useEffect(() => {
-    if (selectedIdx < 9 && half !== 'front') setHalf('front');
-    if (selectedIdx >= 9 && half !== 'back') setHalf('back');
-  }, [selectedIdx, half]);
+    const pos = playPos(selectedIdx);
+    if (pos < 9 && half !== 'front') setHalf('front');
+    if (pos >= 9 && half !== 'back') setHalf('back');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIdx, half, startingHole]);
 
-  // Front 9 is locked once the team has confirmed (so they can't edit after spinning).
-  const isHoleLocked = (idx: number) => frontNineConfirmed && idx < 9;
+  // Re-jump to the first unscored hole in play order once the team's starting
+  // hole resolves (shotgun assignments load after mount). Never overrides a
+  // manual selection. For a normal start this lands on the same hole as the
+  // initial state, so behaviour is unchanged.
+  useEffect(() => {
+    if (userNavigatedRef.current) return;
+    const pos = holeOrder.findIndex(n => scores[n - 1] === null);
+    setSelectedIdx(pos === -1 ? holeOrder[17] - 1 : holeOrder[pos] - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startingHole]);
+
+  // Front 9 is locked once the team has confirmed (normal start only — a
+  // shotgun round has no shared front 9).
+  const isHoleLocked = (idx: number) => !isShotgun && frontNineConfirmed && idx < 9;
   const selLocked = isHoleLocked(selectedIdx);
 
-  // First hole that hasn't been scored yet (0-17). 18 means all scored.
-  const firstUnscoredIdx = scores.findIndex(s => s === null);
-  const firstUnscored = firstUnscoredIdx === -1 ? 18 : firstUnscoredIdx;
-
   // Gate any attempt to move into the back 9 — must spin the Item Box first.
+  // Disabled for a shotgun start (no front/back Item Box mechanic).
   const tryGoToBack = (targetIdx: number): boolean => {
+    if (isShotgun) {
+      setSelectedIdx(targetIdx);
+      return true;
+    }
     if (!front9Complete) {
       toast({
         title: 'Finish the front 9 first',
@@ -312,15 +347,16 @@ export default function Scorecard() {
       });
       return;
     }
-    // STRICT IN-ORDER: cannot enter a score for a hole when any prior hole is
-    // still blank. Snap them back to the first unscored hole and tell them.
-    if (selectedIdx > firstUnscored) {
+    // STRICT IN-ORDER: cannot enter a score for a hole when any prior hole in
+    // play order is still blank. Snap them back to the first unscored hole.
+    if (playPos(selectedIdx) > firstUnscoredPos && firstUnscoredPos < 18) {
+      const firstUnscoredHole = holeOrder[firstUnscoredPos];
       toast({
-        title: `Score hole ${firstUnscored + 1} first`,
+        title: `Score hole ${firstUnscoredHole} first`,
         description: 'Enter scores in order — no skipping holes.',
         variant: 'destructive',
       });
-      setSelectedIdx(firstUnscored);
+      setSelectedIdx(firstUnscoredHole - 1);
       return;
     }
     const cur = scores[selectedIdx];
@@ -343,8 +379,8 @@ export default function Scorecard() {
     }
   };
 
-  // True if entering a score for this hole would be out-of-order
-  const isOutOfOrder = (idx: number) => idx > firstUnscored;
+  // True if entering a score for this hole would be out-of-order (play order)
+  const isOutOfOrder = (idx: number) => playPos(idx) > firstUnscoredPos;
   const selOutOfOrder = isOutOfOrder(selectedIdx);
 
   const handleSync = async () => {
@@ -466,11 +502,11 @@ export default function Scorecard() {
                 key={h}
                 onClick={() => {
                   if (h === 'back') {
-                    if (!tryGoToBack(9)) return;
+                    if (!tryGoToBack(backIdxs[0])) return;
                     setHalf('back');
                   } else {
                     setHalf('front');
-                    setSelectedIdx(0);
+                    selectCell(frontIdxs[0]);
                   }
                 }}
                 className={`flex-1 py-2 rounded-full font-condensed font-bold text-sm uppercase tracking-wider transition-colors ${
@@ -496,9 +532,9 @@ export default function Scorecard() {
                 {halfHoles.map((h, i) => (
                   <td
                     key={h.hole}
-                    onClick={() => setSelectedIdx(offset + i)}
+                    onClick={() => selectCell(halfIdxs[i])}
                     className={`${CELL} font-condensed font-black text-base w-11 ${
-                      selectedIdx === offset + i
+                      selectedIdx === halfIdxs[i]
                         ? 'bg-primary/20 text-primary'
                         : 'text-foreground/70 hover:bg-white/5'
                     }`}
@@ -517,8 +553,8 @@ export default function Scorecard() {
                 {halfHoles.map((h, i) => (
                   <td
                     key={h.hole}
-                    onClick={() => setSelectedIdx(offset + i)}
-                    className={`${CELL} text-muted-foreground/60 ${selectedIdx === offset + i ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                    onClick={() => selectCell(halfIdxs[i])}
+                    className={`${CELL} text-muted-foreground/60 ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
                   >
                     {h.par}
                   </td>
@@ -532,8 +568,8 @@ export default function Scorecard() {
                 {halfHoles.map((h, i) => (
                   <td
                     key={h.hole}
-                    onClick={() => setSelectedIdx(offset + i)}
-                    className={`${CELL} text-muted-foreground/40 text-[10px] ${selectedIdx === offset + i ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                    onClick={() => selectCell(halfIdxs[i])}
+                    className={`${CELL} text-muted-foreground/40 text-[10px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
                   >
                     {h.hdcp}
                   </td>
@@ -552,8 +588,8 @@ export default function Scorecard() {
                 {halfHoles.map((h, i) => (
                   <td
                     key={h.hole}
-                    onClick={() => setSelectedIdx(offset + i)}
-                    className={`${CELL} text-foreground/50 text-[11px] ${selectedIdx === offset + i ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                    onClick={() => selectCell(halfIdxs[i])}
+                    className={`${CELL} text-foreground/50 text-[11px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
                   >
                     {currentTee === 'tips' ? h.tips : h.womens}
                   </td>
@@ -571,11 +607,11 @@ export default function Scorecard() {
                 {halfHoles.map((h, i) => {
                   const s = halfScores[i];
                   const diff = s !== null ? s - h.par : null;
-                  const isSelected = selectedIdx === offset + i;
+                  const isSelected = selectedIdx === halfIdxs[i];
                   return (
                     <td
                       key={h.hole}
-                      onClick={() => setSelectedIdx(offset + i)}
+                      onClick={() => selectCell(halfIdxs[i])}
                       className={`${CELL} py-2.5 ${isSelected ? 'bg-primary/20' : 'hover:bg-white/5'}`}
                     >
                       <span className={`font-condensed text-lg font-black ${netCls(diff)}`}>
@@ -598,8 +634,8 @@ export default function Scorecard() {
                   return (
                     <td
                       key={h.hole}
-                      onClick={() => setSelectedIdx(offset + i)}
-                      className={`${CELL} py-1.5 text-[11px] ${selectedIdx === offset + i ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                      onClick={() => selectCell(halfIdxs[i])}
+                      className={`${CELL} py-1.5 text-[11px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
                     >
                       <span className={netCls(diff)}>{diff === null ? '—' : fmtNet(diff)}</span>
                     </td>
@@ -618,8 +654,8 @@ export default function Scorecard() {
                   return (
                     <td
                       key={h.hole}
-                      onClick={() => setSelectedIdx(offset + i)}
-                      className={`${CELL} py-1.5 text-[11px] ${selectedIdx === offset + i ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                      onClick={() => selectCell(halfIdxs[i])}
+                      className={`${CELL} py-1.5 text-[11px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
                     >
                       <span className={netCls(cum)}>{cum === null ? '—' : fmtNet(cum)}</span>
                     </td>
@@ -646,7 +682,7 @@ export default function Scorecard() {
 
         {/* ── Front 9 complete → offer to open Item Box (no auto-lock).
             Hidden after submit so there's no path back into the wheel. ── */}
-        {half === 'front' && front9Complete && !wheelSpin && !hasSubmitted && (
+        {!isShotgun && half === 'front' && front9Complete && !wheelSpin && !hasSubmitted && (
           <button
             onClick={() => setWheelOpen(true)}
             data-testid="button-confirm-front-nine"
@@ -800,12 +836,12 @@ export default function Scorecard() {
                 Front 9 locked after the spin
               </p>
             )}
-            {selOutOfOrder && !selLocked && (
+            {selOutOfOrder && !selLocked && firstUnscoredPos < 18 && (
               <button
-                onClick={() => setSelectedIdx(firstUnscored)}
+                onClick={() => setSelectedIdx(holeOrder[firstUnscoredPos] - 1)}
                 className="block mx-auto mt-2 text-[10px] text-primary/90 hover:text-primary uppercase tracking-widest font-bold"
               >
-                Score hole {firstUnscored + 1} first →
+                Score hole {holeOrder[firstUnscoredPos]} first →
               </button>
             )}
           </div>
@@ -813,8 +849,12 @@ export default function Scorecard() {
           {/* Hole navigation */}
           <div className="flex items-center justify-between px-4 pb-4">
             <button
-              onClick={() => setSelectedIdx(i => Math.max(0, i - 1))}
-              disabled={selectedIdx === 0}
+              onClick={() => {
+                const pos = playPos(selectedIdx);
+                if (pos <= 0) return;
+                selectCell(holeOrder[pos - 1] - 1);
+              }}
+              disabled={playPos(selectedIdx) === 0}
               className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-primary transition-colors disabled:opacity-25 uppercase tracking-wider"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -825,14 +865,16 @@ export default function Scorecard() {
             </span>
             <button
               onClick={() => {
-                const next = Math.min(17, selectedIdx + 1);
-                if (selectedIdx === 8 && next === 9) {
-                  tryGoToBack(9);
+                const pos = playPos(selectedIdx);
+                const nextPos = Math.min(17, pos + 1);
+                // Moving from the 9th played hole into the back 9 gates the Item Box (normal start only).
+                if (pos === 8 && nextPos === 9) {
+                  tryGoToBack(backIdxs[0]);
                   return;
                 }
-                setSelectedIdx(next);
+                selectCell(holeOrder[nextPos] - 1);
               }}
-              disabled={selectedIdx === 17}
+              disabled={playPos(selectedIdx) === 17}
               className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-primary transition-colors disabled:opacity-25 uppercase tracking-wider"
             >
               Next

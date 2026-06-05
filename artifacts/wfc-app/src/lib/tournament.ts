@@ -38,6 +38,9 @@ export interface TournamentConfig {
   holeRules: unknown[]; // placeholder — edited by the rule-builder task
   status: TournamentStatus;
   createdAt: number;
+  // Shotgun-format only: maps a team id to its starting hole (1–18). Absent /
+  // empty for normal-start tournaments. Set by the host in the admin panel.
+  shotgunAssignments?: Record<string, number>;
 }
 
 // ── Code / id generators ────────────────────────────────────────────────────
@@ -263,6 +266,11 @@ export function serverConfirmedKey(tId: string | null): string {
 }
 export function hostKeyKey(tId: string): string {
   return `wfc-host-key::${tId}`;
+}
+// Cached starting hole for the current team, so a shotgun player keeps the
+// right wrap-around order while offline before the tournament doc loads.
+export function startingHoleKey(tId: string | null): string {
+  return tId ? `wfc-starting-hole::${tId}` : 'wfc-starting-hole';
 }
 export function spectatorKey(tId: string): string {
   return `wfc-spectator::${tId}`;

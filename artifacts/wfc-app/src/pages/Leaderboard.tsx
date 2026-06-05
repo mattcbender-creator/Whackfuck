@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { useCourse } from '@/lib/tournamentContext';
+import { useCourse, useTournament } from '@/lib/tournamentContext';
 import { teamsCol, eventsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
 import { Crown, X, Flame, Target, Sparkles, Megaphone, Star, Zap, Flag, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -226,6 +226,7 @@ function aggregateHits(hits: TargetedByEntry[]): { item: WheelItemId; count: num
 
 export default function Leaderboard() {
   const { holes: courseHoles } = useCourse();
+  const { tournament } = useTournament();
   const { teamInfo, netScore, holesPlayed, currentTee } = useWFC();
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(isFirebaseConfigured);
@@ -504,17 +505,26 @@ export default function Leaderboard() {
         <div className="mt-8">
           <h3 className="font-condensed text-xl font-bold uppercase tracking-widest text-muted-foreground mb-4">Groups on Course</h3>
           <div className="grid grid-cols-2 gap-3">
-            {teams.map(team => (
-              <div key={`tracker-${team.id}`} className="bg-card border border-border p-3 rounded-lg flex flex-col gap-2">
-                <span className="font-bold text-sm truncate">{team.teamName}</span>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Hole</span>
-                  <span className="font-condensed text-xl font-black text-primary">
-                    {team.holesPlayed < 18 ? team.holesPlayed + 1 : 'Clubhouse'}
-                  </span>
+            {teams.map(team => {
+              // For a shotgun start each team begins on its assigned hole and
+              // wraps around. Normal start always starts on hole 1 (ignoring any
+              // stale assignment data), so this collapses to holesPlayed + 1.
+              const startHole = tournament?.startType === 'shotgun'
+                ? (tournament.shotgunAssignments?.[team.id] ?? 1)
+                : 1;
+              const currentHole = ((startHole - 1 + team.holesPlayed) % 18) + 1;
+              return (
+                <div key={`tracker-${team.id}`} className="bg-card border border-border p-3 rounded-lg flex flex-col gap-2">
+                  <span className="font-bold text-sm truncate">{team.teamName}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Hole</span>
+                    <span className="font-condensed text-xl font-black text-primary">
+                      {team.holesPlayed < 18 ? currentHole : 'Clubhouse'}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

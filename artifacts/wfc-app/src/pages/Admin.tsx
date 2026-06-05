@@ -9,7 +9,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
 import {
-  teamsCol, eventsCol, drivesCol, teamDoc, configDoc,
+  teamsCol, eventsCol, drivesCol, teamDoc, configDoc, tournamentDoc,
   getActiveTournamentId, formatPlayers, normalizeScores, scoresToMap,
   type CourseHole,
 } from '@/lib/tournament';
@@ -17,7 +17,7 @@ import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
-  ShieldAlert, AlertTriangle, CheckCircle2,
+  ShieldAlert, AlertTriangle, CheckCircle2, Flag,
 } from 'lucide-react';
 
 const DEMO_TEAM_NAMES = [
@@ -228,6 +228,11 @@ export default function Admin() {
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
 
+  // Shotgun-start hole assignments (only used when startType === 'shotgun').
+  const isShotgun = tournament?.startType === 'shotgun';
+  const [shotgunDraft, setShotgunDraft] = useState<Record<string, number>>({});
+  const [shotgunSaving, setShotgunSaving] = useState(false);
+
   const loadTeams = useCallback(async () => {
     if (!db || !getActiveTournamentId()) return;
     const snap = await getDocs(teamsCol(db));
@@ -252,6 +257,48 @@ export default function Admin() {
     return () => unsub();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, teamsOpen, auditOpen]);
+
+  // Keep a live team list for the shotgun assignment card without needing the
+  // host to open the Team Management panel first.
+  useEffect(() => {
+    if (!auth || !isShotgun || !db || !getActiveTournamentId()) return;
+    const unsub = onSnapshot(teamsCol(db), snap => {
+      const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
+      list.sort((a, b) => a.netScore - b.netScore);
+      setTeams(list);
+    });
+    return () => unsub();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, isShotgun]);
+
+  // Seed the editable draft from the saved assignments whenever they change.
+  useEffect(() => {
+    setShotgunDraft(tournament?.shotgunAssignments ?? {});
+  }, [tournament?.shotgunAssignments]);
+
+  const handleSaveShotgun = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) {
+      toast({ title: 'Not connected', description: 'Shotgun assignments need Firebase.', variant: 'destructive' });
+      return;
+    }
+    setShotgunSaving(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { shotgunAssignments: shotgunDraft }, { merge: true });
+      toast({ title: 'Shotgun assignments saved' });
+    } catch (e) {
+      toast({ title: 'Save failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setShotgunSaving(false);
+    }
+  };
+
+  // Round-robin: spread teams across holes 1, 2, 3 … wrapping at 18.
+  const handleAutoAssignShotgun = () => {
+    const next: Record<string, number> = {};
+    teams.forEach((t, i) => { next[t.id] = (i % 18) + 1; });
+    setShotgunDraft(next);
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -771,6 +818,62 @@ export default function Admin() {
             <Button type="submit" className="w-full h-12" data-testid="button-send-broadcast">Send Broadcast</Button>
           </form>
         </div>
+
+        {/* ── Shotgun Assignments (shotgun-start tournaments only) ── */}
+        {isShotgun && (
+          <div className="bg-card p-6 rounded-xl border border-border space-y-4">
+            <div className="flex items-center gap-2">
+              <Flag className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Shotgun Assignments</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Set the starting hole for each team. Players tee off there and wrap around all 18.
+            </p>
+            {teams.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No teams registered yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {teams.map(team => (
+                  <div key={`shotgun-${team.id}`} className="flex items-center justify-between gap-3">
+                    <span className="font-bold text-sm truncate flex-1">{team.teamName}</span>
+                    <select
+                      value={shotgunDraft[team.id] ?? 1}
+                      onChange={e => setShotgunDraft(d => ({ ...d, [team.id]: Number(e.target.value) }))}
+                      data-testid={`select-shotgun-hole-${team.id}`}
+                      className="h-10 px-3 rounded-lg bg-input border border-border text-sm font-condensed font-bold"
+                    >
+                      {Array.from({ length: 18 }, (_, i) => i + 1).map(n => (
+                        <option key={n} value={n}>Hole {n}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1 h-11"
+                onClick={handleAutoAssignShotgun}
+                disabled={teams.length === 0}
+                data-testid="button-auto-assign-shotgun"
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Auto-assign
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-11"
+                onClick={handleSaveShotgun}
+                disabled={shotgunSaving || teams.length === 0}
+                data-testid="button-save-shotgun"
+              >
+                {shotgunSaving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── Team Management ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">

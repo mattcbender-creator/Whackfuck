@@ -52,9 +52,14 @@ export default function HoleView() {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
+    holeOrder, startingHole, isShotgun,
   } = useWFC();
   const [, setLocation] = useLocation();
-  const [holeIdx, setHoleIdx] = useState(0);
+  // Position within the team's play order (0–17), not the raw hole index. For a
+  // normal start holeOrder is [1..18] so orderPos === holeIdx; for a shotgun
+  // start it wraps around from the team's assigned starting hole.
+  const [orderPos, setOrderPos] = useState(0);
+  const userNavigatedRef = useRef(false);
   const [wheelOpen, setWheelOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
@@ -104,13 +109,17 @@ export default function HoleView() {
     setFinishOpen(true);
   };
 
-  // Auto-jump to first unscored hole on mount
+  // Auto-jump to the first unscored hole in play order. Re-runs when the
+  // team's starting hole resolves (shotgun assignments load after mount), but
+  // never stomps a manual navigation.
   useEffect(() => {
-    const firstUnscored = scores.findIndex(s => s === null);
-    if (firstUnscored !== -1) setHoleIdx(firstUnscored);
+    if (userNavigatedRef.current) return;
+    const firstUnscoredPos = holeOrder.findIndex(h => scores[h - 1] === null);
+    if (firstUnscoredPos !== -1) setOrderPos(firstUnscoredPos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startingHole]);
 
+  const holeIdx = holeOrder[orderPos] - 1;
   const hole = HOLES[holeIdx];
   const score = scores[holeIdx];
   const diff = diffOf(score, hole.par);
@@ -119,31 +128,38 @@ export default function HoleView() {
 
   const front9Complete = scores.slice(0, 9).every(s => s !== null);
   const spunItem = getWheelItem(wheelSpin?.item);
-  const holeLocked = hasSubmitted || (frontNineConfirmed && holeIdx < 9);
+  // Front-9 lock + back-9 Item Box gate only apply to a normal start. A shotgun
+  // round has no shared front/back, so those mechanics are disabled.
+  const holeLocked = hasSubmitted || (!isShotgun && frontNineConfirmed && holeIdx < 9);
 
   // ── The gate: enforces ordered scoring + back-9 lock.
+  // Works on play-order positions (0–17), not raw hole indices.
   // Returns true if navigation is allowed; false if blocked.
-  const tryGoToIdx = (targetIdx: number): boolean => {
-    if (targetIdx === holeIdx) return true;
+  const tryGoToPos = (targetPos: number): boolean => {
+    if (targetPos === orderPos) return true;
+    userNavigatedRef.current = true;
     // Backwards is always fine.
-    if (targetIdx < holeIdx) {
-      setHoleIdx(targetIdx);
+    if (targetPos < orderPos) {
+      setOrderPos(targetPos);
       return true;
     }
-    // Forwards: every hole before `targetIdx` must have a score.
-    const missing = scores.slice(0, targetIdx).findIndex(s => s === null);
-    if (missing !== -1) {
+    // Forwards: every hole earlier in the play order must have a score.
+    let missingPos = -1;
+    for (let p = 0; p < targetPos; p++) {
+      if (scores[holeOrder[p] - 1] === null) { missingPos = p; break; }
+    }
+    if (missingPos !== -1) {
       toast({
-        title: `Score hole ${missing + 1} first`,
+        title: `Score hole ${holeOrder[missingPos]} first`,
         description: 'Holes must be entered in order.',
         variant: 'destructive',
       });
-      setHoleIdx(missing);
+      setOrderPos(missingPos);
       return false;
     }
-    // Back-9 lock: must have spun the Item Box. Once submitted, the wheel
-    // never re-opens — navigation just goes through.
-    if (targetIdx >= 9 && !wheelSpin && !hasSubmitted) {
+    // Back-9 lock (normal start only): must have spun the Item Box. Once
+    // submitted, the wheel never re-opens — navigation just goes through.
+    if (!isShotgun && targetPos >= 9 && !wheelSpin && !hasSubmitted) {
       if (!front9Complete) {
         toast({
           title: 'Finish the front 9 first',
@@ -155,7 +171,7 @@ export default function HoleView() {
       setWheelOpen(true);
       return false;
     }
-    setHoleIdx(targetIdx);
+    setOrderPos(targetPos);
     return true;
   };
 
@@ -181,8 +197,11 @@ export default function HoleView() {
     }
   };
 
-  const goPrev = () => setHoleIdx(i => Math.max(0, i - 1));
-  const goNext = () => tryGoToIdx(Math.min(17, holeIdx + 1));
+  const goPrev = () => {
+    userNavigatedRef.current = true;
+    setOrderPos(i => Math.max(0, i - 1));
+  };
+  const goNext = () => tryGoToPos(Math.min(17, orderPos + 1));
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -238,7 +257,7 @@ export default function HoleView() {
         <div className="flex items-center justify-between px-5 pb-3 max-w-md mx-auto">
           <button
             onClick={goPrev}
-            disabled={holeIdx === 0}
+            disabled={orderPos === 0}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
             data-testid="button-prev-hole"
           >
@@ -250,26 +269,27 @@ export default function HoleView() {
               HOLE {hole.hole.toString().padStart(2, '0')}
             </span>
             <div className="flex gap-1 mt-2">
-              {HOLES.map((_, i) => {
-                const s = scores[i];
-                const isActive = i === holeIdx;
+              {holeOrder.map((holeNum, p) => {
+                const idx = holeNum - 1;
+                const s = scores[idx];
+                const isActive = p === orderPos;
                 const isScored = s !== null;
-                const d = isScored ? s! - HOLES[i].par : null;
+                const d = isScored ? s! - HOLES[idx].par : null;
                 let dotColor = 'bg-secondary';
                 if (isScored && d !== null) {
                   if (d <= -1) dotColor = 'bg-primary';
                   else if (d === 0) dotColor = 'bg-foreground/40';
                   else dotColor = 'bg-orange-500/60';
                 }
-                const isBack9Locked = i >= 9 && (!front9Complete || !wheelSpin);
+                const isBack9Locked = !isShotgun && p >= 9 && (!front9Complete || !wheelSpin);
                 return (
                   <button
-                    key={i}
-                    onClick={() => tryGoToIdx(i)}
+                    key={holeNum}
+                    onClick={() => tryGoToPos(p)}
                     className={`rounded-full transition-all ${
                       isActive ? 'w-5 h-1.5 bg-primary' : `w-1.5 h-1.5 ${dotColor} ${isBack9Locked ? 'opacity-40' : ''}`
                     }`}
-                    aria-label={`Go to hole ${i + 1}`}
+                    aria-label={`Go to hole ${holeNum}`}
                   />
                 );
               })}
@@ -278,16 +298,16 @@ export default function HoleView() {
 
           <button
             onClick={goNext}
-            disabled={holeIdx === 17}
+            disabled={orderPos === 17}
             className={`w-10 h-10 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all ${
-              holeIdx === 8 && front9Complete && !wheelSpin
+              !isShotgun && orderPos === 8 && front9Complete && !wheelSpin
                 ? 'bg-primary text-primary-foreground animate-pulse shadow-lg shadow-primary/40'
                 : 'bg-secondary'
             }`}
             data-testid="button-next-hole"
-            aria-label={holeIdx === 8 && front9Complete && !wheelSpin ? 'Spin Item Box to unlock back 9' : 'Next hole'}
+            aria-label={!isShotgun && orderPos === 8 && front9Complete && !wheelSpin ? 'Spin Item Box to unlock back 9' : 'Next hole'}
           >
-            {holeIdx === 8 && front9Complete && !wheelSpin
+            {!isShotgun && orderPos === 8 && front9Complete && !wheelSpin
               ? <Sparkles className="w-5 h-5" />
               : <ChevronRight className="w-5 h-5" />}
           </button>
@@ -423,7 +443,7 @@ export default function HoleView() {
         {/* Big LOCK CTA when front 9 done & no spin yet — user must tap this
             explicitly. No auto-pop. Hidden entirely once the round is
             submitted so there is no path back into the wheel. */}
-        {front9Complete && !wheelSpin && !hasSubmitted && (
+        {!isShotgun && front9Complete && !wheelSpin && !hasSubmitted && (
           <button
             onClick={() => setWheelOpen(true)}
             data-testid="button-open-item-box"

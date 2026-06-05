@@ -7,11 +7,11 @@ import {
   runTransaction, addDoc, deleteField,
 } from 'firebase/firestore';
 import type { WheelItemId } from './wheel';
-import { useCourse } from './tournamentContext';
+import { useCourse, useTournament } from './tournamentContext';
 import {
   getActiveTournamentId, teamDoc, teamsCol, eventsCol, configDoc,
   normalizeScores, generateTeamCode,
-  storeKey, teamIdKey, joinedAtKey, serverConfirmedKey,
+  storeKey, teamIdKey, joinedAtKey, serverConfirmedKey, startingHoleKey,
 } from './tournament';
 
 export interface TeamInfo { teamName: string; players: string[]; }
@@ -37,6 +37,13 @@ export interface WFCState {
   netScore: number;
   rawNet: number;
   holesPlayed: number;
+  /** This team's starting hole (1–18). Always 1 for normal-start tournaments. */
+  startingHole: number;
+  /** Play order of hole numbers (1–18). For normal start this is [1..18]; for
+   *  shotgun it wraps from startingHole around to startingHole-1. */
+  holeOrder: number[];
+  /** True when the active tournament uses a shotgun start. */
+  isShotgun: boolean;
   frontNineConfirmed: boolean;
   wheelSpin: WheelSpinRecord | null;
   wheelAdjustment: number;
@@ -79,6 +86,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const SERVER_CONFIRMED_KEY = serverConfirmedKey(tId);
 
   const { holes: courseHoles, autoTeeRule } = useCourse();
+  const { tournament } = useTournament();
+  const STARTING_HOLE_KEY = startingHoleKey(tId);
+  const isShotgun = tournament?.startType === 'shotgun';
 
   const getOrCreateTeamId = (): string => {
     try {
@@ -104,6 +114,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
   const [serverTeamMissing, setServerTeamMissing] = useState(false);
+  // Starting hole (1–18) for this team. Initialised from the per-tournament
+  // cache so a shotgun player keeps the right wrap-around order offline, before
+  // the tournament doc resolves. Defaults to 1 (normal start).
+  const [startingHole, setStartingHole] = useState<number>(() => {
+    try {
+      const cached = Number(localStorage.getItem(STARTING_HOLE_KEY));
+      return cached >= 1 && cached <= 18 ? cached : 1;
+    } catch {
+      return 1;
+    }
+  });
   const hydratedRef = useRef(false);
 
   // ── Hydrate from localStorage ──
@@ -328,6 +349,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       console.error('Failed to save store', e);
     }
   };
+
+  // ── Resolve this team's starting hole from the tournament config ──
+  // Normal start → always hole 1. Shotgun → the host-assigned hole for this
+  // team (falls back to the cached value, then 1). While the tournament doc is
+  // still null (offline / loading) we keep whatever was cached so the play
+  // order doesn't flicker back to 1.
+  useEffect(() => {
+    if (!tournament) return;
+    let next = 1;
+    if (tournament.startType === 'shotgun') {
+      const assigned = tournament.shotgunAssignments?.[teamId];
+      if (typeof assigned === 'number' && assigned >= 1 && assigned <= 18) {
+        next = assigned;
+      } else {
+        next = startingHole; // keep current until the host assigns one
+      }
+    }
+    if (next !== startingHole) setStartingHole(next);
+    try { localStorage.setItem(STARTING_HOLE_KEY, String(next)); } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tournament, teamId]);
+
+  // Play order of hole numbers (1–18). Normal start reduces to [1..18], so all
+  // downstream play-order math collapses to the original index math.
+  const holeOrder = Array.from({ length: 18 }, (_, i) => ((startingHole - 1 + i) % 18) + 1);
 
   // ── Derive aggregates ──
   let totalScore = 0;
@@ -686,6 +732,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         netScore,
         rawNet,
         holesPlayed,
+        startingHole,
+        holeOrder,
+        isShotgun,
         serverTeamMissing,
         resetDevice,
         frontNineConfirmed,

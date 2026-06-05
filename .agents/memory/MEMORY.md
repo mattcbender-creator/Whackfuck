@@ -1,1 +1,2 @@
 - [WFC scoring data shape](scoring-data-shape.md) — scores are a hole-keyed map in Firestore (concurrent merges) but an 18-len array in UI; all tournament writes must guard getActiveTournamentId().
+- [WFC shotgun play-order](wfc-shotgun-play-order.md) — shotgun hole ordering uses a holeOrder wrap array so normal start stays byte-identical; gate shotgunAssignments by startType.
