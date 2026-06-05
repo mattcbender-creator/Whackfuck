@@ -269,7 +269,10 @@ export default function WheelModal({ open, onClose, hole }: Props) {
             Mario Kart Turn
           </span>
         </div>
-        {(phase === 'intro' || phase === 'applied') && (
+        {/* The intro phase is a mandatory spin — once a score is entered on a
+            wheel hole the spin cannot be skipped, so no close affordance is
+            shown until the spin is recorded (phase 'applied'). */}
+        {phase === 'applied' && (
           <button
             onClick={onClose}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
@@ -332,13 +335,9 @@ export default function WheelModal({ open, onClose, hole }: Props) {
               <Sparkles className="w-6 h-6" />
               Spin Item Box
             </button>
-            <button
-              onClick={onClose}
-              data-testid="button-wheel-edit-front-nine"
-              className="mt-3 text-white/50 text-xs font-bold uppercase tracking-widest hover:text-white/80 transition-colors py-2"
-            >
-              Not yet — let me recheck my score
-            </button>
+            <p className="mt-3 text-white/40 text-[11px] font-bold uppercase tracking-widest py-2">
+              You scored this hole — the Item Box must be spun
+            </p>
           </div>
         )}
 

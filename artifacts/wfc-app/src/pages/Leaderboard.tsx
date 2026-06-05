@@ -475,13 +475,27 @@ export default function Leaderboard() {
                         </div>
                       )}
                     </div>
-                    <div className="col-span-2 flex flex-col items-center justify-center gap-1">
-                      {spinEntries.length > 0 ? (
-                        spinEntries.map(([holeStr, rec]) => (
-                          <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground/30 text-xs">—</span>
+                    <div className="col-span-2 flex flex-col items-center justify-center gap-1" data-testid={`wheel-col-${team.id}`}>
+                      {/* Signed wheel stroke effect, kept separate from raw/net. */}
+                      <span className={`font-condensed text-lg font-black leading-none ${
+                        (team.wheelAdjustment ?? 0) === 0
+                          ? 'text-muted-foreground/30'
+                          : (team.wheelAdjustment ?? 0) > 0
+                          ? 'text-orange-400'
+                          : 'text-primary'
+                      }`}>
+                        {(team.wheelAdjustment ?? 0) === 0
+                          ? '—'
+                          : (team.wheelAdjustment ?? 0) > 0
+                          ? `+${team.wheelAdjustment}`
+                          : team.wheelAdjustment}
+                      </span>
+                      {spinEntries.length > 0 && (
+                        <div className="flex flex-wrap justify-center gap-1">
+                          {spinEntries.map(([holeStr, rec]) => (
+                            <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
+                          ))}
+                        </div>
                       )}
                     </div>
                     <div className="col-span-1 text-center font-condensed font-bold text-muted-foreground">
@@ -491,12 +505,6 @@ export default function Leaderboard() {
                       <span className={team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}>
                         {team.netScore === 0 ? 'E' : team.netScore > 0 ? `+${team.netScore}` : team.netScore}
                       </span>
-                      {typeof team.wheelAdjustment === 'number' && team.wheelAdjustment !== 0 && (
-                        <div className={`text-[9px] font-bold tracking-wider mt-0.5 ${team.wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
-                          {team.wheelAdjustment > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment} wheel
-                          {totalHits > 1 && <span className="text-muted-foreground/70 ml-1">({totalHits} hits)</span>}
-                        </div>
-                      )}
                     </div>
                   </button>
 

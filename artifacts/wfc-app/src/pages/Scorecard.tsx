@@ -213,7 +213,7 @@ function pickChirp(scores: (number | null)[], netScore: number, HOLES: CourseHol
 export default function Scorecard() {
   const { holes: HOLES, holeRules, trackYardages } = useCourse();
   const {
-    teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
+    teamId, teamInfo, scores, currentTee, netScore, rawNet, wheelAdjustment, holesPlayed, setScore,
     wheelSpins, targetedBy, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
     holeOrder, startingHole, isShotgun,
@@ -471,6 +471,29 @@ export default function Scorecard() {
               >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
               </button>
+            </div>
+          </div>
+
+          {/* Score breakdown — raw strokes vs par, the wheel's net stroke
+              effect kept on its own, and the combined net the wheel folds into. */}
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="bg-card/60 border border-border/60 rounded-lg py-1.5 text-center">
+              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Raw</p>
+              <p className={`font-condensed text-lg font-black leading-tight ${netCls(rawNet)}`}>
+                {rawNet === 0 ? 'E' : rawNet > 0 ? `+${rawNet}` : rawNet}
+              </p>
+            </div>
+            <div className="bg-card/60 border border-primary/30 rounded-lg py-1.5 text-center" data-testid="summary-wheel-adjustment">
+              <p className="text-[9px] font-bold text-primary/80 uppercase tracking-widest leading-tight">Wheel</p>
+              <p className={`font-condensed text-lg font-black leading-tight ${wheelAdjustment === 0 ? 'text-muted-foreground/40' : wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
+                {wheelAdjustment === 0 ? '—' : wheelAdjustment > 0 ? `+${wheelAdjustment}` : wheelAdjustment}
+              </p>
+            </div>
+            <div className="bg-card/60 border border-border/60 rounded-lg py-1.5 text-center" data-testid="summary-net-score">
+              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Net</p>
+              <p className={`font-condensed text-lg font-black leading-tight ${netCls(netScore)}`}>
+                {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
+              </p>
             </div>
           </div>
 
