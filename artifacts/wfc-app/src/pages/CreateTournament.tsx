@@ -9,7 +9,7 @@ import { useTournament, createTournamentDoc, fetchTournament } from '@/lib/tourn
 import { isFirebaseConfigured } from '@/lib/firebase';
 import {
   type CourseHole, type TournamentConfig, type HoleRule, type RuleLibraryEntry,
-  dundeeCourseDefaults, holeRulesFromCourse,
+  blankCourse, holeRulesFromCourse,
   generateTournamentId, generateJoinCode, generateHostKey,
   buildWfc2026Config, WFC_2026_ID, WFC_2026_JOIN_CODE, WFC_2026_HOST_KEY,
   hostKeyKey,
@@ -27,18 +27,16 @@ export default function CreateTournament() {
   const { setActiveTournament } = useTournament();
 
   const [name, setName] = useState('');
-  const [courseName, setCourseName] = useState('Dundee Country Club');
+  const [courseName, setCourseName] = useState('');
   const [teamSize, setTeamSize] = useState(2);
   const [startType, setStartType] = useState<'normal' | 'shotgun'>('normal');
   const [adminCode, setAdminCode] = useState('');
   const [autoTeeRule, setAutoTeeRule] = useState(false);
   const [wfcPreset, setWfcPreset] = useState(false);
 
-  const [holes, setHoles] = useState<CourseHole[]>(() => dundeeCourseDefaults());
-  const [usingDefaults, setUsingDefaults] = useState(true);
-  const [trackYardages, setTrackYardages] = useState(false);
+  const [holes, setHoles] = useState<CourseHole[]>(() => blankCourse());
 
-  const [holeRules, setHoleRules] = useState<HoleRule[]>(() => holeRulesFromCourse(dundeeCourseDefaults()));
+  const [holeRules, setHoleRules] = useState<HoleRule[]>(() => holeRulesFromCourse(blankCourse()));
   const [customRules, setCustomRules] = useState<RuleLibraryEntry[]>([]);
   // Keep rules mirrored to the course until the host edits them in the builder.
   const [rulesDirty, setRulesDirty] = useState(false);
@@ -46,11 +44,6 @@ export default function CreateTournament() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<TournamentConfig | null>(null);
-
-  // Auto-tee rule needs yardages — turning it on forces yardage tracking on.
-  useEffect(() => {
-    if (autoTeeRule && !trackYardages) setTrackYardages(true);
-  }, [autoTeeRule]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mirror the course's own rule fields into the rule builder until the host
   // edits rules themselves — then the builder becomes the source of truth.
@@ -69,9 +62,7 @@ export default function CreateTournament() {
       setTeamSize(c.teamSize);
       setStartType(c.startType);
       setAutoTeeRule(c.autoTeeRule);
-      setTrackYardages(c.trackYardages);
       setHoles(c.holes);
-      setUsingDefaults(true);
       setHoleRules(c.holeRules);
       // The preset's hole rules (e.g. the wheel) aren't derivable from the
       // course, so mark rules dirty to stop the holes→rules mirror clobbering them.
@@ -79,17 +70,17 @@ export default function CreateTournament() {
       setCustomRules(c.customRules ?? []);
       setAdminCode(c.adminCode);
     } else {
-      const d = dundeeCourseDefaults();
+      // Clean slate: blank holes (par placeholder, no yardages, no rules) and
+      // default settings — nothing pre-filled from Dundee.
+      const blank = blankCourse();
       setName('');
-      setCourseName('Dundee Country Club');
+      setCourseName('');
       setTeamSize(2);
       setStartType('normal');
       setAutoTeeRule(false);
-      setTrackYardages(false);
-      setHoles(d);
-      setUsingDefaults(true);
+      setHoles(blank);
       setRulesDirty(false);
-      setHoleRules(holeRulesFromCourse(d));
+      setHoleRules(holeRulesFromCourse(blank));
       setCustomRules([]);
       setAdminCode('');
     }
@@ -118,6 +109,10 @@ export default function CreateTournament() {
           return;
         }
       }
+
+      // Derive yardage tracking from the data: a course with any distance
+      // entered tracks yardages; pars-only stays par-only.
+      const trackYardages = holes.some(h => (h.tips ?? 0) > 0 || (h.mid ?? 0) > 0 || (h.womens ?? 0) > 0);
 
       const config: TournamentConfig = {
         id: wfcPreset ? WFC_2026_ID : generateTournamentId(),
@@ -238,7 +233,7 @@ export default function CreateTournament() {
           <label className="flex items-center justify-between bg-card/50 border border-border/60 rounded-xl px-4 py-3 cursor-pointer">
             <div>
               <p className="text-sm font-bold text-foreground">Auto-tee rule</p>
-              <p className="text-[11px] text-muted-foreground">WFC mechanic: under par switches you to the Tips tees. Needs yardages.</p>
+              <p className="text-[11px] text-muted-foreground">WFC mechanic: under par switches you to the Tips tees. Yardages optional.</p>
             </div>
             <Switch checked={autoTeeRule} onCheckedChange={setAutoTeeRule} data-testid="switch-auto-tee" />
           </label>
@@ -246,11 +241,6 @@ export default function CreateTournament() {
           <CourseSetup
             holes={holes}
             onHolesChange={setHoles}
-            trackYardages={trackYardages}
-            onTrackYardagesChange={setTrackYardages}
-            usingDefaults={usingDefaults}
-            onUsingDefaultsChange={setUsingDefaults}
-            yardagesLocked={autoTeeRule}
           />
 
           <RuleBuilder

@@ -128,7 +128,10 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
   const courseHoles = tournament?.holes && tournament.holes.length === 18
     ? tournament.holes
     : dundeeCourseDefaults();
-  const trackYardages = tournament ? !!tournament.trackYardages : true;
+  // Derive yardage tracking from the actual course data: if any hole has a
+  // distance, show yardages; otherwise the course is par-only. This keeps the
+  // par-only flow clean without relying on a manual toggle.
+  const trackYardages = courseHoles.some(h => (h.tips ?? 0) > 0 || (h.mid ?? 0) > 0 || (h.womens ?? 0) > 0);
   const autoTeeRule = tournament ? !!tournament.autoTeeRule : true;
   const holeRules = resolveHoleRules(tournament?.holeRules, courseHoles);
 
