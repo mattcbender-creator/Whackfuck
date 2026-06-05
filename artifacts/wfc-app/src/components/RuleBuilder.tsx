@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
-} from '@/components/ui/accordion';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import {
   RULE_LIBRARY, WHEEL_RULE_ID,
   type HoleRule, type RuleLibraryEntry,
@@ -15,12 +15,16 @@ interface RuleBuilderProps {
   onHoleRulesChange: (rules: HoleRule[]) => void;
   customRules: RuleLibraryEntry[];
   onCustomRulesChange: (rules: RuleLibraryEntry[]) => void;
+  // Fired when a per-hole rule editor opens, so a parent section can collapse
+  // to keep the editor focused (used on the New Tournament screen).
+  onHoleOpen?: () => void;
 }
 
 const NONE_ID = 'none';
 const NONE_ENTRY: RuleLibraryEntry = {
   id: NONE_ID, type: 'none', ruleName: 'No rule', ruleText: '', builtIn: true,
 };
+const BLANK_RULE: HoleRule = { type: 'none', ruleName: '', ruleText: '' };
 
 function entryToHoleRule(e: RuleLibraryEntry): HoleRule {
   return { type: e.type, ruleName: e.ruleName, ruleText: e.ruleText };
@@ -37,8 +41,9 @@ function ruleMatchesEntry(rule: HoleRule, e: RuleLibraryEntry): boolean {
 }
 
 export function RuleBuilder({
-  holeRules, onHoleRulesChange, customRules, onCustomRulesChange,
+  holeRules, onHoleRulesChange, customRules, onCustomRulesChange, onHoleOpen,
 }: RuleBuilderProps) {
+  const [openHole, setOpenHole] = useState<number | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customText, setCustomText] = useState('');
@@ -54,6 +59,12 @@ export function RuleBuilder({
     const next = holeRules.slice();
     next[holeIdx] = entryToHoleRule(entry);
     onHoleRulesChange(next);
+    setOpenHole(null);
+  };
+
+  const openEditor = (idx: number) => {
+    setOpenHole(idx);
+    onHoleOpen?.();
   };
 
   const addCustom = () => {
@@ -77,16 +88,13 @@ export function RuleBuilder({
     onCustomRulesChange(customRules.filter(e => e.id !== id));
   };
 
+  const activeRule = openHole !== null ? (holeRules[openHole] ?? BLANK_RULE) : BLANK_RULE;
+
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="font-condensed text-2xl font-black uppercase tracking-wider text-foreground">
-          Hole <span className="text-primary">Rules</span>
-        </h3>
-        <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-          Tap a hole to expand it, then pick the rule for that hole. Add the Item Box to as many holes as you like.
-        </p>
-      </div>
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
+        Tap a hole to set its rule. Most holes can stay empty — drop the Item Box on the chaos holes.
+      </p>
 
       {/* ── Custom rule management ── */}
       <div>
@@ -162,85 +170,92 @@ export function RuleBuilder({
         )}
       </div>
 
-      {/* ── 18 holes as an accordion ── */}
-      <Accordion type="single" collapsible className="space-y-2">
+      {/* ── 18 hole chips ── */}
+      <div className="grid grid-cols-2 gap-2">
         {Array.from({ length: 18 }, (_, idx) => {
-          const rule = holeRules[idx] ?? { type: 'none', ruleName: '', ruleText: '' };
+          const rule = holeRules[idx] ?? BLANK_RULE;
           const isWheel = rule.type === 'wheel';
           const empty = rule.type === 'none' || !rule.ruleName;
           return (
-            <AccordionItem
+            <button
               key={idx}
-              value={`hole-${idx}`}
+              type="button"
+              onClick={() => openEditor(idx)}
               data-testid={`hole-rule-${idx + 1}`}
-              className={`rounded-xl border px-3 overflow-hidden ${
+              className={`text-left rounded-xl border p-2.5 min-h-[64px] transition-colors active:scale-[0.98] ${
                 isWheel
                   ? 'border-primary/60 bg-primary/10'
                   : empty
-                  ? 'border-border/50 bg-card/40'
-                  : 'border-border bg-card'
+                  ? 'border-border/50 bg-card/40 hover:border-primary/40'
+                  : 'border-border bg-card hover:border-primary/40'
               }`}
             >
-              <AccordionTrigger className="py-3 hover:no-underline">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <span className="font-condensed text-xl font-black text-primary leading-none w-6 shrink-0">
-                    {idx + 1}
-                  </span>
-                  {isWheel && <Sparkles className="w-4 h-4 text-primary shrink-0" />}
-                  <span className={`text-sm font-bold truncate ${empty ? 'text-muted-foreground/60' : 'text-foreground/90'}`}>
-                    {empty ? 'No rule' : rule.ruleName}
-                  </span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-3">
-                {!empty && rule.ruleText && (
-                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
-                    {rule.ruleText}
-                  </p>
-                )}
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">
-                  Assign rule
-                </p>
-                <div className="space-y-1.5">
-                  {allEntries.map(entry => {
-                    const selected = ruleMatchesEntry(rule, entry);
-                    const wheel = isWheelEntry(entry);
-                    const none = entry.type === 'none';
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        onClick={() => assign(idx, entry)}
-                        data-testid={`assign-rule-${idx + 1}-${entry.id}`}
-                        className={`w-full flex items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                          selected
-                            ? 'border-primary bg-primary/15'
-                            : wheel
-                            ? 'border-primary/40 bg-primary/5 hover:bg-primary/10'
-                            : 'border-border/60 bg-card/60 hover:border-primary/40'
-                        }`}
-                      >
-                        {wheel && <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />}
-                        <span className="flex-1 min-w-0">
-                          <span className={`block text-xs font-bold ${none ? 'text-muted-foreground' : 'text-foreground/90'}`}>
-                            {entry.ruleName}
-                          </span>
-                          {entry.ruleText && (
-                            <span className="block text-[10px] text-muted-foreground leading-snug mt-0.5">
-                              {entry.ruleText}
-                            </span>
-                          )}
-                        </span>
-                        {selected && <Check className="w-4 h-4 text-primary shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+              <span className="font-condensed text-lg font-black text-primary leading-none">
+                {idx + 1}
+              </span>
+              <div className="mt-1 flex items-start gap-1">
+                {isWheel && <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />}
+                <span className={`text-[11px] font-bold leading-tight line-clamp-2 ${empty ? 'text-muted-foreground/50' : 'text-foreground/90'}`}>
+                  {empty ? 'Tap to add' : rule.ruleName}
+                </span>
+              </div>
+            </button>
           );
         })}
-      </Accordion>
+      </div>
+
+      {/* ── Per-hole rule editor ── */}
+      <Dialog open={openHole !== null} onOpenChange={o => { if (!o) setOpenHole(null); }}>
+        <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto bg-card border-border">
+          {openHole !== null && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="font-condensed text-2xl font-black uppercase tracking-wider text-left">
+                  Hole {openHole + 1} <span className="text-primary">Rule</span>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-left">
+                  Pick what happens on this hole.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5">
+                {allEntries.map(entry => {
+                  const selected = ruleMatchesEntry(activeRule, entry);
+                  const wheel = isWheelEntry(entry);
+                  const none = entry.type === 'none';
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => assign(openHole, entry)}
+                      data-testid={`assign-rule-${openHole + 1}-${entry.id}`}
+                      className={`w-full flex items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                        selected
+                          ? 'border-primary bg-primary/15'
+                          : wheel
+                          ? 'border-primary/40 bg-primary/5 hover:bg-primary/10'
+                          : 'border-border/60 bg-card/60 hover:border-primary/40'
+                      }`}
+                    >
+                      {wheel && <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />}
+                      <span className="flex-1 min-w-0">
+                        <span className={`block text-xs font-bold ${none ? 'text-muted-foreground' : 'text-foreground/90'}`}>
+                          {entry.ruleName}
+                        </span>
+                        {entry.ruleText && (
+                          <span className="block text-[10px] text-muted-foreground leading-snug mt-0.5">
+                            {entry.ruleText}
+                          </span>
+                        )}
+                      </span>
+                      {selected && <Check className="w-4 h-4 text-primary shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

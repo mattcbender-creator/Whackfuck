@@ -1,5 +1,4 @@
 import { type CourseHole } from '@/lib/tournament';
-import { MapPin } from 'lucide-react';
 
 interface Props {
   holes: CourseHole[];
@@ -27,11 +26,6 @@ export function CourseSetup({ holes, onHolesChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <MapPin className="w-3.5 h-3.5 text-primary" />
-        <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Course Setup</span>
-      </div>
-
       <p className="text-[11px] text-muted-foreground">
         Enter a par for every hole. Yardages are optional — leave them blank for a par-only course.
       </p>

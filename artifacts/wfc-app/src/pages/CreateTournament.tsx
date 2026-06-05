@@ -15,6 +15,7 @@ import {
 } from '@/lib/tournament';
 import {
   ArrowLeft, Copy, Check, Share2, KeyRound, AlertTriangle, ArrowRight,
+  Sparkles, MapPin, ClipboardList, ChevronDown,
 } from 'lucide-react';
 
 function joinLinkFor(code: string): string {
@@ -43,6 +44,10 @@ export default function CreateTournament() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<TournamentConfig | null>(null);
+
+  // Which setup section is expanded ('course' | 'rules' | null). Only one opens
+  // at a time and both start closed to keep the mobile form short.
+  const [openSection, setOpenSection] = useState<'course' | 'rules' | null>(null);
 
   // Mirror the course's own rule fields into the rule builder until the host
   // edits rules themselves — then the builder becomes the source of truth.
@@ -162,13 +167,30 @@ export default function CreateTournament() {
         </h1>
 
         <div className="space-y-5">
-          <label className="flex items-center justify-between bg-primary/10 border border-primary/40 rounded-xl px-4 py-3 cursor-pointer">
-            <div className="pr-3">
-              <p className="text-sm font-bold text-foreground">WFC 2026 preset</p>
-              <p className="text-[11px] text-muted-foreground">Autofill the Whack Fuck Cup at Dundee CC — course, rules, tees, and settings.</p>
-            </div>
-            <Switch checked={wfcPreset} onCheckedChange={applyWfcPreset} data-testid="switch-wfc-preset" />
-          </label>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => applyWfcPreset(true)}
+              data-testid="button-load-preset"
+              className="w-full flex items-center justify-center gap-2 h-14 bg-primary/15 border border-primary/50 rounded-xl text-primary font-condensed text-xl font-black uppercase tracking-widest active:scale-95 transition-all"
+            >
+              <Sparkles className="w-5 h-5" /> Load WFC Preset
+            </button>
+            {wfcPreset ? (
+              <button
+                type="button"
+                onClick={() => applyWfcPreset(false)}
+                data-testid="button-clear-preset"
+                className="w-full text-center text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+              >
+                Clear preset & start blank
+              </button>
+            ) : (
+              <p className="text-[11px] text-muted-foreground text-center px-4">
+                Fills the course, rules, tees &amp; settings for the Whack Fuck Cup at Dundee CC instantly.
+              </p>
+            )}
+          </div>
 
           <Field label="Tournament name">
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Spring Scramble"
@@ -227,17 +249,36 @@ export default function CreateTournament() {
             <Switch checked={autoTeeRule} onCheckedChange={setAutoTeeRule} data-testid="switch-auto-tee" />
           </label>
 
-          <CourseSetup
-            holes={holes}
-            onHolesChange={setHoles}
-          />
+          <div className="space-y-3">
+            <Section
+              title="Course Setup"
+              icon={<MapPin className="w-4 h-4 text-primary" />}
+              open={openSection === 'course'}
+              onToggle={() => setOpenSection(s => (s === 'course' ? null : 'course'))}
+              testid="section-course"
+            >
+              <CourseSetup
+                holes={holes}
+                onHolesChange={setHoles}
+              />
+            </Section>
 
-          <RuleBuilder
-            holeRules={holeRules}
-            onHoleRulesChange={r => { setHoleRules(r); setRulesDirty(true); }}
-            customRules={customRules}
-            onCustomRulesChange={setCustomRules}
-          />
+            <Section
+              title="Hole Rules (Optional Chaos Modifiers)"
+              icon={<ClipboardList className="w-4 h-4 text-primary" />}
+              open={openSection === 'rules'}
+              onToggle={() => setOpenSection(s => (s === 'rules' ? null : 'rules'))}
+              testid="section-rules"
+            >
+              <RuleBuilder
+                holeRules={holeRules}
+                onHoleRulesChange={r => { setHoleRules(r); setRulesDirty(true); }}
+                customRules={customRules}
+                onCustomRulesChange={setCustomRules}
+                onHoleOpen={() => setOpenSection(null)}
+              />
+            </Section>
+          </div>
 
           {error && (
             <div className="flex items-start gap-2 bg-destructive/15 border border-destructive/40 rounded-xl px-4 py-3">
@@ -255,6 +296,42 @@ export default function CreateTournament() {
             {submitting ? 'Creating…' : 'Create Tournament'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title, icon, open, onToggle, testid, children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  testid: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card/40 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        data-testid={`${testid}-toggle`}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3.5 text-left"
+      >
+        <span className="flex items-center gap-2">
+          {icon}
+          <span className="font-condensed font-black uppercase tracking-widest text-sm text-foreground">
+            {title}
+          </span>
+        </span>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {/* Kept mounted (hidden, not unmounted) so any open per-hole editor dialog
+          inside survives the section collapsing when a hole is opened. */}
+      <div className={open ? 'px-4 pb-4' : 'hidden'} data-testid={`${testid}-content`}>
+        {children}
       </div>
     </div>
   );
