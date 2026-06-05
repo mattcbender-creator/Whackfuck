@@ -28,10 +28,14 @@ export function BottomNav() {
     { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
   ];
 
+  const spectatorTabs = allTabs
+    .filter(t => !SCORING_TABS.has(t.href))
+    .map(t => t.href === '/home' ? { ...t, href: '/' } : t);
+
   const tabs = isFinal
     ? finalTabs
     : isSpectator
-      ? allTabs.filter(t => !SCORING_TABS.has(t.href))
+      ? spectatorTabs
       : allTabs;
 
   if (location === '/') return null;
