@@ -371,6 +371,18 @@ export default function Scorecard() {
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
+    // If hole 18 is an Item Box hole that hasn't been spun yet, force the spin
+    // before the round can be submitted.
+    const finalRule = holeRules[17];
+    if (finalRule?.type === 'wheel' && !wheelSpins[18]) {
+      setWheelHole(18);
+      setWheelOpen(true);
+      toast({
+        title: 'Spin the Item Box',
+        description: 'Hole 18 is an Item Box hole — spin it before you submit.',
+      });
+      return;
+    }
     setFinishLoading(true);
     // Force a sync first so our final score is in Firestore
     if (db && getActiveTournamentId()) {

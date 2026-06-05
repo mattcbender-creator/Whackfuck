@@ -5,14 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { CourseSetup } from '@/components/CourseSetup';
 import { RuleBuilder } from '@/components/RuleBuilder';
-import { useTournament, createTournamentDoc, fetchTournament } from '@/lib/tournamentContext';
+import { useTournament, createTournamentDoc } from '@/lib/tournamentContext';
 import { isFirebaseConfigured } from '@/lib/firebase';
 import {
   type CourseHole, type TournamentConfig, type HoleRule, type RuleLibraryEntry,
   blankCourse, holeRulesFromCourse, blankTournamentSetup, tracksYardages,
   generateTournamentId, generateJoinCode, generateHostKey,
-  buildWfc2026Config, WFC_2026_ID, WFC_2026_JOIN_CODE, WFC_2026_HOST_KEY,
-  hostKeyKey,
+  buildWfc2026Config,
 } from '@/lib/tournament';
 import {
   ArrowLeft, Copy, Check, Share2, KeyRound, AlertTriangle, ArrowRight,
@@ -64,9 +63,10 @@ export default function CreateTournament() {
       setAutoTeeRule(c.autoTeeRule);
       setHoles(c.holes);
       setHoleRules(c.holeRules);
-      // The preset's hole rules (e.g. the wheel) aren't derivable from the
-      // course, so mark rules dirty to stop the holes→rules mirror clobbering them.
-      setRulesDirty(true);
+      // The preset only pre-fills plain rules derived from the course. The host
+      // adds any wheel/Item Box holes themselves in the rule builder, so let the
+      // holes→rules mirror stay live until they edit.
+      setRulesDirty(false);
       setCustomRules(c.customRules ?? []);
       setAdminCode(c.adminCode);
     } else {
@@ -96,26 +96,15 @@ export default function CreateTournament() {
 
     setSubmitting(true);
     try {
-      // WFC 2026 preset → initialize (or re-enter) the canonical Dundee CC event
-      // so its fixed join code stays stable. If it already exists, don't clobber
-      // a possibly-live event — just open it.
-      if (wfcPreset) {
-        const existing = await fetchTournament(WFC_2026_ID);
-        if (existing) {
-          // Already initialized — re-enter read-only, don't overwrite a live
-          // event. Just persist the canonical host key locally for admin access.
-          try { localStorage.setItem(hostKeyKey(existing.id), existing.hostKey); } catch { /* ignore */ }
-          setCreated(existing);
-          return;
-        }
-      }
-
       // Derive yardage tracking from the data: a course with any distance
       // entered tracks yardages; pars-only stays par-only.
       const trackYardages = tracksYardages(holes);
 
+      // Every tournament — including one started from the WFC preset — is a
+      // fresh, independent event with its own generated id, host key, and join
+      // code. The preset only pre-fills the form fields.
       const config: TournamentConfig = {
-        id: wfcPreset ? WFC_2026_ID : generateTournamentId(),
+        id: generateTournamentId(),
         name: name.trim(),
         courseName: courseName.trim(),
         holes,
@@ -124,8 +113,8 @@ export default function CreateTournament() {
         startType,
         autoTeeRule,
         adminCode: adminCode.trim(),
-        hostKey: wfcPreset ? WFC_2026_HOST_KEY : generateHostKey(),
-        joinCode: wfcPreset ? WFC_2026_JOIN_CODE : generateJoinCode(),
+        hostKey: generateHostKey(),
+        joinCode: generateJoinCode(),
         holeRules,
         customRules,
         status: 'live',

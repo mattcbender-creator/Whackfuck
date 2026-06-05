@@ -78,16 +78,6 @@ export function holeRulesFromCourse(holes: CourseHole[]): HoleRule[] {
   });
 }
 
-// WFC default rule set: the Dundee rules with the wheel on hole 9 (index 8),
-// reproducing the existing June 27 experience exactly.
-export function wfcDefaultHoleRules(): HoleRule[] {
-  return HOLES.map((h, i) => {
-    if (i === 8) return { type: 'wheel', ruleName: WHEEL_RULE_NAME, ruleText: WHEEL_RULE_TEXT };
-    if (!h.ruleName) return { type: 'none', ruleName: '', ruleText: '' };
-    return { type: 'standard', ruleName: h.ruleName, ruleText: h.rule };
-  });
-}
-
 // Resolve the effective 18 hole rules for a tournament. Falls back to the
 // course's own rule fields per-hole when the tournament has no configured
 // holeRules (legacy docs created before the rule builder existed).
@@ -271,7 +261,7 @@ export function buildWfc2026Config(): TournamentConfig {
     adminCode: 'dundee2025',
     hostKey: WFC_2026_HOST_KEY,
     joinCode: WFC_2026_JOIN_CODE,
-    holeRules: wfcDefaultHoleRules(),
+    holeRules: holeRulesFromCourse(dundeeCourseDefaults()),
     customRules: [],
     status: 'live',
     createdAt: Date.now(),

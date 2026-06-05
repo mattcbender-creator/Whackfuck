@@ -415,8 +415,7 @@ export default function Leaderboard() {
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="grid grid-cols-12 gap-2 p-3 bg-secondary/50 border-b border-border text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             <div className="col-span-1 text-center">POS</div>
-            <div className="col-span-5">Team</div>
-            <div className="col-span-2 text-center">Wheel</div>
+            <div className="col-span-7">Team</div>
             <div className="col-span-1 text-center">Thru</div>
             <div className="col-span-3 text-right">Net</div>
           </div>
@@ -461,42 +460,12 @@ export default function Leaderboard() {
                         </span>
                       )}
                     </div>
-                    <div className="col-span-5 flex flex-col gap-1 min-w-0">
+                    <div className="col-span-7 flex flex-col gap-1 min-w-0">
                       <span className="font-bold text-sm truncate flex items-center gap-1.5">
                         {team.teamName}
                         <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                       </span>
                       <span className="text-[10px] text-muted-foreground truncate">{formatPlayers(team.players)}</span>
-                      {totalHits > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-0.5">
-                          {aggregated.map(h => (
-                            <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="col-span-2 flex flex-col items-center justify-center gap-1" data-testid={`wheel-col-${team.id}`}>
-                      {/* Signed wheel stroke effect, kept separate from raw/net. */}
-                      <span className={`font-condensed text-lg font-black leading-none ${
-                        (team.wheelAdjustment ?? 0) === 0
-                          ? 'text-muted-foreground/30'
-                          : (team.wheelAdjustment ?? 0) > 0
-                          ? 'text-orange-400'
-                          : 'text-primary'
-                      }`}>
-                        {(team.wheelAdjustment ?? 0) === 0
-                          ? '—'
-                          : (team.wheelAdjustment ?? 0) > 0
-                          ? `+${team.wheelAdjustment}`
-                          : team.wheelAdjustment}
-                      </span>
-                      {spinEntries.length > 0 && (
-                        <div className="flex flex-wrap justify-center gap-1">
-                          {spinEntries.map(([holeStr, rec]) => (
-                            <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
-                          ))}
-                        </div>
-                      )}
                     </div>
                     <div className="col-span-1 text-center font-condensed font-bold text-muted-foreground">
                       {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
@@ -510,6 +479,23 @@ export default function Leaderboard() {
 
                   {isExpanded && (
                     <div className="px-3 pb-4 pt-1 bg-secondary/10 border-t border-border/40">
+                      {(spinEntries.length > 0 || totalHits > 0 || (team.wheelAdjustment ?? 0) !== 0) && (
+                        <div className="flex flex-wrap items-center gap-1.5 mb-3 mt-2">
+                          {(team.wheelAdjustment ?? 0) !== 0 && (
+                            <span className={`font-condensed text-xs font-black uppercase tracking-widest ${
+                              (team.wheelAdjustment ?? 0) > 0 ? 'text-orange-400' : 'text-primary'
+                            }`}>
+                              Wheel {(team.wheelAdjustment ?? 0) > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment}
+                            </span>
+                          )}
+                          {spinEntries.map(([holeStr, rec]) => (
+                            <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
+                          ))}
+                          {aggregated.map(h => (
+                            <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
+                          ))}
+                        </div>
+                      )}
                       {hasScores ? (
                         <MiniScorecard scores={team.scores as (number | null)[]} holes={courseHoles} />
                       ) : (

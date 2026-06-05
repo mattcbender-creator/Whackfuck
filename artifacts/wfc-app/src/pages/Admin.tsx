@@ -219,7 +219,7 @@ function auditTeam(
 
 export default function Admin() {
   const { holes, autoTeeRule, holeRules } = useCourse();
-  const { tournament, isHost } = useTournament();
+  const { tournament } = useTournament();
   const [, navigate] = useLocation();
   const [password, setPassword] = useState('');
   const [auth, setAuth] = useState(false);
@@ -283,11 +283,6 @@ export default function Admin() {
     list.sort((a, b) => a.netScore - b.netScore);
     setTeams(list);
   }, []);
-
-  // Hosts (recovery-key holders) skip the admin-code prompt.
-  useEffect(() => {
-    if (isHost) setAuth(true);
-  }, [isHost]);
 
   // Live listener while any team-driven panel is open
   useEffect(() => {
@@ -386,8 +381,9 @@ export default function Admin() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    // Everyone — including the tournament creator — must enter the admin code.
     const code = tournament?.adminCode;
-    if (isHost || (code && password.trim() === code)) {
+    if (code && password.trim() === code) {
       setAuth(true);
     } else {
       toast({ title: 'Access Denied', variant: 'destructive' });
@@ -612,7 +608,7 @@ export default function Admin() {
         scores: (number | null)[];
         holesPlayed: number;
         frontNineConfirmed: boolean;
-        wheelSpin: { item: WheelItemId; at: number; targetTeam?: string } | null;
+        wheelSpins: Record<number, { item: WheelItemId; at: number; targetTeam?: string }>;
         wheelAdjustment: number;
         netScore: number;
         currentTee: string;
@@ -627,6 +623,13 @@ export default function Admin() {
       const sortedHoles = [...rawHoles].sort((a, b) => a - b);
       const assignedHoles = shuffle(sortedHoles);
 
+      // Item Box holes are opt-in: only the holes whose effective rule is a
+      // wheel get spins. A preset/plain tournament with no wheel holes seeds
+      // zero spins (no more everyone-spun-on-hole-9 skew).
+      const wheelHoleNums = holeRules
+        .map((r, i) => (r?.type === 'wheel' ? i + 1 : 0))
+        .filter(n => n > 0);
+
       const demoTeams: DemoTeam[] = names.map((teamName, i) => {
         const holesPlayed = assignedHoles[i];
         const scores: (number | null)[] = Array(18).fill(null);
@@ -636,8 +639,17 @@ export default function Admin() {
         const playedPar = holes.slice(0, holesPlayed).reduce((s, h) => s + h.par, 0);
         const playedScore = scores.slice(0, holesPlayed).reduce<number>((s, v) => s + (v ?? 0), 0);
         const rawNet = playedScore - playedPar;
-        const spun = holesPlayed >= 9;
-        const wheelItemId: WheelItemId | null = spun ? WHEEL_ITEMS[pickRandomIndex()].id : null;
+        // One spin per wheel hole the team has actually reached, keyed by the
+        // real hole number so leaderboard badges show the correct hole.
+        const wheelSpins: Record<number, { item: WheelItemId; at: number; targetTeam?: string }> = {};
+        for (const hn of wheelHoleNums) {
+          if (holesPlayed >= hn) {
+            wheelSpins[hn] = {
+              item: WHEEL_ITEMS[pickRandomIndex()].id,
+              at: now - Math.floor(Math.random() * 1000 * 60 * 30),
+            };
+          }
+        }
         // Teams further along updated Firestore more recently (~9 min/hole variance)
         const minsAgo = Math.max(0, (18 - holesPlayed) * 9 + Math.floor(Math.random() * 8));
         return {
@@ -646,10 +658,8 @@ export default function Admin() {
           players: [firsts[i * 2 % firsts.length], firsts[(i * 2 + 1) % firsts.length]],
           scores,
           holesPlayed,
-          frontNineConfirmed: spun,
-          wheelSpin: wheelItemId
-            ? { item: wheelItemId, at: now - Math.floor(Math.random() * 1000 * 60 * 30) }
-            : null,
+          frontNineConfirmed: holesPlayed >= 9,
+          wheelSpins,
           wheelAdjustment: 0,
           netScore: rawNet,
           currentTee: rawNet < 0 ? 'tips' : 'womens',
@@ -659,77 +669,78 @@ export default function Admin() {
       });
 
       for (const spinner of demoTeams) {
-        if (!spinner.wheelSpin) continue;
-        const { item, at } = spinner.wheelSpin;
         const others = demoTeams.filter(t => t.id !== spinner.id);
         const fromTeam = spinner.teamName;
 
-        const hit = (t: DemoTeam, src: WheelItemId) => {
-          t.wheelAdjustment += 1;
-          t.netScore += 1;
-          t.targetedBy.push({ item: src, fromTeam, at });
-        };
+        for (const spin of Object.values(spinner.wheelSpins)) {
+          const { item, at } = spin;
+          const hit = (t: DemoTeam, src: WheelItemId) => {
+            t.wheelAdjustment += 1;
+            t.netScore += 1;
+            t.targetedBy.push({ item: src, fromTeam, at });
+          };
 
-        switch (item) {
-          case 'lightning':
-            for (const t of others) hit(t, 'lightning');
-            break;
-          case 'boo': {
-            const target = pick(others);
-            if (target) {
-              hit(target, 'boo');
-              spinner.wheelSpin.targetTeam = target.teamName;
-            }
-            spinner.wheelAdjustment -= 1;
-            spinner.netScore -= 1;
-            break;
-          }
-          case 'mushroom':
-            spinner.wheelAdjustment -= 1;
-            spinner.netScore -= 1;
-            break;
-          case 'super_star':
-            spinner.wheelAdjustment -= 2;
-            spinner.netScore -= 2;
-            break;
-          case 'green_shell': {
-            const target = pick(others);
-            if (target) {
-              hit(target, 'green_shell');
-              spinner.wheelSpin.targetTeam = target.teamName;
-            }
-            break;
-          }
-          case 'red_shell': {
-            const target = pick(others);
-            if (target) {
-              hit(target, 'red_shell');
-              spinner.wheelSpin.targetTeam = target.teamName;
-            }
-            break;
-          }
-          case 'blue_shell': {
-            const sorted = [...demoTeams].sort((a, b) => a.netScore - b.netScore);
-            const leader = sorted[0];
-            if (leader) {
-              if (leader.id === spinner.id) {
-                spinner.wheelAdjustment += 1;
-                spinner.netScore += 1;
-              } else {
-                hit(leader, 'blue_shell');
+          switch (item) {
+            case 'lightning':
+              for (const t of others) hit(t, 'lightning');
+              break;
+            case 'boo': {
+              const target = pick(others);
+              if (target) {
+                hit(target, 'boo');
+                spin.targetTeam = target.teamName;
               }
-              spinner.wheelSpin.targetTeam = leader.teamName;
+              spinner.wheelAdjustment -= 1;
+              spinner.netScore -= 1;
+              break;
             }
-            break;
-          }
-          case 'banana': {
-            const behind = others.filter(t => t.holesPlayed < spinner.holesPlayed);
-            const target = pick(behind);
-            if (target) {
-              hit(target, 'banana');
-              spinner.wheelSpin.targetTeam = target.teamName;
+            case 'mushroom':
+              spinner.wheelAdjustment -= 1;
+              spinner.netScore -= 1;
+              break;
+            case 'super_star':
+              spinner.wheelAdjustment -= 2;
+              spinner.netScore -= 2;
+              break;
+            case 'green_shell': {
+              const target = pick(others);
+              if (target) {
+                hit(target, 'green_shell');
+                spin.targetTeam = target.teamName;
+              }
+              break;
             }
-            break;
+            case 'red_shell': {
+              const target = pick(others);
+              if (target) {
+                hit(target, 'red_shell');
+                spin.targetTeam = target.teamName;
+              }
+              break;
+            }
+            case 'blue_shell': {
+              const sorted = [...demoTeams].sort((a, b) => a.netScore - b.netScore);
+              const leader = sorted[0];
+              if (leader) {
+                if (leader.id === spinner.id) {
+                  spinner.wheelAdjustment += 1;
+                  spinner.netScore += 1;
+                } else {
+                  hit(leader, 'blue_shell');
+                }
+                spin.targetTeam = leader.teamName;
+              }
+              break;
+            }
+            case 'banana': {
+              const behind = others.filter(t => t.holesPlayed < spinner.holesPlayed);
+              const target = pick(behind);
+              if (target) {
+                hit(target, 'banana');
+                spin.targetTeam = target.teamName;
+              }
+              break;
+            }
           }
         }
       }
@@ -741,12 +752,15 @@ export default function Admin() {
       const batch = writeBatch(fdb);
       for (const t of demoTeams) {
         const ref = teamDoc(fdb, t.id);
-        let cleanSpin: Record<string, unknown> | null = null;
-        if (t.wheelSpin) {
-          cleanSpin = {};
-          for (const [k, v] of Object.entries(t.wheelSpin)) {
-            if (v !== undefined) cleanSpin[k] = v;
+        // Strip undefined fields (Firestore rejects them) from each per-hole
+        // spin record, keying the map by hole number.
+        const cleanSpins: Record<string, Record<string, unknown>> = {};
+        for (const [hn, spin] of Object.entries(t.wheelSpins)) {
+          const clean: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(spin)) {
+            if (v !== undefined) clean[k] = v;
           }
+          cleanSpins[hn] = clean;
         }
         batch.set(ref, {
           teamName: t.teamName,
@@ -756,7 +770,7 @@ export default function Admin() {
           holesPlayed: t.holesPlayed,
           currentTee: t.currentTee,
           frontNineConfirmed: t.frontNineConfirmed,
-          wheelSpin: cleanSpin,
+          wheelSpins: cleanSpins,
           wheelAdjustment: t.wheelAdjustment,
           targetedBy: t.targetedBy,
           isDemo: true,

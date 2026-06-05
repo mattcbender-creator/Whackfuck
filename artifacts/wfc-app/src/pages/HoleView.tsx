@@ -82,6 +82,18 @@ export default function HoleView() {
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
+    // If hole 18 is an Item Box hole that hasn't been spun yet, force the spin
+    // before the round can be submitted.
+    const finalRule = holeRules[17];
+    if (finalRule?.type === 'wheel' && !wheelSpins[18]) {
+      setWheelHole(18);
+      setWheelOpen(true);
+      toast({
+        title: 'Spin the Item Box',
+        description: 'Hole 18 is an Item Box hole — spin it before you submit.',
+      });
+      return;
+    }
     setFinishLoading(true);
     // Flush latest score to Firestore so position lookup is accurate
     const tId = getActiveTournamentId();

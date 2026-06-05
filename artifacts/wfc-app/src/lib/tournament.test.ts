@@ -7,7 +7,6 @@ import {
   holeRulesFromCourse,
   dundeeCourseDefaults,
   buildWfc2026Config,
-  WHEEL_RULE_NAME,
   playOrder,
   firstUnscoredPlayPos,
   clearAllLocalAppState,
@@ -41,11 +40,13 @@ describe('WFC 2026 preset (toggle ON content)', () => {
     expect(c.trackYardages).toBe(true);
   });
 
-  it('has 18 hole rules with the wheel on hole 9 (index 8)', () => {
+  it('derives 18 hole rules purely from the course (no auto-placed wheel)', () => {
     expect(c.holeRules).toHaveLength(18);
-    expect(c.holeRules[8].type).toBe('wheel');
-    expect(c.holeRules[8].ruleName).toBe(WHEEL_RULE_NAME);
-    expect(c.holeRules.filter(r => r.type === 'wheel')).toHaveLength(1);
+    // Hole 9 (index 8) carries the course's own "Twin Putter" standard rule.
+    expect(c.holeRules[8].type).toBe('standard');
+    expect(c.holeRules[8].ruleName).toBe('Twin Putter');
+    // The Item Box wheel is opt-in via the rule builder — never auto-placed.
+    expect(c.holeRules.filter(r => r.type === 'wheel')).toHaveLength(0);
   });
 });
 
