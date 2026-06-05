@@ -436,3 +436,25 @@ export function startingHoleKey(tId: string | null): string {
 export function spectatorKey(tId: string): string {
   return `wfc-spectator::${tId}`;
 }
+
+// ── Full local reset ────────────────────────────────────────────────────────
+// Wipe every piece of app state this device has persisted: the active
+// tournament pointer plus all per-tournament keys (team identity, scores,
+// joined/spectator flags, host keys, cached starting hole). Every key this app
+// writes is namespaced under the `wfc-` prefix, so clearing that prefix removes
+// all local state without touching unrelated localStorage entries. This is a
+// LOCAL reset only — it never deletes server-side Firestore data.
+const LOCAL_KEY_PREFIX = 'wfc-';
+
+export function clearAllLocalAppState(): void {
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(LOCAL_KEY_PREFIX)) toRemove.push(k);
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+  } catch { /* ignore */ }
+  // Keep the in-memory active-id module global in sync with the wiped storage.
+  setActiveTournamentId(null);
+}

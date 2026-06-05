@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   type CourseHole,
   blankCourse,
@@ -11,6 +11,9 @@ import {
   playOrder,
   firstUnscoredPlayPos,
   isHoleOutOfOrder,
+  clearAllLocalAppState,
+  getActiveTournamentId,
+  setActiveTournamentId,
 } from './tournament';
 
 // A par-only hole helper for the derive-logic tests.
@@ -198,5 +201,45 @@ describe('isHoleOutOfOrder (in-order scoring lock)', () => {
   it('an unknown hole index is never out of order', () => {
     const order = playOrder(1);
     expect(isHoleOutOfOrder({ holeIdx: 99, order, scores: blank(), isShotgun: false })).toBe(false);
+  });
+});
+
+describe('clearAllLocalAppState (full local reset)', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      get length() { return store.size; },
+      key: (i: number) => Array.from(store.keys())[i] ?? null,
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => { store.set(k, String(v)); },
+      removeItem: (k: string) => { store.delete(k); },
+      clear: () => store.clear(),
+    } as Storage;
+  });
+
+  it('removes every wfc- key and clears the active tournament id', () => {
+    setActiveTournamentId('t_abc');
+    localStorage.setItem('wfc-state::t_abc', '{"x":1}');
+    localStorage.setItem('wfc-team-id::t_abc', 'team-1');
+    localStorage.setItem('wfc-spectator::t_abc', '1');
+    localStorage.setItem('wfc-host-key::t_abc', 'KEY');
+    localStorage.setItem('wfc-starting-hole::t_abc', '12');
+
+    clearAllLocalAppState();
+
+    expect(localStorage.length).toBe(0);
+    expect(getActiveTournamentId()).toBeNull();
+  });
+
+  it('leaves non-wfc keys untouched', () => {
+    localStorage.setItem('wfc-state::t1', 'a');
+    localStorage.setItem('theme', 'dark');
+    localStorage.setItem('other-app', '1');
+
+    clearAllLocalAppState();
+
+    expect(localStorage.getItem('wfc-state::t1')).toBeNull();
+    expect(localStorage.getItem('theme')).toBe('dark');
+    expect(localStorage.getItem('other-app')).toBe('1');
   });
 });
