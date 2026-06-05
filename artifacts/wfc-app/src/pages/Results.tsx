@@ -5,9 +5,10 @@ import { onSnapshot, query, orderBy } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
 import { useCourse } from '@/lib/tournamentContext';
 import { teamsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
-import { Trophy, Crown, Medal, Flame, Target, Star, Flag } from 'lucide-react';
+import { Trophy, Crown, Medal, Flame, Target, Star, Flag, Share2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fireEagleConfetti } from '@/lib/confetti';
+import { useToast } from '@/hooks/use-toast';
 
 interface TeamData {
   id: string;
@@ -63,14 +64,44 @@ function computeSuperlatives(teams: TeamData[], holes: CourseHole[]): Superlativ
   return out;
 }
 
+function buildShareText(ranked: TeamData[], superlatives: Superlative[]): string {
+  const lines: string[] = [];
+  lines.push('🏆 WHACK FUCK CUP — FINAL RESULTS');
+  lines.push('');
+
+  const champ = ranked[0];
+  if (champ) {
+    lines.push(`Champions: ${champ.teamName} (${netLabel(champ.netScore)})`);
+    lines.push('');
+  }
+
+  const medals = ['🥇', '🥈', '🥉'];
+  lines.push('Podium:');
+  ranked.slice(0, 3).forEach((t, i) => {
+    lines.push(`${medals[i] ?? `${i + 1}.`} ${t.teamName} — ${netLabel(t.netScore)}`);
+  });
+
+  if (superlatives.length > 0) {
+    lines.push('');
+    lines.push('Superlatives:');
+    superlatives.forEach(s => {
+      lines.push(`• ${s.label}: ${s.teamName} (${s.detail})`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
 const PODIUM_ORDER = [1, 0, 2];
 
 export default function Results() {
   const [, navigate] = useLocation();
   const { holes } = useCourse();
   const { teamInfo, netScore, holesPlayed, scores: myScores } = useWFC();
+  const { toast } = useToast();
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [shared, setShared] = useState(false);
 
   useEffect(() => {
     if (!db) {
@@ -117,6 +148,26 @@ export default function Results() {
     }
     return undefined;
   }, [loading, champion]);
+
+  const handleShare = async () => {
+    const text = buildShareText(ranked, superlatives);
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: 'Whack Fuck Cup — Final Results', text });
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+      toast({ title: 'Results copied', description: 'Final results copied to your clipboard.' });
+    } catch {
+      toast({ title: 'Could not share', description: 'Sharing is not supported on this device.', variant: 'destructive' });
+    }
+  };
 
   return (
     <div className="min-h-[100dvh] w-full bg-background pb-24 relative overflow-hidden">
@@ -232,9 +283,20 @@ export default function Results() {
           {isFirebaseConfigured ? 'Live results' : 'Local results'}
         </div>
 
+        {ranked.length > 0 && (
+          <Button
+            className="w-full h-12 mt-6 font-condensed font-bold uppercase tracking-widest gap-2"
+            onClick={handleShare}
+            data-testid="button-share-results"
+          >
+            {shared ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+            {shared ? 'Copied' : 'Share Results'}
+          </Button>
+        )}
+
         <Button
           variant="outline"
-          className="w-full h-11 mt-6 font-condensed font-bold uppercase tracking-widest"
+          className="w-full h-11 mt-3 font-condensed font-bold uppercase tracking-widest"
           onClick={() => navigate('/leaderboard')}
           data-testid="button-view-leaderboard"
         >
