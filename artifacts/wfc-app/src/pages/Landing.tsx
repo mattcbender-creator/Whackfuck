@@ -1,8 +1,6 @@
-import { useState } from 'react';
 import { useLocation } from 'wouter';
-import { useTournament, createTournamentDoc, fetchTournament } from '@/lib/tournamentContext';
+import { useTournament } from '@/lib/tournamentContext';
 import { isFirebaseConfigured } from '@/lib/firebase';
-import { buildWfc2026Config, WFC_2026_ID } from '@/lib/tournament';
 import { PlusCircle, LogIn, Eye, Trophy, ArrowRight, Repeat, WifiOff } from 'lucide-react';
 
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
