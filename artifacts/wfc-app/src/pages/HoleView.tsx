@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock, Trophy, X } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
-import { useCourse } from '@/lib/tournamentContext';
+import { useCourse, useTournament } from '@/lib/tournamentContext';
+import { FinalizedBanner } from '@/components/FinalizedBanner';
 import { teamDoc, scoresToMap, getActiveTournamentId } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { getWheelItem } from '@/lib/wheel';
@@ -54,6 +55,8 @@ export default function HoleView() {
     hasSubmitted, submitFinal,
     holeOrder, startingHole, isShotgun,
   } = useWFC();
+  const { tournament, isHost } = useTournament();
+  const isFinal = tournament?.status === 'final';
   const [, setLocation] = useLocation();
   // Position within the team's play order (0–17), not the raw hole index. For a
   // normal start holeOrder is [1..18] so orderPos === holeIdx; for a shotgun
@@ -173,6 +176,16 @@ export default function HoleView() {
   };
 
   const handleScore = (delta: number) => {
+    if (isFinal) {
+      toast({
+        title: 'Tournament finalized',
+        description: isHost
+          ? 'Scoring is locked. Tap "Reopen scoring" above to make changes.'
+          : 'The host has ended the round, so scores are locked.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (hasSubmitted) {
       toast({ title: 'Score locked', description: 'You already submitted your final score.' });
       return;
@@ -310,6 +323,7 @@ export default function HoleView() {
       {/* Main Content — tightened spacing so everything important fits without
           scrolling on a typical phone (par/yds, rule, score stepper). */}
       <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3">
+        <FinalizedBanner />
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
             single row beside it instead of below, saving a full row of height. */}
@@ -440,7 +454,7 @@ export default function HoleView() {
 
         {/* Re-open the Item Box on a wheel hole that hasn't been spun yet (e.g. if
             the auto-fire was dismissed). Hidden once the round is submitted. */}
-        {isWheelHole && score !== null && !holeSpin && !hasSubmitted && (
+        {isWheelHole && score !== null && !holeSpin && !hasSubmitted && !isFinal && (
           <button
             onClick={() => { setWheelHole(holeIdx + 1); setWheelOpen(true); }}
             data-testid="button-open-item-box"

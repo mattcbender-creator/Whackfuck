@@ -616,6 +616,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const applyEffectToSelf = (delta: number) => {
+    if (hasSubmitted) return;
+    if (tournament?.status === 'final') return;
     const nextAdjustment = wheelAdjustment + delta;
     setWheelAdjustment(nextAdjustment);
     saveToLocal({ wheelAdjustment: nextAdjustment });
@@ -627,6 +629,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const applyEffectToOthers = async (item: WheelItemId, targetIds: string[]) => {
+    if (hasSubmitted) return;
+    if (tournament?.status === 'final') return;
     if (!isFirebaseConfigured || !db || !tId || !teamInfo) return;
     if (targetIds.length === 0) return;
     try {

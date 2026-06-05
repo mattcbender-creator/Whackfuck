@@ -6,6 +6,7 @@ import {
   targetAngleForIndex, pickRandomIndex, getWheelItem,
 } from '@/lib/wheel';
 import { formatPlayers } from '@/lib/tournament';
+import { useTournament } from '@/lib/tournamentContext';
 import { fireBirdieConfetti, fireEagleConfetti } from '@/lib/confetti';
 
 const wheelImg = `${import.meta.env.BASE_URL}wheel/mariokart-wheel.png`;
@@ -39,6 +40,8 @@ export default function WheelModal({ open, onClose, hole }: Props) {
     recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
     logEvent, hasSubmitted,
   } = useWFC();
+  const { tournament } = useTournament();
+  const isFinal = tournament?.status === 'final';
   const priorSpin = hole != null ? (wheelSpins[hole] ?? null) : null;
 
   const [phase, setPhase] = useState<Phase>('intro');
@@ -92,6 +95,10 @@ export default function WheelModal({ open, onClose, hole }: Props) {
     // stop — no recovery to 'intro' phase.
     if (hasSubmitted) {
       setError('Round submitted — wheel is locked.');
+      return;
+    }
+    if (isFinal) {
+      setError('Tournament finalized — wheel is locked.');
       return;
     }
     if (priorSpin) {

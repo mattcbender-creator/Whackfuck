@@ -6,6 +6,7 @@ import { WFC_2026_ID, formatPlayers } from '@/lib/tournament';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ResetControl } from '@/components/ResetControl';
+import { FinalizedBanner } from '@/components/FinalizedBanner';
 import { Users, ShieldAlert, Share2, Copy, Check, Plus, X } from 'lucide-react';
 
 // June 27 2026, 7:00 AM Eastern (UTC-4 in summer / EDT)
@@ -238,6 +239,10 @@ export default function Home() {
             {tournament?.courseName ?? ''}{autoTeeRule ? ' · Under par = Tips' : ''}
           </p>
         </div>
+
+        {/* Finalized notice + host reopen — surfaces the locked state so scoring
+            taps that silently no-op are explained and recoverable. */}
+        <FinalizedBanner />
 
         {/* Countdown — WFC 2026 only */}
         {isWfc2026 && (

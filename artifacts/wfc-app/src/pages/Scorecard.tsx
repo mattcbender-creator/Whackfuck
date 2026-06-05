@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
-import { useCourse } from '@/lib/tournamentContext';
+import { useCourse, useTournament } from '@/lib/tournamentContext';
+import { FinalizedBanner } from '@/components/FinalizedBanner';
 import type { CourseHole } from '@/lib/tournament';
 import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers, firstUnscoredPlayPos, isHoleOutOfOrder } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
@@ -212,6 +213,8 @@ function pickChirp(scores: (number | null)[], netScore: number, HOLES: CourseHol
 
 export default function Scorecard() {
   const { holes: HOLES, holeRules, trackYardages } = useCourse();
+  const { tournament, isHost } = useTournament();
+  const isFinal = tournament?.status === 'final';
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, wheelAdjustment, holesPlayed, setScore,
     wheelSpins, targetedBy, listTeamsOnce, logEvent,
@@ -318,6 +321,16 @@ export default function Scorecard() {
 
   const handleChange = (delta: number) => {
     if (selLocked) return;
+    if (isFinal) {
+      toast({
+        title: 'Tournament finalized',
+        description: isHost
+          ? 'Scoring is locked. Tap "Reopen scoring" above to make changes.'
+          : 'The host has ended the round, so scores are locked.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (hasSubmitted) {
       toast({
         title: 'Round locked',
@@ -432,6 +445,12 @@ export default function Scorecard() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-background flex flex-col pb-20">
+
+      {isFinal && (
+        <div className="px-4 pt-3 max-w-lg mx-auto w-full">
+          <FinalizedBanner />
+        </div>
+      )}
 
       {/* ── Sticky Header ── */}
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border px-4 pt-3 pb-3">
@@ -730,7 +749,7 @@ export default function Scorecard() {
 
         {/* Selected hole is a wheel hole that's scored but not yet spun — let
             them open the Item Box manually (auto-fire may have been dismissed). */}
-        {holeRules[selectedIdx]?.type === 'wheel' && selScore !== null && !selSpin && !hasSubmitted && (
+        {holeRules[selectedIdx]?.type === 'wheel' && selScore !== null && !selSpin && !hasSubmitted && !isFinal && (
           <button
             onClick={() => { setWheelHole(selectedIdx + 1); setWheelOpen(true); }}
             data-testid="button-confirm-front-nine"

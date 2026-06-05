@@ -27,6 +27,8 @@ interface TournamentContextValue {
   leaveTournament: () => void;
   /** Resolve a 6-char join code to a tournament id (Firestore lookup). */
   lookupJoinCode: (code: string) => Promise<TournamentConfig | null>;
+  /** Host action: reopen a finalized tournament so scoring is editable again. */
+  reopenTournament: () => Promise<void>;
 }
 
 const TournamentContext = createContext<TournamentContextValue | null>(null);
@@ -116,6 +118,11 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const reopenTournament = useCallback(async () => {
+    if (!isFirebaseConfigured || !db || !activeId) return;
+    await setDoc(tournamentDoc(db, activeId), { status: 'live' }, { merge: true });
+  }, [activeId]);
+
   const isHost = (() => {
     if (!activeId || !tournament) return false;
     try {
@@ -152,6 +159,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
         enterSpectator,
         leaveTournament,
         lookupJoinCode,
+        reopenTournament,
       }}
     >
       {children}
