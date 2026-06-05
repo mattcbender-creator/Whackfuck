@@ -5,7 +5,7 @@ import { onSnapshot, query, orderBy } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
 import { useCourse } from '@/lib/tournamentContext';
 import { teamsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
-import { Trophy, Crown, Medal, Flame, Target, Star, Flag, Share2, Check } from 'lucide-react';
+import { Trophy, Crown, Medal, Flame, Target, Star, Flag, Share2, Check, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fireEagleConfetti } from '@/lib/confetti';
 import { useToast } from '@/hooks/use-toast';
@@ -94,6 +94,75 @@ function buildShareText(ranked: TeamData[], superlatives: Superlative[]): string
 
 const PODIUM_ORDER = [1, 0, 2];
 
+function scoreStyle(diff: number): string {
+  if (diff <= -2) return 'bg-primary text-background font-black';
+  if (diff === -1) return 'bg-primary/25 text-primary font-bold';
+  if (diff === 0) return 'text-foreground';
+  if (diff === 1) return 'text-orange-400';
+  return 'text-red-400';
+}
+
+function TeamScorecard({ team, holes }: { team: TeamData; holes: CourseHole[] }) {
+  const scores = team.scores ?? [];
+  const renderNine = (label: string, start: number) => {
+    const slice = holes.slice(start, start + 9);
+    let grossSum = 0;
+    let parSum = 0;
+    slice.forEach((h, idx) => {
+      const s = scores[start + idx];
+      parSum += h.par;
+      if (s != null) grossSum += s;
+    });
+    return (
+      <div>
+        <div className="grid grid-cols-[2.2rem_repeat(9,1fr)_2.4rem] text-center text-[10px]">
+          <div className="py-1 font-black uppercase tracking-wider text-muted-foreground text-left pl-1">{label}</div>
+          {slice.map(h => (
+            <div key={`h-${h.hole}`} className="py-1 font-black text-muted-foreground">{h.hole}</div>
+          ))}
+          <div className="py-1 font-black uppercase tracking-wider text-muted-foreground">Tot</div>
+        </div>
+        <div className="grid grid-cols-[2.2rem_repeat(9,1fr)_2.4rem] text-center text-[10px] border-b border-border/30">
+          <div className="py-1 uppercase tracking-wider text-muted-foreground/60 text-left pl-1">Par</div>
+          {slice.map(h => (
+            <div key={`p-${h.hole}`} className="py-1 text-muted-foreground/60">{h.par}</div>
+          ))}
+          <div className="py-1 text-muted-foreground/60">{parSum}</div>
+        </div>
+        <div className="grid grid-cols-[2.2rem_repeat(9,1fr)_2.4rem] text-center text-xs">
+          <div className="py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground text-left pl-1 self-center">Gross</div>
+          {slice.map((h, idx) => {
+            const s = scores[start + idx];
+            return (
+              <div key={`g-${h.hole}`} className="py-1 px-0.5">
+                {s == null ? (
+                  <span className="text-muted-foreground/30">–</span>
+                ) : (
+                  <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md ${scoreStyle(s - h.par)}`}>{s}</span>
+                )}
+              </div>
+            );
+          })}
+          <div className="py-1 font-condensed text-base font-black text-primary self-center">{grossSum || '–'}</div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-background/60 border-t border-border/30 px-3 py-3 space-y-3">
+      {renderNine('Out', 0)}
+      {renderNine('In', 9)}
+      <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground pt-1">
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-primary" /> Eagle+</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-primary/25" /> Birdie</span>
+        <span className="flex items-center gap-1"><span className="text-orange-400">▲</span> Bogey</span>
+        <span className="flex items-center gap-1"><span className="text-red-400">▲</span> Double+</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Results() {
   const [, navigate] = useLocation();
   const { holes } = useCourse();
@@ -102,6 +171,7 @@ export default function Results() {
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(true);
   const [shared, setShared] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!db) {
@@ -259,18 +329,31 @@ export default function Results() {
             <div className="mb-8">
               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-3">Full Standings</p>
               <div className="bg-card border border-border rounded-xl overflow-hidden">
-                {ranked.map((t, i) => (
-                  <div key={t.id} className="flex items-center gap-3 px-4 py-3 border-t border-border/30 first:border-t-0">
-                    <span className="font-condensed text-lg font-black w-7 text-center shrink-0 text-muted-foreground">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm truncate leading-tight">{t.teamName}</p>
-                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">{formatPlayers(t.players)} · {t.holesPlayed}/18</p>
+                {ranked.map((t, i) => {
+                  const isOpen = expandedId === t.id;
+                  return (
+                    <div key={t.id} className="border-t border-border/30 first:border-t-0">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isOpen ? null : t.id)}
+                        aria-expanded={isOpen}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-primary/5 transition-colors"
+                        data-testid={`button-expand-team-${t.id}`}
+                      >
+                        <span className="font-condensed text-lg font-black w-7 text-center shrink-0 text-muted-foreground">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate leading-tight">{t.teamName}</p>
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{formatPlayers(t.players)} · {t.holesPlayed}/18</p>
+                        </div>
+                        <span className={`font-condensed text-lg font-black leading-none shrink-0 ${t.netScore < 0 ? 'text-primary' : t.netScore > 0 ? 'text-orange-400' : 'text-muted-foreground'}`}>
+                          {netLabel(t.netScore)}
+                        </span>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? 'rotate-180 text-primary' : ''}`} />
+                      </button>
+                      {isOpen && <TeamScorecard team={t} holes={holes} />}
                     </div>
-                    <span className={`font-condensed text-lg font-black leading-none shrink-0 ${t.netScore < 0 ? 'text-primary' : t.netScore > 0 ? 'text-orange-400' : 'text-muted-foreground'}`}>
-                      {netLabel(t.netScore)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </>
