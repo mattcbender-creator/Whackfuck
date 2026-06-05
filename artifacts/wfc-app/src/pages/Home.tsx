@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
+import { useTournament } from '@/lib/tournamentContext';
+import { WFC_2026_ID, formatPlayers } from '@/lib/tournament';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Users, ShieldAlert } from 'lucide-react';
+import { Users, ShieldAlert, Share2, Copy, Check, Plus, X } from 'lucide-react';
 
 // June 27 2026, 7:00 AM Eastern (UTC-4 in summer / EDT)
 const EVENT_START = new Date('2026-06-27T07:00:00-04:00');
@@ -97,12 +99,62 @@ function Countdown() {
 
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
+function TeamInvite({ joinCode, teamCode }: { joinCode: string; teamCode: string }) {
+  const [copied, setCopied] = useState(false);
+  const link = `${window.location.origin}${import.meta.env.BASE_URL}join/${joinCode}/${teamCode}`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  };
+  const share = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Join my team', url: link }); } catch { /* ignore */ }
+    } else {
+      copy();
+    }
+  };
+
+  return (
+    <div className="bg-card/40 border border-border/50 rounded-xl p-3 mb-3 text-left">
+      <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Team code · {teamCode}</p>
+      <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
+        Share so a teammate can score on their own phone, or rejoin if you switch devices.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={copy}
+          data-testid="button-copy-invite"
+          className="flex items-center justify-center gap-1.5 py-2 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-[11px]"
+        >
+          {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy link</>}
+        </button>
+        <button
+          onClick={share}
+          data-testid="button-share-invite"
+          className="flex items-center justify-center gap-1.5 py-2 rounded-full bg-primary text-primary-foreground font-condensed font-bold uppercase tracking-widest text-[11px]"
+        >
+          <Share2 className="w-3 h-3" /> Share
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { setTeamInfo, teamInfo, hasSubmitted, serverTeamMissing, resetDevice } = useWFC();
+  const { setTeamInfo, teamInfo, teamCode, hasSubmitted, serverTeamMissing, resetDevice } = useWFC();
+  const { tournament, activeId, autoTeeRule } = useTournament();
+
+  const teamSize = Math.max(1, Math.min(4, tournament?.teamSize ?? 2));
+  const joinCode = tournament?.joinCode ?? '';
+  const isWfc2026 = activeId === WFC_2026_ID;
+
   const [teamName, setTeamName] = useState('');
-  const [player1, setPlayer1] = useState('');
-  const [player2, setPlayer2] = useState('');
+  const [players, setPlayers] = useState<string[]>(() => Array(teamSize).fill(''));
   const [animate, setAnimate] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -111,18 +163,31 @@ export default function Home() {
     return () => clearTimeout(t);
   }, []);
 
+  // Keep the empty form sized to the tournament's team size.
+  useEffect(() => {
+    if (!teamInfo) setPlayers(prev => (prev.length === teamSize ? prev : Array(teamSize).fill('')));
+  }, [teamSize, teamInfo]);
+
   useEffect(() => {
     if (teamInfo) {
       setTeamName(teamInfo.teamName);
-      setPlayer1(teamInfo.player1);
-      setPlayer2(teamInfo.player2);
+      const p = [...teamInfo.players];
+      while (p.length < teamSize) p.push('');
+      setPlayers(p.slice(0, Math.max(teamSize, teamInfo.players.length)));
     }
-  }, [teamInfo]);
+  }, [teamInfo, teamSize]);
+
+  const setPlayerAt = (i: number, val: string) => {
+    setPlayers(prev => prev.map((p, idx) => (idx === i ? val : p)));
+  };
+  const addPlayer = () => setPlayers(prev => (prev.length < 4 ? [...prev, ''] : prev));
+  const removePlayer = (i: number) => setPlayers(prev => prev.filter((_, idx) => idx !== i));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!teamName.trim() || !player1.trim() || !player2.trim()) return;
-    setTeamInfo({ teamName: teamName.trim(), player1: player1.trim(), player2: player2.trim() });
+    const cleaned = players.map(p => p.trim()).filter(Boolean);
+    if (!teamName.trim() || cleaned.length === 0) return;
+    setTeamInfo({ teamName: teamName.trim(), players: cleaned });
     setEditing(false);
     setLocation('/hole');
   };
@@ -145,7 +210,7 @@ export default function Home() {
         style={{ background: 'radial-gradient(circle, rgba(57,255,20,0.05) 0%, transparent 70%)' }}
       />
 
-      <div className="z-10 flex flex-col items-center text-center w-full max-w-sm mx-auto gap-5">
+      <div className="z-10 flex flex-col items-center text-center w-full max-w-sm mx-auto gap-5 py-10">
 
         {/* Logo */}
         <div
@@ -154,8 +219,8 @@ export default function Home() {
         >
           <img
             src={wfcLogo}
-            alt="WFC – Whack Fuck Cup"
-            className="w-44 h-44 object-contain mx-auto"
+            alt="WFC"
+            className="w-36 h-36 object-contain mx-auto"
             draggable={false}
           />
         </div>
@@ -164,19 +229,21 @@ export default function Home() {
         <div className={`transition-all duration-700 delay-100 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
           <h1
             className="font-condensed font-black leading-[0.9] uppercase tracking-tight text-foreground"
-            style={{ fontSize: 'clamp(2.8rem, 15vw, 4.8rem)' }}
+            style={{ fontSize: 'clamp(2.4rem, 13vw, 4rem)' }}
           >
-            WHACK FUCK CUP
+            {tournament?.name ?? 'Tournament'}
           </h1>
           <p className="mt-3 text-muted-foreground tracking-widest text-[11px] uppercase font-medium">
-            Dundee Country Club · Under par = Tips
+            {tournament?.courseName ?? ''}{autoTeeRule ? ' · Under par = Tips' : ''}
           </p>
         </div>
 
-        {/* Countdown timer — auto-hides at 7am day of event */}
-        <div className={`w-full transition-all duration-700 delay-150 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-          <Countdown />
-        </div>
+        {/* Countdown — WFC 2026 only */}
+        {isWfc2026 && (
+          <div className={`w-full transition-all duration-700 delay-150 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+            <Countdown />
+          </div>
+        )}
 
         {/* ── Team already registered ── */}
         {teamInfo && !editing && (
@@ -192,9 +259,13 @@ export default function Home() {
                 {teamInfo.teamName}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                {teamInfo.player1} &amp; {teamInfo.player2}
+                {formatPlayers(teamInfo.players)}
               </p>
             </div>
+
+            {joinCode && teamCode && !hasSubmitted && (
+              <TeamInvite joinCode={joinCode} teamCode={teamCode} />
+            )}
 
             <button
               data-testid="button-start-tournament"
@@ -223,10 +294,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Locked-out state: round already submitted, but no teamInfo
-            (e.g. browser data was cleared on this device). Don't show the
-            registration form — that would let someone start a brand-new round
-            from a "blank" home screen. ── */}
+        {/* ── Locked-out state ── */}
         {!teamInfo && hasSubmitted && (
           <div className={`w-full transition-all duration-700 delay-200 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
             <div className="bg-card border border-primary/40 rounded-2xl p-5 text-center">
@@ -240,11 +308,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Escape hatch: device says "submitted" but the server has no
-            record of this team (admin deleted them, or it's a stale test
-            device). Lets the user wipe local state and re-register from
-            scratch. Hidden for genuinely-submitted teams whose server doc
-            still exists. ── */}
+        {/* ── Escape hatch ── */}
         {hasSubmitted && serverTeamMissing && (
           <div className={`w-full transition-all duration-700 delay-300 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
             <div className="bg-card/40 border border-border/40 rounded-xl p-4 text-center space-y-3">
@@ -288,29 +352,44 @@ export default function Home() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5 text-left">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Player 1</label>
-                  <Input
-                    data-testid="input-player1"
-                    value={player1}
-                    onChange={e => setPlayer1(e.target.value)}
-                    placeholder="Name"
-                    className="h-12 bg-input/60 border-border/80 focus:border-primary text-base"
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5 text-left">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Player 2</label>
-                  <Input
-                    data-testid="input-player2"
-                    value={player2}
-                    onChange={e => setPlayer2(e.target.value)}
-                    placeholder="Name"
-                    className="h-12 bg-input/60 border-border/80 focus:border-primary text-base"
-                    required
-                  />
-                </div>
+              <div className="space-y-2">
+                {players.map((p, i) => (
+                  <div key={i} className="space-y-1.5 text-left">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                      Player {i + 1}{i === 0 ? '' : ' (optional)'}
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        data-testid={`input-player-${i + 1}`}
+                        value={p}
+                        onChange={e => setPlayerAt(i, e.target.value)}
+                        placeholder="Name"
+                        className="h-12 bg-input/60 border-border/80 focus:border-primary text-base"
+                        required={i === 0}
+                      />
+                      {players.length > 1 && i > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => removePlayer(i)}
+                          aria-label="Remove player"
+                          className="shrink-0 w-12 h-12 rounded-md bg-secondary/60 text-muted-foreground hover:text-foreground flex items-center justify-center"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {players.length < 4 && (
+                  <button
+                    type="button"
+                    onClick={addPlayer}
+                    data-testid="button-add-player"
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-border/70 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors font-condensed font-bold uppercase tracking-widest text-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add player
+                  </button>
+                )}
               </div>
 
               <Button
@@ -334,14 +413,14 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Tee rule note ── */}
-        {!showForm && (
+        {/* ── Tee rule note (auto-tee tournaments only) ── */}
+        {!showForm && autoTeeRule && (
           <p className={`text-[10px] text-muted-foreground/60 transition-all duration-700 delay-300 ${animate ? 'opacity-100' : 'opacity-0'}`}>
             Tee auto-updates as you score each hole.
           </p>
         )}
 
-        {showForm && (
+        {showForm && autoTeeRule && (
           <div className={`w-full transition-all duration-700 delay-300 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
             <div className="bg-card/40 border border-border/40 rounded-xl p-3 text-left">
               <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">Tee Assignment</p>

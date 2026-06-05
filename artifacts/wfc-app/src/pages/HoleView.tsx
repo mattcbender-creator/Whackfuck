@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock, Trophy, X } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
-import { HOLES } from '@/lib/holes';
+import { useCourse } from '@/lib/tournamentContext';
+import { teamDoc, scoresToMap, getActiveTournamentId } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { getWheelItem } from '@/lib/wheel';
 import { db } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { setDoc, serverTimestamp } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
 import { useToast } from '@/hooks/use-toast';
 import { pickChirp } from '@/lib/chirps';
@@ -46,6 +47,7 @@ function fmtNet(net: number) {
 }
 
 export default function HoleView() {
+  const { holes: HOLES, trackYardages } = useCourse();
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, listTeamsOnce, logEvent,
@@ -72,11 +74,12 @@ export default function HoleView() {
     if (!teamInfo) return;
     setFinishLoading(true);
     // Flush latest score to Firestore so position lookup is accurate
-    if (db) {
+    const tId = getActiveTournamentId();
+    if (db && tId) {
       try {
-        await setDoc(doc(db, 'teams', teamId), {
-          teamName: teamInfo.teamName, player1: teamInfo.player1, player2: teamInfo.player2,
-          scores, netScore, holesPlayed, currentTee,
+        await setDoc(teamDoc(db, teamId), {
+          teamName: teamInfo.teamName, players: teamInfo.players,
+          scores: scoresToMap(scores), netScore, holesPlayed, currentTee,
           lastUpdated: serverTimestamp(),
         }, { merge: true });
       } catch { /* non-fatal */ }
@@ -319,6 +322,7 @@ export default function HoleView() {
             </div>
 
             {/* Tee yardages — compact column on the right */}
+            {trackYardages && (
             <div className="flex-1 grid grid-cols-3 gap-1.5">
               {[
                 { key: 'tips', label: 'Tips', val: hole.tips },
@@ -351,6 +355,7 @@ export default function HoleView() {
                 );
               })}
             </div>
+            )}
           </div>
         </div>
 

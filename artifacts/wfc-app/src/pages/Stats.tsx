@@ -1,9 +1,10 @@
 import { useWFC } from '@/lib/store';
-import { HOLES } from '@/lib/holes';
+import { useCourse } from '@/lib/tournamentContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export default function Stats() {
   const { scores } = useWFC();
+  const { holes: HOLES } = useCourse();
 
   // Calculate stats
   let eagleCount = 0;

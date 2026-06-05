@@ -1,18 +1,29 @@
 import { Link, useLocation } from 'wouter';
 import { Home, ClipboardList, Trophy, Flag, BookOpen } from 'lucide-react';
+import { useTournament } from '@/lib/tournamentContext';
+
+const SCORING_TABS = new Set(['/hole', '/scorecard']);
+
+// Routes that are part of the entry experience — no bottom nav there.
+const HIDE_PREFIXES = ['/create', '/join', '/watch'];
 
 export function BottomNav() {
   const [location] = useLocation();
+  const { activeId, isSpectator } = useTournament();
 
-  const tabs = [
-    { href: '/',           icon: Home,          label: 'Home',      testid: 'tab-home' },
-    { href: '/hole',       icon: Flag,          label: 'Hole',      testid: 'tab-hole' },
-    { href: '/scorecard',  icon: ClipboardList, label: 'Scorecard', testid: 'tab-scorecard' },
-    { href: '/leaderboard',icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard' },
-    { href: '/rules',      icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
+  const allTabs = [
+    { href: '/home',        icon: Home,          label: 'Home',      testid: 'tab-home' },
+    { href: '/hole',        icon: Flag,          label: 'Hole',      testid: 'tab-hole' },
+    { href: '/scorecard',   icon: ClipboardList, label: 'Scorecard', testid: 'tab-scorecard' },
+    { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard' },
+    { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
   ];
 
+  const tabs = isSpectator ? allTabs.filter(t => !SCORING_TABS.has(t.href)) : allTabs;
+
   if (location === '/') return null;
+  if (!activeId) return null;
+  if (HIDE_PREFIXES.some(p => location.startsWith(p))) return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/98 backdrop-blur supports-[backdrop-filter]:bg-background/90 border-t border-border">

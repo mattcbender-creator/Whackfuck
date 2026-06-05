@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
-import { HOLES } from '@/lib/holes';
+import { useCourse } from '@/lib/tournamentContext';
+import type { CourseHole } from '@/lib/tournament';
+import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import WheelModal from '@/components/WheelModal';
 import { getWheelItem } from '@/lib/wheel';
@@ -44,7 +46,7 @@ function ordinal(n: number): string {
   return `${n}th`;
 }
 
-function pickChirp(scores: (number | null)[], netScore: number): string {
+function pickChirp(scores: (number | null)[], netScore: number, HOLES: CourseHole[]): string {
   let worstIdx = -1;
   let worstDiff = -999;
   let tripleCount = 0;
@@ -209,6 +211,7 @@ function pickChirp(scores: (number | null)[], netScore: number): string {
 }
 
 export default function Scorecard() {
+  const { holes: HOLES, trackYardages } = useCourse();
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
@@ -351,8 +354,8 @@ export default function Scorecard() {
       // CRITICAL: must use the canonical teamId (UUID), NOT a slug of the team
       // name. Slugged doc ids create ghost team docs that pollute targeting
       // and the leaderboard.
-      await setDoc(doc(db, 'teams', teamId), {
-        ...teamInfo, scores, netScore, holesPlayed, currentTee,
+      await setDoc(teamDoc(db, teamId), {
+        ...teamInfo, scores: scoresToMap(scores), netScore, holesPlayed, currentTee,
         lastUpdated: serverTimestamp(),
       }, { merge: true });
       toast({ title: 'Synced', description: 'Scores pushed to leaderboard.' });
@@ -367,10 +370,10 @@ export default function Scorecard() {
     if (!teamInfo) return;
     setFinishLoading(true);
     // Force a sync first so our final score is in Firestore
-    if (db) {
+    if (db && getActiveTournamentId()) {
       try {
-        await setDoc(doc(db, 'teams', teamId), {
-          ...teamInfo, scores, netScore, holesPlayed, currentTee,
+        await setDoc(teamDoc(db, teamId), {
+          ...teamInfo, scores: scoresToMap(scores), netScore, holesPlayed, currentTee,
           lastUpdated: serverTimestamp(),
         }, { merge: true });
       } catch { /* non-fatal */ }
@@ -389,7 +392,7 @@ export default function Scorecard() {
     } catch {
       setFinishPosition(null);
     }
-    setFinishChirp(pickChirp(scores, netScore));
+    setFinishChirp(pickChirp(scores, netScore, HOLES));
     setFinishLoading(false);
     setFinishOpen(true);
     if (netScore <= 0) fireEagleConfetti();
@@ -415,7 +418,7 @@ export default function Scorecard() {
                 {teamInfo?.teamName || 'Your Team'}
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {teamInfo ? `${teamInfo.player1} · ${teamInfo.player2}` : 'Register on the Home screen'}
+                {teamInfo ? formatPlayers(teamInfo.players) : 'Register on the Home screen'}
               </p>
             </div>
 
@@ -539,6 +542,7 @@ export default function Scorecard() {
               </tr>
 
               {/* YDS row */}
+              {trackYardages && (
               <tr className="border-b border-white/10">
                 <td
                   className={`${STICKY} ${currentTee === 'tips' ? 'text-red-400' : 'text-blue-400'}`}
@@ -556,6 +560,7 @@ export default function Scorecard() {
                 ))}
                 <td className={`${CELL} text-foreground/50 border-l border-white/8 font-bold`}>{halfTotalYds}</td>
               </tr>
+              )}
 
               {/* Scores divider */}
               <tr><td colSpan={11} className="h-px bg-primary/20" /></tr>
@@ -632,7 +637,7 @@ export default function Scorecard() {
         {/* Half summary bar */}
         <div className="flex justify-between items-center mt-2 px-1">
           <span className="text-[10px] text-muted-foreground">
-            {halfHolesPlayed} / 9 holes · {halfTotalYds.toLocaleString()} yds
+            {halfHolesPlayed} / 9 holes{trackYardages ? ` · ${halfTotalYds.toLocaleString()} yds` : ''}
           </span>
           <span className={`text-[10px] font-bold ${netCls(halfNet)}`}>
             {halfNet === null ? '' : `${fmtNet(halfNet)} this nine`}
@@ -736,8 +741,8 @@ export default function Scorecard() {
                   Par {selHole.par}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {currentTee === 'tips' ? selHole.tips : selHole.womens} yds
-                  <span className="ml-2 opacity-60">· Hdcp {selHole.hdcp}</span>
+                  {trackYardages && <>{currentTee === 'tips' ? selHole.tips : selHole.womens} yds<span className="ml-2 opacity-60">· </span></>}
+                  <span className="opacity-60">Hdcp {selHole.hdcp}</span>
                 </p>
               </div>
             </div>
@@ -857,7 +862,7 @@ export default function Scorecard() {
                 <span>Hole {activeRule.hole}</span>
                 <span>Par {activeRule.par}</span>
                 <span>Hdcp {activeRule.hdcp}</span>
-                <span>{currentTee === 'tips' ? activeRule.tips : activeRule.womens} yds ({currentTee === 'tips' ? 'Tips' : "Women's"})</span>
+                {trackYardages && <span>{currentTee === 'tips' ? activeRule.tips : activeRule.womens} yds ({currentTee === 'tips' ? 'Tips' : "Women's"})</span>}
               </div>
             </div>
           )}

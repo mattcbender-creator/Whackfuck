@@ -1,10 +1,14 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { StoreProvider } from "@/lib/store";
-import { useEffect } from "react";
+import { TournamentProvider, useTournament } from "@/lib/tournamentContext";
+import { useEffect, type ReactNode } from "react";
 
+import Landing from "@/pages/Landing";
+import CreateTournament from "@/pages/CreateTournament";
+import JoinTournament from "@/pages/JoinTournament";
 import Home from "@/pages/Home";
 import Scorecard from "@/pages/Scorecard";
 import Leaderboard from "@/pages/Leaderboard";
@@ -18,22 +22,64 @@ import { LiveTicker } from "@/components/LiveTicker";
 
 const queryClient = new QueryClient();
 
+// Gameplay routes require an active tournament. Scoring routes additionally
+// block spectators (redirect them to the leaderboard).
+function Guard({ children, allowSpectator = false }: { children: ReactNode; allowSpectator?: boolean }) {
+  const { activeId, isSpectator } = useTournament();
+  if (!activeId) return <Redirect to="/" />;
+  if (isSpectator && !allowSpectator) return <Redirect to="/leaderboard" />;
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
       <LiveTicker />
       <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/scorecard" component={Scorecard} />
-        <Route path="/leaderboard" component={Leaderboard} />
-        <Route path="/hole" component={HoleView} />
-        <Route path="/rules" component={Rules} />
-        <Route path="/stats" component={Stats} />
-        <Route path="/admin" component={Admin} />
+        <Route path="/" component={Landing} />
+        <Route path="/create" component={CreateTournament} />
+        <Route path="/join" component={JoinTournament} />
+        <Route path="/join/:code" component={JoinTournament} />
+        <Route path="/join/:code/:teamCode" component={JoinTournament} />
+        <Route path="/watch/:code" component={JoinTournament} />
+
+        <Route path="/home">
+          <Guard><Home /></Guard>
+        </Route>
+        <Route path="/scorecard">
+          <Guard><Scorecard /></Guard>
+        </Route>
+        <Route path="/hole">
+          <Guard><HoleView /></Guard>
+        </Route>
+        <Route path="/leaderboard">
+          <Guard allowSpectator><Leaderboard /></Guard>
+        </Route>
+        <Route path="/rules">
+          <Guard allowSpectator><Rules /></Guard>
+        </Route>
+        <Route path="/stats">
+          <Guard allowSpectator><Stats /></Guard>
+        </Route>
+        <Route path="/admin">
+          <Guard allowSpectator><Admin /></Guard>
+        </Route>
         <Route component={NotFound} />
       </Switch>
       <BottomNav />
     </div>
+  );
+}
+
+function AppInner() {
+  const { activeId } = useTournament();
+  return (
+    <StoreProvider key={activeId ?? "__none__"}>
+      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <Router />
+      </WouterRouter>
+      <Toaster />
+    </StoreProvider>
   );
 }
 
@@ -45,12 +91,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <StoreProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </StoreProvider>
+        <TournamentProvider>
+          <AppInner />
+        </TournamentProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

@@ -1,9 +1,10 @@
 import useEmblaCarousel from 'embla-carousel-react';
-import { HOLES } from '@/lib/holes';
+import { useCourse } from '@/lib/tournamentContext';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export default function Rules() {
+  const { holes: HOLES, trackYardages } = useCourse();
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: 'center' });
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -204,7 +205,9 @@ export default function Rules() {
                       </span>
                       <div className="text-right">
                         <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Par {hole.par}</div>
-                        <div className="text-sm font-condensed font-bold mt-1">{hole.tips} / {hole.womens} YDS</div>
+                        {trackYardages && (
+                          <div className="text-sm font-condensed font-bold mt-1">{hole.tips} / {hole.womens} YDS</div>
+                        )}
                       </div>
                     </div>
 
@@ -249,6 +252,7 @@ export default function Rules() {
           <button 
             onClick={scrollNext}
             disabled={selectedIndex === HOLES.length + 2}
+            data-testid="button-rule-next"
             className="w-12 h-12 flex items-center justify-center rounded-full bg-secondary text-secondary-foreground disabled:opacity-30 transition-opacity"
           >
             <ChevronRight className="w-6 h-6" />

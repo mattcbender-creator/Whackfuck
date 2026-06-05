@@ -3,19 +3,22 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import {
-  collection, addDoc, doc, setDoc, getDocs, writeBatch, serverTimestamp,
+  addDoc, setDoc, getDocs, writeBatch, serverTimestamp,
   query, where, deleteDoc, updateDoc, onSnapshot, increment, Timestamp,
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { HOLES } from '@/lib/holes';
+import { useCourse, useTournament } from '@/lib/tournamentContext';
+import {
+  teamsCol, eventsCol, drivesCol, teamDoc, configDoc,
+  getActiveTournamentId, formatPlayers, normalizeScores, scoresToMap,
+  type CourseHole,
+} from '@/lib/tournament';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
   ShieldAlert, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
-
-const ADMIN_PASSWORD = 'wfc';
 
 const DEMO_TEAM_NAMES = [
   'Birdie Bandits', 'Sandbaggers', 'Bogey Boys', 'Mulligan Mafia', 'Whack Attack',
@@ -72,8 +75,7 @@ function shuffle<T>(arr: T[]): T[] {
 interface LiveTeam {
   id: string;
   teamName: string;
-  player1: string;
-  player2: string;
+  players: string[];
   netScore: number;
   holesPlayed: number;
   wheelAdjustment?: number;
@@ -102,16 +104,18 @@ function mapTeam(id: string, data: Record<string, unknown>): LiveTeam {
     if (typeof v === 'object' && typeof v.toMillis === 'function') return v.toMillis();
     return null;
   };
+  const players = Array.isArray(d.players)
+    ? (d.players as unknown[]).filter((p): p is string => typeof p === 'string')
+    : [d.player1, d.player2].filter((p): p is string => typeof p === 'string' && p.trim() !== '');
   return {
     id,
     teamName: (d.teamName as string) ?? '(unnamed)',
-    player1: (d.player1 as string) ?? '',
-    player2: (d.player2 as string) ?? '',
+    players,
     netScore: typeof d.netScore === 'number' ? d.netScore : 0,
     holesPlayed: typeof d.holesPlayed === 'number' ? d.holesPlayed : 0,
     wheelAdjustment: typeof d.wheelAdjustment === 'number' ? d.wheelAdjustment : 0,
     isDemo: !!d.isDemo,
-    scores: Array.isArray(d.scores) ? (d.scores as (number | null)[]) : [],
+    scores: normalizeScores(d.scores),
     hasSubmitted: !!d.hasSubmitted,
     submittedAt: toMs(submittedAtRaw),
     lastUpdated: toMs(lastUpdatedRaw),
@@ -120,7 +124,7 @@ function mapTeam(id: string, data: Record<string, unknown>): LiveTeam {
   };
 }
 
-function auditTeam(t: LiveTeam): AuditFlag[] {
+function auditTeam(t: LiveTeam, holes: CourseHole[]): AuditFlag[] {
   const flags: AuditFlag[] = [];
   const scores = Array.isArray(t.scores) ? t.scores : [];
   let birdies = 0;
@@ -128,7 +132,7 @@ function auditTeam(t: LiveTeam): AuditFlag[] {
   let eagleOnPar3 = false;
   scores.forEach((s, i) => {
     if (s === null || s === undefined) return;
-    const par = HOLES[i]?.par ?? 4;
+    const par = holes[i]?.par ?? 4;
     const d = s - par;
     if (d <= -2) {
       eagles++;
@@ -200,6 +204,8 @@ function auditTeam(t: LiveTeam): AuditFlag[] {
 }
 
 export default function Admin() {
+  const { holes } = useCourse();
+  const { tournament, isHost } = useTournament();
   const [password, setPassword] = useState('');
   const [auth, setAuth] = useState(false);
   const [message, setMessage] = useState('');
@@ -215,8 +221,7 @@ export default function Admin() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingTeam, setEditingTeam] = useState<LiveTeam | null>(null);
   const [editName, setEditName] = useState('');
-  const [editP1, setEditP1] = useState('');
-  const [editP2, setEditP2] = useState('');
+  const [editPlayers, setEditPlayers] = useState<string[]>([]);
   const [adjustingTeam, setAdjustingTeam] = useState<LiveTeam | null>(null);
   const [adjustDelta, setAdjustDelta] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -224,17 +229,22 @@ export default function Admin() {
   const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
 
   const loadTeams = useCallback(async () => {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'teams'));
+    if (!db || !getActiveTournamentId()) return;
+    const snap = await getDocs(teamsCol(db));
     const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
     list.sort((a, b) => a.netScore - b.netScore);
     setTeams(list);
   }, []);
 
+  // Hosts (recovery-key holders) skip the admin-code prompt.
+  useEffect(() => {
+    if (isHost) setAuth(true);
+  }, [isHost]);
+
   // Live listener while either panel is open
   useEffect(() => {
-    if (!auth || (!teamsOpen && !auditOpen) || !db) return;
-    const unsub = onSnapshot(collection(db, 'teams'), snap => {
+    if (!auth || (!teamsOpen && !auditOpen) || !db || !getActiveTournamentId()) return;
+    const unsub = onSnapshot(teamsCol(db), snap => {
       const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
       list.sort((a, b) => a.netScore - b.netScore);
       setTeams(list);
@@ -245,7 +255,8 @@ export default function Admin() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
+    const code = tournament?.adminCode;
+    if (isHost || (code && password.trim() === code)) {
       setAuth(true);
     } else {
       toast({ title: 'Access Denied', variant: 'destructive' });
@@ -254,9 +265,9 @@ export default function Admin() {
 
   const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!db || !message.trim()) return;
+    if (!db || !message.trim() || !getActiveTournamentId()) return;
     try {
-      await addDoc(collection(db, 'events'), {
+      await addDoc(eventsCol(db), {
         type: 'broadcast',
         message,
         timestamp: new Date().toISOString(),
@@ -269,11 +280,11 @@ export default function Admin() {
   };
 
   const handleDelete = async (team: LiveTeam) => {
-    if (!db) return;
-    if (!window.confirm(`Delete "${team.teamName}" (${team.player1} & ${team.player2})? This cannot be undone.`)) return;
+    if (!db || !getActiveTournamentId()) return;
+    if (!window.confirm(`Delete "${team.teamName}" (${formatPlayers(team.players)})? This cannot be undone.`)) return;
     setDeletingId(team.id);
     try {
-      await deleteDoc(doc(db, 'teams', team.id));
+      await deleteDoc(teamDoc(db, team.id));
       toast({ title: `Deleted "${team.teamName}"` });
     } catch (e) {
       toast({ title: 'Delete failed', description: String(e), variant: 'destructive' });
@@ -285,19 +296,20 @@ export default function Admin() {
   const openEdit = (team: LiveTeam) => {
     setEditingTeam(team);
     setEditName(team.teamName);
-    setEditP1(team.player1);
-    setEditP2(team.player2);
+    const size = Math.max(team.players.length, tournament?.teamSize ?? team.players.length, 1);
+    const filled = Array.from({ length: size }, (_, i) => team.players[i] ?? '');
+    setEditPlayers(filled);
   };
 
   const handleSaveEdit = async () => {
-    if (!db || !editingTeam) return;
+    if (!db || !editingTeam || !getActiveTournamentId()) return;
     if (!editName.trim()) { toast({ title: 'Team name required', variant: 'destructive' }); return; }
+    const players = editPlayers.map(p => p.trim()).filter(p => p !== '');
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'teams', editingTeam.id), {
+      await updateDoc(teamDoc(db, editingTeam.id), {
         teamName: editName.trim(),
-        player1: editP1.trim(),
-        player2: editP2.trim(),
+        players,
       });
       toast({ title: 'Team updated' });
       setEditingTeam(null);
@@ -314,10 +326,10 @@ export default function Admin() {
   };
 
   const handleSaveAdjust = async () => {
-    if (!db || !adjustingTeam || adjustDelta === 0) { setAdjustingTeam(null); return; }
+    if (!db || !adjustingTeam || adjustDelta === 0 || !getActiveTournamentId()) { setAdjustingTeam(null); return; }
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'teams', adjustingTeam.id), {
+      await updateDoc(teamDoc(db, adjustingTeam.id), {
         wheelAdjustment: increment(adjustDelta),
         netScore: increment(adjustDelta),
       });
@@ -342,7 +354,7 @@ export default function Admin() {
     setSeeding(true);
     try {
       const fdb = db;
-      const existing = await getDocs(query(collection(fdb, 'teams'), where('isDemo', '==', true)));
+      const existing = await getDocs(query(teamsCol(fdb), where('isDemo', '==', true)));
       if (!existing.empty) {
         const wipeBatch = writeBatch(fdb);
         existing.docs.forEach(d => wipeBatch.delete(d.ref));
@@ -356,8 +368,7 @@ export default function Admin() {
       interface DemoTeam {
         id: string;
         teamName: string;
-        player1: string;
-        player2: string;
+        players: string[];
         scores: (number | null)[];
         holesPlayed: number;
         frontNineConfirmed: boolean;
@@ -380,9 +391,9 @@ export default function Admin() {
         const holesPlayed = assignedHoles[i];
         const scores: (number | null)[] = Array(18).fill(null);
         for (let h = 0; h < holesPlayed; h++) {
-          scores[h] = randomHoleScore(HOLES[h].par);
+          scores[h] = randomHoleScore(holes[h].par);
         }
-        const playedPar = HOLES.slice(0, holesPlayed).reduce((s, h) => s + h.par, 0);
+        const playedPar = holes.slice(0, holesPlayed).reduce((s, h) => s + h.par, 0);
         const playedScore = scores.slice(0, holesPlayed).reduce<number>((s, v) => s + (v ?? 0), 0);
         const rawNet = playedScore - playedPar;
         const spun = holesPlayed >= 9;
@@ -392,8 +403,7 @@ export default function Admin() {
         return {
           id: `demo_${i}_${now}`,
           teamName,
-          player1: firsts[i * 2 % firsts.length],
-          player2: firsts[(i * 2 + 1) % firsts.length],
+          players: [firsts[i * 2 % firsts.length], firsts[(i * 2 + 1) % firsts.length]],
           scores,
           holesPlayed,
           frontNineConfirmed: spun,
@@ -490,7 +500,7 @@ export default function Admin() {
 
       const batch = writeBatch(fdb);
       for (const t of demoTeams) {
-        const ref = doc(fdb, 'teams', t.id);
+        const ref = teamDoc(fdb, t.id);
         let cleanSpin: Record<string, unknown> | null = null;
         if (t.wheelSpin) {
           cleanSpin = {};
@@ -500,9 +510,8 @@ export default function Admin() {
         }
         batch.set(ref, {
           teamName: t.teamName,
-          player1: t.player1,
-          player2: t.player2,
-          scores: t.scores,
+          players: t.players,
+          scores: scoresToMap(t.scores),
           netScore: t.netScore,
           holesPlayed: t.holesPlayed,
           currentTee: t.currentTee,
@@ -523,7 +532,7 @@ export default function Admin() {
       for (const t of demoTeams) {
         for (let h = Math.max(0, t.holesPlayed - 3); h < t.holesPlayed; h++) {
           const s = t.scores[h];
-          const par = HOLES[h].par;
+          const par = holes[h].par;
           if (s === null) continue;
           const diff = s - par;
           if (diff <= -1) {
@@ -544,7 +553,7 @@ export default function Admin() {
       recentEvents.sort((a, b) => b.tsMs - a.tsMs);
       const toSeed = recentEvents.slice(0, 8);
       await Promise.all(toSeed.map(ev =>
-        addDoc(collection(fdb, 'events'), {
+        addDoc(eventsCol(fdb), {
           type: 'score',
           subtype: ev.subtype,
           teamName: ev.teamName,
@@ -573,10 +582,10 @@ export default function Admin() {
   // arrows actually fire during a demo (otherwise demo teams are static and
   // no movement = no arrows).
   const simulationTick = useCallback(async () => {
-    if (!db) return;
+    if (!db || !getActiveTournamentId()) return;
     try {
       const fdb = db;
-      const snap = await getDocs(query(collection(fdb, 'teams'), where('isDemo', '==', true)));
+      const snap = await getDocs(query(teamsCol(fdb), where('isDemo', '==', true)));
       const candidates = snap.docs.filter(d => {
         const hp = d.data().holesPlayed;
         return typeof hp === 'number' && hp < 18;
@@ -588,23 +597,23 @@ export default function Admin() {
 
       for (const d of picks) {
         const data = d.data();
-        const scores: (number | null)[] = Array.isArray(data.scores) ? [...data.scores] : Array(18).fill(null);
+        const scores = normalizeScores(data.scores);
         const hp: number = data.holesPlayed;
         const nextHole = hp; // 0-indexed
         if (nextHole >= 18) continue;
-        const par = HOLES[nextHole].par;
+        const par = holes[nextHole].par;
         const newScore = randomHoleScore(par);
         scores[nextHole] = newScore;
         const newHp = hp + 1;
         // Recompute netScore = strokes - par for all played holes, plus existing wheelAdjustment
-        const playedPar = HOLES.slice(0, newHp).reduce((s, h) => s + h.par, 0);
+        const playedPar = holes.slice(0, newHp).reduce((s, h) => s + h.par, 0);
         const playedScore = scores.slice(0, newHp).reduce<number>((s, v) => s + (v ?? 0), 0);
         const wheelAdj = typeof data.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
         const newNet = playedScore - playedPar + wheelAdj;
         const currentTee = newNet < 0 ? 'tips' : 'womens';
 
         await updateDoc(d.ref, {
-          scores,
+          scores: scoresToMap(scores),
           holesPlayed: newHp,
           netScore: newNet,
           currentTee,
@@ -613,7 +622,7 @@ export default function Admin() {
 
         const diff = newScore - par;
         if (diff <= -1) {
-          await addDoc(collection(fdb, 'events'), {
+          await addDoc(eventsCol(fdb), {
             type: 'score',
             subtype: diff <= -2 ? 'eagle' : 'birdie',
             teamName: data.teamName,
@@ -625,7 +634,7 @@ export default function Admin() {
           });
         }
         if (newHp === 18) {
-          await addDoc(collection(fdb, 'events'), {
+          await addDoc(eventsCol(fdb), {
             type: 'finish',
             teamName: data.teamName,
             netScore: newNet,
@@ -637,7 +646,7 @@ export default function Admin() {
     } catch (e) {
       console.error('sim tick failed', e);
     }
-  }, []);
+  }, [holes]);
 
   // Start/stop the simulation interval
   useEffect(() => {
@@ -659,10 +668,10 @@ export default function Admin() {
   }, []);
 
   const handleClearDemo = async () => {
-    if (!db) return;
+    if (!db || !getActiveTournamentId()) return;
     try {
       const fdb = db;
-      const snap = await getDocs(query(collection(fdb, 'teams'), where('isDemo', '==', true)));
+      const snap = await getDocs(query(teamsCol(fdb), where('isDemo', '==', true)));
       if (snap.empty) {
         toast({ title: 'No demo teams to clear' });
         return;
@@ -680,20 +689,20 @@ export default function Admin() {
     if (!window.confirm('Wipe ALL teams (real AND demo), scores, wheel spins, and the leaderboard? This cannot be undone.')) return;
     try {
       const fdb = db;
-      if (fdb) {
-        const wipeCollection = async (name: string) => {
-          const snap = await getDocs(collection(fdb, name));
+      if (fdb && getActiveTournamentId()) {
+        const wipeCol = async (col: ReturnType<typeof teamsCol>) => {
+          const snap = await getDocs(col);
           if (snap.empty) return;
           const batch = writeBatch(fdb);
           snap.docs.forEach(d => batch.delete(d.ref));
           await batch.commit();
         };
         await Promise.all([
-          wipeCollection('teams'),
-          wipeCollection('events'),
-          wipeCollection('longestDrives'),
+          wipeCol(teamsCol(fdb)),
+          wipeCol(eventsCol(fdb)),
+          wipeCol(drivesCol(fdb)),
         ]);
-        await setDoc(doc(fdb, 'config', 'tournament'), { resetAt: serverTimestamp() }, { merge: true });
+        await setDoc(configDoc(fdb), { resetAt: serverTimestamp() }, { merge: true });
       }
       localStorage.clear();
       toast({ title: 'Tournament reset', description: 'Reloading…' });
@@ -843,7 +852,7 @@ export default function Admin() {
             </div>
             <div className="flex items-center gap-3">
               {(() => {
-                const flagged = realTeams.filter(t => auditTeam(t).length > 0).length;
+                const flagged = realTeams.filter(t => auditTeam(t, holes).length > 0).length;
                 return (
                   <span className={`font-condensed text-lg font-black leading-none ${flagged > 0 ? 'text-orange-400' : 'text-primary'}`}>
                     {flagged === 0 ? 'All Clear' : `${flagged} flagged`}
@@ -863,7 +872,7 @@ export default function Admin() {
                 <p className="text-xs text-muted-foreground text-center py-6 px-5">No real teams yet.</p>
               )}
               {realTeams.map(team => {
-                const flags = auditTeam(team);
+                const flags = auditTeam(team, holes);
                 const hasHigh = flags.some(f => f.severity === 'high');
                 const expanded = auditExpandedId === team.id;
                 const showSubmitTime = team.hasSubmitted && team.submittedAt
@@ -924,7 +933,7 @@ export default function Admin() {
                           <div className="grid grid-cols-9 gap-0.5">
                             {Array.from({ length: 18 }).map((_, i) => {
                               const s = team.scores?.[i] ?? null;
-                              const par = HOLES[i]?.par ?? 4;
+                              const par = holes[i]?.par ?? 4;
                               const d = s !== null ? s - par : null;
                               let cls = 'text-muted-foreground/40 bg-background/40';
                               if (d !== null) {
@@ -1066,14 +1075,16 @@ export default function Admin() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Team Name</label>
                 <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 bg-input" />
               </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player 1</label>
-                <Input value={editP1} onChange={e => setEditP1(e.target.value)} className="h-11 bg-input" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player 2</label>
-                <Input value={editP2} onChange={e => setEditP2(e.target.value)} className="h-11 bg-input" />
-              </div>
+              {editPlayers.map((p, i) => (
+                <div key={i}>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player {i + 1}</label>
+                  <Input
+                    value={p}
+                    onChange={e => setEditPlayers(prev => prev.map((v, j) => (j === i ? e.target.value : v)))}
+                    className="h-11 bg-input"
+                  />
+                </div>
+              ))}
             </div>
 
             <div className="flex gap-3">
@@ -1173,7 +1184,7 @@ function TeamRow({ team, deleting, onDelete, onEdit, onAdjust }: TeamRowProps) {
       <div className="flex-1 min-w-0">
         <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
         <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-          {team.player1}{team.player2 ? ` & ${team.player2}` : ''} · {team.holesPlayed}/18
+          {formatPlayers(team.players)} · {team.holesPlayed}/18
         </p>
       </div>
 

@@ -5,6 +5,7 @@ import {
   WHEEL_ITEMS, WheelItem, WheelItemId,
   targetAngleForIndex, pickRandomIndex, getWheelItem,
 } from '@/lib/wheel';
+import { formatPlayers } from '@/lib/tournament';
 import { fireBirdieConfetti, fireEagleConfetti } from '@/lib/confetti';
 
 const wheelImg = `${import.meta.env.BASE_URL}wheel/mariokart-wheel.png`;
@@ -444,7 +445,7 @@ export default function WheelModal({ open, onClose }: Props) {
                     <div className="text-left min-w-0">
                       <p className="font-bold text-sm text-white truncate">{t.teamName}</p>
                       <p className="text-[11px] text-white/50 truncate">
-                        {t.player1} & {t.player2}
+                        {formatPlayers(t.players)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { HOLES } from '@/lib/holes';
+import { useCourse } from '@/lib/tournamentContext';
+import { teamsCol, eventsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
 import { Crown, X, Flame, Target, Sparkles, Megaphone, Star, Zap, Flag, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
@@ -54,8 +55,7 @@ function timeAgo(ms: number): string {
 interface TeamData {
   id: string;
   teamName: string;
-  player1: string;
-  player2: string;
+  players: string[];
   netScore: number;
   holesPlayed: number;
   currentTee: string;
@@ -81,7 +81,7 @@ function scoreColor(score: number | null | undefined, par: number): string {
 // All 18 holes in a single horizontally-scrollable row, with OUT / IN / TOT
 // totals tucked into the same table so the user can scrub across the whole
 // round without jumping between blocks.
-function MiniScorecard({ scores }: { scores: (number | null)[] }) {
+function MiniScorecard({ scores, holes: HOLES }: { scores: (number | null)[]; holes: CourseHole[] }) {
   const playedSum = (start: number, end: number) => {
     let s = 0; let any = false;
     for (let i = start; i < end; i++) {
@@ -225,6 +225,7 @@ function aggregateHits(hits: TargetedByEntry[]): { item: WheelItemId; count: num
 }
 
 export default function Leaderboard() {
+  const { holes: courseHoles } = useCourse();
   const { teamInfo, netScore, holesPlayed, currentTee } = useWFC();
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(isFirebaseConfigured);
@@ -238,8 +239,8 @@ export default function Leaderboard() {
 
   // ── Single events listener: powers both broadcast banner and live ticker ──
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
-    const q = query(collection(db, 'events'), orderBy('timestamp', 'desc'), limit(20));
+    if (!isFirebaseConfigured || !db || !getActiveTournamentId()) return;
+    const q = query(eventsCol(db), orderBy('timestamp', 'desc'), limit(20));
     const unsub = onSnapshot(q, snap => {
       const events: FeedEvent[] = snap.docs
         .filter(d => d.data().type)
@@ -297,8 +298,7 @@ export default function Leaderboard() {
         setTeams([{
           id: 'local',
           teamName: teamInfo.teamName,
-          player1: teamInfo.player1,
-          player2: teamInfo.player2,
+          players: teamInfo.players,
           netScore,
           holesPlayed,
           currentTee
@@ -307,9 +307,13 @@ export default function Leaderboard() {
       return;
     }
 
-    const q = query(collection(db, 'teams'), orderBy('netScore', 'asc'));
+    if (!getActiveTournamentId()) return;
+    const q = query(teamsCol(db), orderBy('netScore', 'asc'));
     const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamData));
+      const data = snap.docs.map(d => {
+        const raw = d.data();
+        return { id: d.id, ...raw, scores: normalizeScores(raw.scores) } as TeamData;
+      });
       setTeams(data);
       setLoading(false);
     }, (err) => {
@@ -452,7 +456,7 @@ export default function Leaderboard() {
                         {team.teamName}
                         <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                       </span>
-                      <span className="text-[10px] text-muted-foreground truncate">{team.player1} & {team.player2}</span>
+                      <span className="text-[10px] text-muted-foreground truncate">{formatPlayers(team.players)}</span>
                       {(team.wheelSpin || totalHits > 0) && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {team.wheelSpin && (
@@ -483,7 +487,7 @@ export default function Leaderboard() {
                   {isExpanded && (
                     <div className="px-3 pb-4 pt-1 bg-secondary/10 border-t border-border/40">
                       {hasScores ? (
-                        <MiniScorecard scores={team.scores as (number | null)[]} />
+                        <MiniScorecard scores={team.scores as (number | null)[]} holes={courseHoles} />
                       ) : (
                         <p className="text-xs text-muted-foreground text-center py-4">
                           No scores entered yet.

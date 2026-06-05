@@ -1,15 +1,20 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { HOLES } from './holes';
 import { db, isFirebaseConfigured } from './firebase';
 import { useToast } from '@/hooks/use-toast';
 import {
-  doc, setDoc, onSnapshot, serverTimestamp,
-  collection, writeBatch, increment, arrayUnion, query, orderBy, getDocs,
-  runTransaction, addDoc,
+  setDoc, onSnapshot, serverTimestamp,
+  writeBatch, increment, arrayUnion, query, orderBy, getDocs,
+  runTransaction, addDoc, deleteField,
 } from 'firebase/firestore';
 import type { WheelItemId } from './wheel';
+import { useCourse } from './tournamentContext';
+import {
+  getActiveTournamentId, teamDoc, teamsCol, eventsCol, configDoc,
+  normalizeScores, generateTeamCode,
+  storeKey, teamIdKey, joinedAtKey, serverConfirmedKey,
+} from './tournament';
 
-export interface TeamInfo { teamName: string; player1: string; player2: string; }
+export interface TeamInfo { teamName: string; players: string[]; }
 
 export interface TargetedByEntry {
   item: WheelItemId;
@@ -25,6 +30,7 @@ export interface WheelSpinRecord {
 
 export interface WFCState {
   teamId: string;
+  teamCode: string | null;
   teamInfo: TeamInfo | null;
   scores: (number | null)[];
   currentTee: 'tips' | 'womens';
@@ -40,6 +46,7 @@ export interface WFCState {
   serverTeamMissing: boolean;
   resetDevice: () => void;
   setTeamInfo: (info: TeamInfo) => void;
+  adoptTeam: (existingTeamId: string) => void;
   setScore: (hole: number, score: number | null) => void;
   resetScores: () => void;
   confirmFrontNine: () => void;
@@ -54,38 +61,40 @@ export interface WFCState {
 export interface TeamSnapshot {
   id: string;
   teamName: string;
-  player1: string;
-  player2: string;
+  players: string[];
+  teamCode?: string;
   netScore: number;
   holesPlayed: number;
 }
 
 const StoreContext = createContext<WFCState | null>(null);
 
-const STORE_KEY = 'wfc-state';
-const TEAM_ID_KEY = 'wfc-team-id';
-const JOINED_AT_KEY = 'wfc-joined-at';
-// Persisted flag: set to '1' once we've ever seen our team doc exist on the
-// server (server-confirmed snapshot). Used by the auto-wipe logic so we can
-// distinguish "admin just deleted us" (was confirmed, now missing) from
-// "never registered on server yet" (never confirmed).
-const SERVER_CONFIRMED_KEY = 'wfc-server-confirmed';
-
-function getOrCreateTeamId(): string {
-  try {
-    let id = localStorage.getItem(TEAM_ID_KEY);
-    if (!id) {
-      id = (crypto.randomUUID?.() ?? `team-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
-      localStorage.setItem(TEAM_ID_KEY, id);
-    }
-    return id;
-  } catch {
-    return `team-${Date.now()}`;
-  }
-}
-
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [teamId] = useState<string>(() => getOrCreateTeamId());
+  // One tournament is active for the lifetime of this provider (App keys the
+  // provider on the active tournament id, so it remounts on switch).
+  const tId = getActiveTournamentId();
+  const STORE_KEY = storeKey(tId);
+  const TEAM_ID_KEY = teamIdKey(tId);
+  const JOINED_AT_KEY = joinedAtKey(tId);
+  const SERVER_CONFIRMED_KEY = serverConfirmedKey(tId);
+
+  const { holes: courseHoles, autoTeeRule } = useCourse();
+
+  const getOrCreateTeamId = (): string => {
+    try {
+      let id = localStorage.getItem(TEAM_ID_KEY);
+      if (!id) {
+        id = (crypto.randomUUID?.() ?? `team-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+        localStorage.setItem(TEAM_ID_KEY, id);
+      }
+      return id;
+    } catch {
+      return `team-${Date.now()}`;
+    }
+  };
+
+  const [teamId, setTeamId] = useState<string>(() => getOrCreateTeamId());
+  const [teamCode, setTeamCode] = useState<string | null>(null);
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
   const [scores, setScoresState] = useState<(number | null)[]>(Array(18).fill(null));
   const [frontNineConfirmed, setFrontNineConfirmed] = useState(false);
@@ -94,11 +103,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
-  // True once we've confirmed (via a server-authoritative snapshot) that the
-  // team doc does NOT exist on Firestore. Used to power the "Start fresh on
-  // this device" escape hatch — only shown when the server has clearly
-  // dropped this team (e.g. admin deleted them), so genuinely-submitted
-  // teams can't accidentally unlock themselves.
   const [serverTeamMissing, setServerTeamMissing] = useState(false);
   const hydratedRef = useRef(false);
 
@@ -108,7 +112,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem(STORE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.teamInfo) setTeamInfo(parsed.teamInfo);
+        if (parsed.teamInfo) {
+          // Migrate legacy {player1,player2} shape → players[].
+          const ti = parsed.teamInfo;
+          if (Array.isArray(ti.players)) {
+            setTeamInfo({ teamName: ti.teamName, players: ti.players });
+          } else {
+            const players = [ti.player1, ti.player2].filter((p: unknown): p is string => typeof p === 'string' && p.trim() !== '');
+            setTeamInfo({ teamName: ti.teamName ?? '', players });
+          }
+        }
+        if (typeof parsed.teamCode === 'string') setTeamCode(parsed.teamCode);
         if (parsed.scores && Array.isArray(parsed.scores)) setScoresState(parsed.scores);
         if (typeof parsed.frontNineConfirmed === 'boolean') setFrontNineConfirmed(parsed.frontNineConfirmed);
         if (parsed.wheelSpin) setWheelSpin(parsed.wheelSpin);
@@ -117,93 +131,78 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (typeof parsed.hasSubmitted === 'boolean') setHasSubmitted(parsed.hasSubmitted);
         if (typeof parsed.submittedAt === 'number') setSubmittedAt(parsed.submittedAt);
       }
-      // Legacy flag from older versions — honor it so existing submitted teams stay locked.
-      if (localStorage.getItem('wfc-submitted') === 'true') setHasSubmitted(true);
     } catch (e) {
       console.error('Failed to load store', e);
     }
     hydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Flips true after the first server-confirmed snapshot for our team doc
-  // (or the first time we know the doc doesn't exist on the server). Until
-  // then we DO NOT push any sync writes — that would let a stale client
-  // overwrite server-truth gameplay data during the hydration race window.
   const lockResolvedRef = useRef(false);
   const [lockResolved, setLockResolved] = useState(false);
 
-  // ── Listen to our own Firestore doc — picks up cross-device effects (Lightning, Shells, etc.) ──
-  // Skips local-cache-only events to avoid feedback loops with our own writes.
+  // ── Listen to our own Firestore doc ──
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) {
-      // No Firestore — local state is the only truth, mark resolved immediately.
+    if (!isFirebaseConfigured || !db || !tId) {
       lockResolvedRef.current = true;
       setLockResolved(true);
       return;
     }
-    const ref = doc(db, 'teams', teamId);
+    const ref = teamDoc(db, teamId);
     const unsub = onSnapshot(ref, (snap) => {
-      // Only react to confirmed server state; ignore optimistic local-cache events.
       if (snap.metadata.hasPendingWrites) return;
-      // Mark the lock as resolved on the first server-confirmed snapshot,
-      // regardless of whether the doc exists. From here on it is safe to write.
       if (!lockResolvedRef.current) {
         lockResolvedRef.current = true;
         setLockResolved(true);
       }
-      // Only trust missing-doc snapshots that came from the SERVER, not the
-      // local Firestore cache. Otherwise a cold-boot cache snapshot can
-      // false-positive `serverTeamMissing` for a fraction of a second and
-      // briefly expose the "Start Fresh" escape hatch to genuinely
-      // submitted teams.
       const serverConfirmed = snap.metadata.fromCache === false;
       if (!snap.exists()) {
         if (serverConfirmed) {
-          // Server-confirmed: no doc for this teamId. Could mean (a) never
-          // registered, or (b) admin deleted the team. Either way, surface
-          // this so the Home screen can offer a recovery path for a stale
-          // hasSubmitted=true device.
           setServerTeamMissing(prev => prev ? prev : true);
         }
         return;
       }
-      // Doc exists — clear the missing flag (and only trust this when
-      // server-confirmed, to symmetrically avoid cache flicker). Also
-      // persist that we've now confirmed presence on the server, so a
-      // later "missing" snapshot can be recognized as an admin delete.
       if (serverConfirmed) {
         setServerTeamMissing(prev => prev ? false : prev);
         try { localStorage.setItem(SERVER_CONFIRMED_KEY, '1'); } catch { /* ignore */ }
       }
       const data = snap.data();
+      // Restore team identity from the server (powers rejoin / shared access).
+      if (typeof data.teamName === 'string' && Array.isArray(data.players)) {
+        setTeamInfo(prev => {
+          const incoming = { teamName: data.teamName as string, players: data.players as string[] };
+          return JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming;
+        });
+      }
+      if (typeof data.teamCode === 'string') {
+        setTeamCode(prev => prev === data.teamCode ? prev : data.teamCode);
+      }
+      // Conflict-free scores: server map is authoritative once confirmed.
+      if ('scores' in data) {
+        const arr = normalizeScores(data.scores);
+        setScoresState(prev => JSON.stringify(prev) === JSON.stringify(arr) ? prev : arr);
+      }
       if (typeof data.wheelAdjustment === 'number') {
         setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
       }
       if (Array.isArray(data.targetedBy)) {
         setTargetedBy(prev => {
           const incoming = data.targetedBy as TargetedByEntry[];
-          // Compare by serialised content so we never miss an incoming hit even
-          // if the array happens to be the same length as the current local state.
           return JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming;
         });
       }
       if (data.wheelSpin) {
-        // Only update if item/at actually changed — avoids object-ref churn loops.
         setWheelSpin(prev => {
           const incoming = data.wheelSpin as WheelSpinRecord;
           if (prev && prev.item === incoming.item && prev.at === incoming.at) return prev;
           return incoming;
         });
       } else if (data.wheelSpin === null && 'wheelSpin' in data) {
-        // Server explicitly cleared the spin (e.g. fresh registration after
-        // reset). Honor it — don't leave a stale spin lingering locally.
         setWheelSpin(prev => prev === null ? prev : null);
       }
       if (typeof data.frontNineConfirmed === 'boolean') {
         setFrontNineConfirmed(prev => prev === data.frontNineConfirmed ? prev : data.frontNineConfirmed);
       }
-      // Submission lock is sticky once Firestore confirms it — even clearing
-      // localStorage on the device won't let a team unlock and re-edit scores.
       if (data.hasSubmitted === true) {
         setHasSubmitted(prev => prev ? prev : true);
         if (typeof data.submittedAt === 'number') {
@@ -212,28 +211,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     });
     return () => unsub();
-  }, [teamId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, tId]);
 
   // ── Continuous reconciliation of cross-team wheel hits ──
-  // Subscribes to the ENTIRE teams collection. For each OTHER team's wheelSpin
-  // that should hit us (lightning = hits everyone; shells/banana/boo = hits
-  // their targetTeam by name), verify it's reflected in our own targetedBy.
-  // Missing hits get applied via a Firestore transaction so two clients
-  // reconciling simultaneously can never double-count. arrayUnion + a
-  // transactional re-read of targetedBy guarantee idempotency. This is the
-  // backstop that protects late joiners (registered AFTER a lightning was
-  // spun) and any device that was offline when a hit was dispatched.
   const reconcileInFlightRef = useRef(false);
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
+    if (!isFirebaseConfigured || !db || !tId) return;
     if (!lockResolved) return;
     if (!teamInfo) return;
     const fdb = db;
     const ourTeamName = teamInfo.teamName;
-    const unsub = onSnapshot(collection(fdb, 'teams'), async (snap) => {
+    const unsub = onSnapshot(teamsCol(fdb), async (snap) => {
       if (reconcileInFlightRef.current) return;
-      // Build the set of hits that SHOULD be on us based on every other team's
-      // recorded wheelSpin. Each hit is uniquely keyed by (fromTeam, at).
       const expected: { item: WheelItemId; fromTeam: string; at: number }[] = [];
       for (const d of snap.docs) {
         if (d.id === teamId) continue;
@@ -253,19 +243,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
       if (expected.length === 0) return;
-      // Quick local-state check — skip the transaction entirely if our
-      // current targetedBy already contains every expected hit.
       const localKeys = new Set(targetedBy.map(t => `${t.fromTeam}|${t.at}`));
       const possiblyMissing = expected.filter(e => !localKeys.has(`${e.fromTeam}|${e.at}`));
       if (possiblyMissing.length === 0) return;
       reconcileInFlightRef.current = true;
       try {
-        const ref = doc(fdb, 'teams', teamId);
+        const ref = teamDoc(fdb, teamId);
         await runTransaction(fdb, async (tx) => {
           const ourSnap = await tx.get(ref);
           if (!ourSnap.exists()) return;
           const ourData = ourSnap.data();
-          // Never reconcile a submitted round — final scores are locked.
           if (ourData.hasSubmitted === true) return;
           const currentTargeted = Array.isArray(ourData.targetedBy)
             ? ourData.targetedBy as TargetedByEntry[]
@@ -286,16 +273,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }, (err) => console.error('Teams reconcile listener error', err));
     return () => unsub();
-    // teamInfo + lockResolved are the only things that gate this; targetedBy
-    // is read inside the snapshot callback via a fresh closure on each event,
-    // so it doesn't need to be in deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId, teamInfo, lockResolved]);
+  }, [teamId, teamInfo, lockResolved, tId]);
 
   // ── Admin reset listener ──
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
-    const ref = doc(db, 'config', 'tournament');
+    if (!isFirebaseConfigured || !db || !tId) return;
+    const ref = configDoc(db);
     const unsub = onSnapshot(ref, (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
@@ -315,15 +299,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify({ teamInfo: null, scores: emptyScores }));
           localStorage.setItem(JOINED_AT_KEY, String(resetAt + 1));
-          localStorage.removeItem('wfc-submitted');
         } catch { /* ignore */ }
       }
     }, (err) => console.error('Reset listener error', err));
     return () => unsub();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tId]);
 
   const saveToLocal = (overrides: Partial<{
     teamInfo: TeamInfo | null;
+    teamCode: string | null;
     scores: (number | null)[];
     frontNineConfirmed: boolean;
     wheelSpin: WheelSpinRecord | null;
@@ -334,7 +319,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }>) => {
     try {
       const current = {
-        teamInfo, scores, frontNineConfirmed, wheelSpin,
+        teamInfo, teamCode, scores, frontNineConfirmed, wheelSpin,
         wheelAdjustment, targetedBy, hasSubmitted, submittedAt,
       };
       const next = { ...current, ...overrides };
@@ -348,35 +333,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   let totalScore = 0;
   let parPlayed = 0;
   let holesPlayed = 0;
-  let worstBack9Diff = 0;
   scores.forEach((s, i) => {
     if (s !== null) {
       totalScore += s;
-      parPlayed += HOLES[i].par;
+      parPlayed += courseHoles[i]?.par ?? 4;
       holesPlayed += 1;
-      if (i >= 9) {
-        const d = s - HOLES[i].par;
-        if (d > worstBack9Diff) worstBack9Diff = d;
-      }
     }
   });
-  // worstBack9Diff was used by the old boo/hide-worst-hole rule; kept for
-  // potential future rules but suppressed to avoid a lint warning.
-  void worstBack9Diff;
-  // Raw under-par count (your scorecard vs par, NO wheel adjustments).
-  // Used for tee assignment so being hit by lightning/shells/etc. never
-  // moves your tee block. Wheel items affect your net score on the
-  // leaderboard but do not change which tees you play from.
   const rawNet = holesPlayed > 0 ? totalScore - parPlayed : 0;
   const netScore = rawNet + wheelAdjustment;
-  const currentTee: 'tips' | 'womens' = rawNet < 0 ? 'tips' : 'womens';
+  const currentTee: 'tips' | 'womens' = autoTeeRule ? (rawNet < 0 ? 'tips' : 'womens') : 'womens';
 
-  // ── Global tee-change notification: fires on any tab (Hole, Scorecard, etc.)
-  // because this lives in the provider, not in a page component. Skips the
-  // first render so we don't toast on app load.
+  // ── Tee-change notification (only when the auto-tee rule is on) ──
   const { toast } = useToast();
   const teeMountRef = useRef(false);
   useEffect(() => {
+    if (!autoTeeRule) return;
     if (!hydratedRef.current) return;
     if (!teeMountRef.current) {
       teeMountRef.current = true;
@@ -399,25 +371,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         className: teeToastClass,
       });
     }
-  }, [currentTee, toast]);
+  }, [currentTee, toast, autoTeeRule]);
 
-  // ── Push own changes to Firestore ──
+  // ── Push own (non-score) changes to Firestore ──
+  // Per-hole scores are written by setScore via field-level merges so two
+  // teammates never clobber each other. This effect only pushes derived /
+  // identity fields.
   useEffect(() => {
     if (!hydratedRef.current) return;
-    if (!isFirebaseConfigured || !db) return;
+    if (!isFirebaseConfigured || !db || !tId) return;
     if (!teamInfo) return;
-    // Critical race protection: do NOT push writes until we've seen the first
-    // server snapshot. Otherwise a freshly-booted client with hasSubmitted=false
-    // locally could overwrite server gameplay state before the snapshot
-    // listener has had a chance to restore the true submitted/locked state.
     if (!lockResolved) return;
-    // Submission lock: once submitted, NEVER push scores/wheelSpin/etc again.
-    // This is defense-in-depth in case any code path mutates local state
-    // post-submission (devtools, race, future bug).
     if (hasSubmitted) return;
-    const ref = doc(db, 'teams', teamId);
-    // Firestore rejects `undefined`. Strip undefined fields from nested
-    // wheelSpin (e.g. targetTeam isn't set for self-only items).
+    const ref = teamDoc(db, teamId);
     let cleanWheelSpin: Record<string, unknown> | null = null;
     if (wheelSpin) {
       cleanWheelSpin = {};
@@ -425,33 +391,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (v !== undefined) cleanWheelSpin[k] = v;
       }
     }
-    // Monotonic lock: once hasSubmitted is true (locally OR on the server),
-    // NEVER write false back. Clearing localStorage on a device must not
-    // unlock the round. We only include the submission fields in the merge
-    // payload when locally true so a stale client can't downgrade the server.
     const payload: Record<string, unknown> = {
       teamName: teamInfo.teamName,
-      player1: teamInfo.player1,
-      player2: teamInfo.player2,
-      scores,
+      players: teamInfo.players,
       netScore,
       holesPlayed,
       currentTee,
       frontNineConfirmed,
       wheelSpin: cleanWheelSpin,
-      // wheelAdjustment/booActive/targetedBy are owned by Firestore once any
-      // cross-team effect lands — only write them on first creation.
       lastUpdated: serverTimestamp(),
     };
+    if (teamCode) payload.teamCode = teamCode;
     if (hasSubmitted) {
       payload.hasSubmitted = true;
       payload.submittedAt = submittedAt ?? Date.now();
     }
     setDoc(ref, payload, { merge: true }).catch(err => console.error('Firestore sync failed', err));
-  }, [teamId, teamInfo, scores, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin, hasSubmitted, submittedAt, lockResolved]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, teamInfo, teamCode, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin, hasSubmitted, submittedAt, lockResolved, tId]);
 
   const updateTeamInfo = (info: TeamInfo) => {
-    // Once submitted, the team identity is frozen for audit integrity.
     if (hasSubmitted) {
       toast({
         title: 'Round already submitted',
@@ -460,25 +419,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       });
       return;
     }
+    // Generate a team code the first time a team registers (used for rejoin).
+    let code = teamCode;
+    if (!code) {
+      code = generateTeamCode();
+      setTeamCode(code);
+    }
     setTeamInfo(info);
-    saveToLocal({ teamInfo: info });
+    saveToLocal({ teamInfo: info, teamCode: code });
     try { localStorage.setItem(JOINED_AT_KEY, String(Date.now())); } catch { /* ignore */ }
-    // Ensure baseline fields exist on our doc (so other devices can target us)
-    // AND explicitly null out every piece of gameplay state. This guarantees a
-    // clean slate on (re-)registration even when the same teamId is reused
-    // after an admin reset — otherwise stale `wheelSpin` (e.g. an old Boo) can
-    // be replayed from the Firestore IndexedDB cache and the snapshot listener
-    // will resurrect it locally, making the next spin appear non-random.
-    if (isFirebaseConfigured && db) {
+    if (isFirebaseConfigured && db && tId) {
       const fdb = db;
-      const ref = doc(fdb, 'teams', teamId);
-      // Fire-and-forget: scan for retroactive lightning strikes from teams that
-      // spun BEFORE this team registered. Late joiners must still take the hit.
+      const ref = teamDoc(fdb, teamId);
+      const finalCode = code;
       (async () => {
         let initialWheelAdj = 0;
         let initialTargetedBy: TargetedByEntry[] = [];
         try {
-          const teamsSnap = await getDocs(collection(fdb, 'teams'));
+          const teamsSnap = await getDocs(teamsCol(fdb));
           const lightningTeams = teamsSnap.docs.filter(
             d => d.id !== teamId && (d.data()?.wheelSpin as { item?: string } | undefined)?.item === 'lightning'
           );
@@ -493,12 +451,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             setTargetedBy(initialTargetedBy);
             saveToLocal({ wheelAdjustment: initialWheelAdj, targetedBy: initialTargetedBy });
           }
-        } catch { /* non-fatal — fall back to zero adjustment */ }
+        } catch { /* non-fatal */ }
         setDoc(ref, {
           teamName: info.teamName,
-          player1: info.player1,
-          player2: info.player2,
-          scores: Array(18).fill(null),
+          players: info.players,
+          teamCode: finalCode,
+          scores: {},
           netScore: initialWheelAdj,
           holesPlayed: 0,
           currentTee: 'womens',
@@ -511,12 +469,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Adopt an existing team's identity on this device (rejoin / shared access).
+  // We point the device at the existing team doc id and reload so the snapshot
+  // listener hydrates all gameplay state cleanly from the server.
+  const adoptTeam = (existingTeamId: string) => {
+    try {
+      localStorage.setItem(TEAM_ID_KEY, existingTeamId);
+      localStorage.removeItem(STORE_KEY);
+      localStorage.setItem(JOINED_AT_KEY, String(Date.now()));
+    } catch { /* ignore */ }
+    setTeamId(existingTeamId);
+    window.location.reload();
+  };
+
   const setScore = (hole: number, score: number | null) => {
-    if (hasSubmitted) return; // sticky lock — silent ignore (UI also blocks)
+    if (hasSubmitted) return;
     const newScores = [...scores];
     newScores[hole - 1] = score;
     setScoresState(newScores);
     saveToLocal({ scores: newScores });
+    // Conflict-free per-hole write — field-level merge so concurrent scoring
+    // of different holes by teammates never clobbers.
+    if (isFirebaseConfigured && db && tId && teamInfo && lockResolved) {
+      const ref = teamDoc(db, teamId);
+      const payload = score === null
+        ? { scores: { [String(hole)]: deleteField() } }
+        : { scores: { [String(hole)]: score } };
+      setDoc(ref, payload, { merge: true }).catch(err => console.error('Score sync failed', err));
+    }
   };
 
   const resetScores = () => {
@@ -534,7 +514,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       wheelSpin: null, wheelAdjustment: 0, targetedBy: [],
       hasSubmitted: false, submittedAt: null,
     });
-    try { localStorage.removeItem('wfc-submitted'); } catch { /* ignore */ }
   };
 
   const confirmFrontNine = () => {
@@ -549,38 +528,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setHasSubmitted(true);
     setSubmittedAt(at);
     saveToLocal({ hasSubmitted: true, submittedAt: at });
-    try { localStorage.setItem('wfc-submitted', 'true'); } catch { /* ignore */ }
   };
 
   const recordWheelSpin = async (record: WheelSpinRecord) => {
     if (hasSubmitted) return;
-    // Build a clean copy with no undefined fields (Firestore rejects them).
     const cleanRecord: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(record)) {
       if (v !== undefined) cleanRecord[k] = v;
     }
-    // CRITICAL: run a transaction so that two tabs/devices can NEVER both
-    // succeed at recording a spin. If the server already has a wheelSpin for
-    // this team, abort and surface that prior spin locally instead.
-    if (isFirebaseConfigured && db && teamInfo) {
-      const ref = doc(db, 'teams', teamId);
+    if (isFirebaseConfigured && db && tId && teamInfo) {
+      const ref = teamDoc(db, teamId);
       try {
         const finalRecord = await runTransaction(db, async (tx) => {
           const snap = await tx.get(ref);
           const data = snap.exists() ? snap.data() : undefined;
-          // Server-authoritative submit lock: if the round is submitted on
-          // the server, refuse to record any new spin no matter what the
-          // local client believes. This closes the race window where a
-          // stale client booting with hasSubmitted=false could still write.
           if (data?.hasSubmitted === true) {
             const existingSpin = data.wheelSpin as WheelSpinRecord | undefined;
-            // Return existing spin if any; otherwise throw to abort.
             if (existingSpin && existingSpin.item) return existingSpin;
             throw new Error('submitted');
           }
           const existing = data?.wheelSpin as WheelSpinRecord | undefined;
           if (existing && existing.item) {
-            // Another tab/device already claimed the spin. Keep theirs.
             return existing;
           }
           tx.set(ref, { wheelSpin: cleanRecord, frontNineConfirmed: true }, { merge: true });
@@ -591,16 +559,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : '';
         if (msg === 'submitted') {
-          // Hard-stop: server says this team has already submitted. Never
-          // record the spin — that would corrupt the final-score audit trail.
           console.warn('Spin refused: round already submitted on server.');
-          // Sticky local lock so the UI flips to read-only immediately.
           setHasSubmitted(true);
           saveToLocal({ hasSubmitted: true });
           return;
         }
         console.error('Failed to record wheel spin', e);
-        // Fall back to local-only so the user isn't stuck.
         setWheelSpin(record);
         saveToLocal({ wheelSpin: record });
       }
@@ -611,33 +575,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const applyEffectToSelf = (delta: number) => {
-    // Optimistic local update — snapshot listener will reconcile with server.
     const nextAdjustment = wheelAdjustment + delta;
     setWheelAdjustment(nextAdjustment);
     saveToLocal({ wheelAdjustment: nextAdjustment });
-    // Use Firestore atomic increment so concurrent writes don't lose updates.
-    if (isFirebaseConfigured && db && teamInfo) {
-      setDoc(doc(db, 'teams', teamId), {
+    if (isFirebaseConfigured && db && tId && teamInfo) {
+      setDoc(teamDoc(db, teamId), {
         wheelAdjustment: increment(delta),
       }, { merge: true }).catch(e => console.error('Self effect sync failed', e));
     }
   };
 
   const applyEffectToOthers = async (item: WheelItemId, targetIds: string[]) => {
-    if (!isFirebaseConfigured || !db || !teamInfo) return;
+    if (!isFirebaseConfigured || !db || !tId || !teamInfo) return;
     if (targetIds.length === 0) return;
     try {
       const batch = writeBatch(db);
       const now = Date.now();
       for (const tid of targetIds) {
         if (tid === teamId) continue;
-        const ref = doc(db, 'teams', tid);
+        const ref = teamDoc(db, tid);
         batch.set(ref, {
-          // Increment BOTH wheelAdjustment AND netScore so the leaderboard
-          // reflects the hit immediately even if the target's device is
-          // offline. When they come back online, their own sync will write
-          // a freshly-computed netScore that includes the new wheelAdjustment
-          // — so the values stay consistent.
           wheelAdjustment: increment(1),
           netScore: increment(1),
           targetedBy: arrayUnion({
@@ -654,36 +611,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const logEvent = (event: Record<string, unknown>) => {
-    if (!isFirebaseConfigured || !db) return;
-    addDoc(collection(db, 'events'), {
+    if (!isFirebaseConfigured || !db || !tId) return;
+    addDoc(eventsCol(db), {
       ...event,
       timestamp: serverTimestamp(),
     }).catch(() => { /* non-fatal */ });
   };
 
-  // Escape hatch: wipe ALL local state for this device and reload. Used by
-  // the Home screen when a device is locked (hasSubmitted=true) but the
-  // server has no doc for this teamId (admin deleted them, or test data).
-  // Genuinely-submitted teams whose server doc still exists won't see the
-  // button that triggers this, so the submission lock stays sticky.
   const resetDevice = () => {
     try {
       localStorage.removeItem(STORE_KEY);
       localStorage.removeItem(TEAM_ID_KEY);
       localStorage.removeItem(JOINED_AT_KEY);
-      localStorage.removeItem('wfc-submitted');
       localStorage.removeItem(SERVER_CONFIRMED_KEY);
     } catch { /* ignore */ }
     window.location.reload();
   };
 
   // ── Auto-wipe on admin delete ──
-  // If the server has confirmed our team doc is missing AND we'd previously
-  // seen the doc exist on the server, an admin (or test) just deleted us.
-  // Wipe local state and reload so the device returns to a clean registration
-  // screen — that's what the user expects: "delete in admin → home asks to
-  // register again." We guard with the persisted SERVER_CONFIRMED_KEY so a
-  // brand-new device that hasn't synced yet won't false-trigger.
   const autoWipeFiredRef = useRef(false);
   useEffect(() => {
     if (!serverTeamMissing) return;
@@ -704,27 +649,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [serverTeamMissing]);
 
   const listTeamsOnce = async (): Promise<TeamSnapshot[]> => {
-    if (!isFirebaseConfigured || !db) {
-      // Offline: return only ourselves
+    if (!isFirebaseConfigured || !db || !tId) {
       if (!teamInfo) return [];
       return [{
         id: teamId,
         teamName: teamInfo.teamName,
-        player1: teamInfo.player1,
-        player2: teamInfo.player2,
+        players: teamInfo.players,
+        teamCode: teamCode ?? undefined,
         netScore,
         holesPlayed,
       }];
     }
-    const q = query(collection(db, 'teams'), orderBy('netScore', 'asc'));
+    const q = query(teamsCol(db), orderBy('netScore', 'asc'));
     const snap = await getDocs(q);
     return snap.docs.map(d => {
       const data = d.data();
       return {
         id: d.id,
         teamName: data.teamName ?? 'Team',
-        player1: data.player1 ?? '',
-        player2: data.player2 ?? '',
+        players: Array.isArray(data.players) ? data.players : [data.player1, data.player2].filter(Boolean),
+        teamCode: typeof data.teamCode === 'string' ? data.teamCode : undefined,
         netScore: typeof data.netScore === 'number' ? data.netScore : 0,
         holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
       };
@@ -735,6 +679,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <StoreContext.Provider
       value={{
         teamId,
+        teamCode,
         teamInfo,
         scores,
         currentTee,
@@ -750,6 +695,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         hasSubmitted,
         submittedAt,
         setTeamInfo: updateTeamInfo,
+        adoptTeam,
         setScore,
         resetScores,
         confirmFrontNine,

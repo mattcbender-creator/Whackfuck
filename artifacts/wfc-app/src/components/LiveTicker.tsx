@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { Star, Zap, Flag, Sparkles } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
+import { eventsCol, getActiveTournamentId } from '@/lib/tournament';
 
 interface FeedEvent {
   id: string;
@@ -49,8 +50,8 @@ export function LiveTicker() {
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
-    const q = query(collection(db, 'events'), orderBy('timestamp', 'desc'), limit(20));
+    if (!isFirebaseConfigured || !db || !getActiveTournamentId()) return;
+    const q = query(eventsCol(db), orderBy('timestamp', 'desc'), limit(20));
     const unsub = onSnapshot(q, snap => {
       const list: FeedEvent[] = snap.docs
         .filter(d => {
@@ -72,8 +73,9 @@ export function LiveTicker() {
     return () => clearInterval(t);
   }, [events.length]);
 
-  // Hide on home (clean landing) and leaderboard (own header style)
+  // Hide on landing/entry routes and leaderboard (own header style)
   if (location === '/' || location === '/leaderboard') return null;
+  if (['/create', '/join', '/watch'].some(p => location.startsWith(p))) return null;
   if (events.length === 0) return null;
 
   const current = events[idx % events.length];
