@@ -8,16 +8,18 @@ import {
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
+import { RuleBuilder } from '@/components/RuleBuilder';
 import {
   teamsCol, eventsCol, drivesCol, teamDoc, configDoc, tournamentDoc,
   getActiveTournamentId, formatPlayers, normalizeScores, scoresToMap,
-  type CourseHole,
+  resolveHoleRules,
+  type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
-  ShieldAlert, AlertTriangle, CheckCircle2, Flag,
+  ShieldAlert, AlertTriangle, CheckCircle2, Flag, ClipboardList,
 } from 'lucide-react';
 
 const DEMO_TEAM_NAMES = [
@@ -233,6 +235,14 @@ export default function Admin() {
   const [shotgunDraft, setShotgunDraft] = useState<Record<string, number>>({});
   const [shotgunSaving, setShotgunSaving] = useState(false);
 
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [ruleDraft, setRuleDraft] = useState<HoleRule[]>([]);
+  const [customDraft, setCustomDraft] = useState<RuleLibraryEntry[]>([]);
+  const [rulesSaving, setRulesSaving] = useState(false);
+  // Once the host starts editing, stop reseeding from live snapshots so their
+  // in-progress edits aren't clobbered by an incoming Firestore update.
+  const [rulesDirty, setRulesDirty] = useState(false);
+
   const loadTeams = useCallback(async () => {
     if (!db || !getActiveTournamentId()) return;
     const snap = await getDocs(teamsCol(db));
@@ -276,6 +286,15 @@ export default function Admin() {
     setShotgunDraft(tournament?.shotgunAssignments ?? {});
   }, [tournament?.shotgunAssignments]);
 
+  // Seed the rule-builder draft from the saved tournament rules (resolved
+  // against the course). Stop once the host begins editing so live snapshots
+  // don't overwrite their unsaved work.
+  useEffect(() => {
+    if (rulesDirty) return;
+    setRuleDraft(resolveHoleRules(tournament?.holeRules, holes));
+    setCustomDraft(tournament?.customRules ?? []);
+  }, [tournament?.holeRules, tournament?.customRules, holes, rulesDirty]);
+
   const handleSaveShotgun = async () => {
     const tId = getActiveTournamentId();
     if (!db || !tId) {
@@ -290,6 +309,24 @@ export default function Admin() {
       toast({ title: 'Save failed', description: String(e), variant: 'destructive' });
     } finally {
       setShotgunSaving(false);
+    }
+  };
+
+  const handleSaveRules = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) {
+      toast({ title: 'Not connected', description: 'Saving hole rules needs Firebase.', variant: 'destructive' });
+      return;
+    }
+    setRulesSaving(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { holeRules: ruleDraft, customRules: customDraft }, { merge: true });
+      setRulesDirty(false);
+      toast({ title: 'Hole rules saved' });
+    } catch (e) {
+      toast({ title: 'Save failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setRulesSaving(false);
     }
   };
 
@@ -874,6 +911,40 @@ export default function Admin() {
             </div>
           </div>
         )}
+
+        {/* ── Hole Rules ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setRulesOpen(o => !o)}
+            data-testid="button-toggle-rules"
+          >
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Hole Rules</h3>
+            </div>
+            {rulesOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          {rulesOpen && (
+            <div className="px-5 pb-5 space-y-4">
+              <RuleBuilder
+                holeRules={ruleDraft}
+                onHoleRulesChange={r => { setRuleDraft(r); setRulesDirty(true); }}
+                customRules={customDraft}
+                onCustomRulesChange={r => { setCustomDraft(r); setRulesDirty(true); }}
+              />
+              <Button
+                type="button"
+                className="w-full h-12"
+                onClick={handleSaveRules}
+                disabled={rulesSaving}
+                data-testid="button-save-rules"
+              >
+                {rulesSaving ? 'Saving…' : 'Save Hole Rules'}
+              </Button>
+            </div>
+          )}
+        </div>
 
         {/* ── Team Management ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">

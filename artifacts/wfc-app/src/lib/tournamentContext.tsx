@@ -2,8 +2,8 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { collection, doc, setDoc, onSnapshot, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import {
-  type TournamentConfig, type CourseHole,
-  dundeeCourseDefaults,
+  type TournamentConfig, type CourseHole, type HoleRule,
+  dundeeCourseDefaults, resolveHoleRules,
   getActiveTournamentId, setActiveTournamentId,
   tournamentDoc, hostKeyKey, spectatorKey,
 } from './tournament';
@@ -16,6 +16,8 @@ interface TournamentContextValue {
   isSpectator: boolean;
   /** Effective course (tournament course, or Dundee defaults when none active). */
   courseHoles: CourseHole[];
+  /** Effective 18 hole rules (tournament holeRules, falling back to course rules). */
+  holeRules: HoleRule[];
   trackYardages: boolean;
   autoTeeRule: boolean;
   setActiveTournament: (id: string | null) => void;
@@ -128,6 +130,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
     : dundeeCourseDefaults();
   const trackYardages = tournament ? !!tournament.trackYardages : true;
   const autoTeeRule = tournament ? !!tournament.autoTeeRule : true;
+  const holeRules = resolveHoleRules(tournament?.holeRules, courseHoles);
 
   return (
     <TournamentContext.Provider
@@ -138,6 +141,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
         isHost,
         isSpectator,
         courseHoles,
+        holeRules,
         trackYardages,
         autoTeeRule,
         setActiveTournament,
@@ -158,9 +162,9 @@ export function useTournament(): TournamentContextValue {
   return ctx;
 }
 
-export function useCourse(): { holes: CourseHole[]; trackYardages: boolean; autoTeeRule: boolean } {
-  const { courseHoles, trackYardages, autoTeeRule } = useTournament();
-  return { holes: courseHoles, trackYardages, autoTeeRule };
+export function useCourse(): { holes: CourseHole[]; holeRules: HoleRule[]; trackYardages: boolean; autoTeeRule: boolean } {
+  const { courseHoles, holeRules, trackYardages, autoTeeRule } = useTournament();
+  return { holes: courseHoles, holeRules, trackYardages, autoTeeRule };
 }
 
 // Helper for fetching a tournament by id once (used by join-by-team-code flows).

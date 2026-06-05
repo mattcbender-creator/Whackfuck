@@ -4,11 +4,12 @@ import QRCode from 'qrcode';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { CourseSetup } from '@/components/CourseSetup';
+import { RuleBuilder } from '@/components/RuleBuilder';
 import { useTournament, createTournamentDoc } from '@/lib/tournamentContext';
 import { isFirebaseConfigured } from '@/lib/firebase';
 import {
-  type CourseHole, type TournamentConfig,
-  dundeeCourseDefaults,
+  type CourseHole, type TournamentConfig, type HoleRule, type RuleLibraryEntry,
+  dundeeCourseDefaults, holeRulesFromCourse,
   generateTournamentId, generateJoinCode, generateHostKey,
 } from '@/lib/tournament';
 import {
@@ -34,6 +35,11 @@ export default function CreateTournament() {
   const [usingDefaults, setUsingDefaults] = useState(true);
   const [trackYardages, setTrackYardages] = useState(false);
 
+  const [holeRules, setHoleRules] = useState<HoleRule[]>(() => holeRulesFromCourse(dundeeCourseDefaults()));
+  const [customRules, setCustomRules] = useState<RuleLibraryEntry[]>([]);
+  // Keep rules mirrored to the course until the host edits them in the builder.
+  const [rulesDirty, setRulesDirty] = useState(false);
+
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<TournamentConfig | null>(null);
@@ -42,6 +48,12 @@ export default function CreateTournament() {
   useEffect(() => {
     if (autoTeeRule && !trackYardages) setTrackYardages(true);
   }, [autoTeeRule]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mirror the course's own rule fields into the rule builder until the host
+  // edits rules themselves — then the builder becomes the source of truth.
+  useEffect(() => {
+    if (!rulesDirty) setHoleRules(holeRulesFromCourse(holes));
+  }, [holes, rulesDirty]);
 
   const handleSubmit = async () => {
     setError('');
@@ -64,7 +76,8 @@ export default function CreateTournament() {
       adminCode: adminCode.trim(),
       hostKey: generateHostKey(),
       joinCode: generateJoinCode(),
-      holeRules: [],
+      holeRules,
+      customRules,
       status: 'live',
       createdAt: Date.now(),
     };
@@ -164,6 +177,13 @@ export default function CreateTournament() {
             usingDefaults={usingDefaults}
             onUsingDefaultsChange={setUsingDefaults}
             yardagesLocked={autoTeeRule}
+          />
+
+          <RuleBuilder
+            holeRules={holeRules}
+            onHoleRulesChange={r => { setHoleRules(r); setRulesDirty(true); }}
+            customRules={customRules}
+            onCustomRulesChange={setCustomRules}
           />
 
           {error && (

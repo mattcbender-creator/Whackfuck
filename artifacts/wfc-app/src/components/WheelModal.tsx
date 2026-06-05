@@ -16,6 +16,8 @@ type Phase = 'intro' | 'spinning' | 'resolving' | 'picking' | 'applied';
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** The hole this Item Box belongs to (1–18). Required to record/guard the spin. */
+  hole: number | null;
 }
 
 function iconFor(id: WheelItemId) {
@@ -31,13 +33,13 @@ function iconFor(id: WheelItemId) {
   }
 }
 
-export default function WheelModal({ open, onClose }: Props) {
+export default function WheelModal({ open, onClose, hole }: Props) {
   const {
-    teamId, teamInfo, netScore, wheelSpin: priorSpin,
-    confirmFrontNine, frontNineConfirmed,
+    teamId, teamInfo, netScore, wheelSpins,
     recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
     logEvent, hasSubmitted,
   } = useWFC();
+  const priorSpin = hole != null ? (wheelSpins[hole] ?? null) : null;
 
   const [phase, setPhase] = useState<Phase>('intro');
   const [angle, setAngle] = useState(0);
@@ -102,8 +104,6 @@ export default function WheelModal({ open, onClose }: Props) {
     // the same tick could both pass the phase check.
     if (spinLockRef.current) return;
     spinLockRef.current = true;
-    // LOCK THE FRONT 9 NOW — the moment they commit to spinning, edits stop.
-    if (!frontNineConfirmed) confirmFrontNine();
     // Load teams snapshot synchronously so targeting uses fresh data
     // (don't rely on React state being updated by the time spin resolves).
     let snap: TeamSnapshot[] = [];
@@ -133,7 +133,8 @@ export default function WheelModal({ open, onClose }: Props) {
   };
 
   const recordSpinOnSelf = async (item: WheelItem, targetTeam?: string) => {
-    await recordWheelSpin({ item: item.id, at: Date.now(), targetTeam });
+    if (hole == null) return;
+    await recordWheelSpin(hole, { item: item.id, at: Date.now(), targetTeam });
     // Push a 'wheel' event onto the global feed so it shows up in the live
     // ticker alongside birdies/eagles. targetTeam is "all teams" for
     // lightning, the picked/random opponent for shells & boo, or omitted for
@@ -316,12 +317,12 @@ export default function WheelModal({ open, onClose }: Props) {
         {phase === 'intro' && !confirming && (
           <div className="max-w-sm w-full text-center">
             <h2 className="font-condensed text-3xl font-black text-white uppercase tracking-wider mb-2">
-              Front 9 Done
+              {hole != null ? `Item Box — Hole ${hole}` : 'Item Box'}
             </h2>
             <p className="text-sm text-white/70 mb-6 leading-relaxed">
-              Spin the Item Box to unlock the back 9. Whatever you land on applies immediately — to you or to another team.
+              You hit the Item Box. Spin it — whatever you land on applies immediately, to you or to another team.
               <br />
-              <span className="text-white/50 text-xs">Once you tap spin, your front 9 scores are locked. Wheel effects change scores only — they never move your tee block.</span>
+              <span className="text-white/50 text-xs">Wheel effects change scores only — they never move your tee block.</span>
             </p>
             <button
               onClick={() => setConfirming(true)}
@@ -336,7 +337,7 @@ export default function WheelModal({ open, onClose }: Props) {
               data-testid="button-wheel-edit-front-nine"
               className="mt-3 text-white/50 text-xs font-bold uppercase tracking-widest hover:text-white/80 transition-colors py-2"
             >
-              Wait — let me fix a front 9 score first
+              Not yet — let me recheck my score
             </button>
           </div>
         )}
@@ -346,13 +347,14 @@ export default function WheelModal({ open, onClose }: Props) {
           <div className="max-w-sm w-full text-center">
             <div className="rounded-2xl border-2 border-red-500/60 bg-red-950/30 px-5 py-5 mb-5">
               <h2 className="font-condensed text-2xl font-black text-white uppercase tracking-wider mb-2">
-                Lock Front 9?
+                Spin the Item Box?
               </h2>
               <p className="text-sm text-white/85 leading-relaxed">
-                Tapping <span className="font-black text-primary">SPIN NOW</span> will permanently lock your front 9 scores and trigger the wheel.
+                Tapping <span className="font-black text-primary">SPIN NOW</span> triggers the wheel for{' '}
+                {hole != null ? `hole ${hole}` : 'this hole'}. Whatever you land on applies immediately.
               </p>
               <p className="text-xs text-white/60 mt-3">
-                Double-check holes 1–9 are correct. There is no undo.
+                You only spin this Item Box once. There is no undo.
               </p>
             </div>
             <button
@@ -480,7 +482,7 @@ export default function WheelModal({ open, onClose }: Props) {
               data-testid="button-wheel-done"
               className="w-full h-14 rounded-full bg-primary text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-95 transition-transform"
             >
-              Onto the Back 9
+              Keep Playing
             </button>
           </div>
         )}

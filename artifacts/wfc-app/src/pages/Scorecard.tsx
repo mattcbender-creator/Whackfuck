@@ -211,10 +211,10 @@ function pickChirp(scores: (number | null)[], netScore: number, HOLES: CourseHol
 }
 
 export default function Scorecard() {
-  const { holes: HOLES, trackYardages } = useCourse();
+  const { holes: HOLES, holeRules, trackYardages } = useCourse();
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
-    frontNineConfirmed, wheelSpin, confirmFrontNine, targetedBy, listTeamsOnce, logEvent,
+    wheelSpins, targetedBy, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
     holeOrder, startingHole, isShotgun,
   } = useWFC();
@@ -235,9 +235,11 @@ export default function Scorecard() {
     userNavigatedRef.current = true;
     setSelectedIdx(idx);
   };
-  const [activeRule, setActiveRule] = useState<typeof HOLES[number] | null>(null);
+  const [activeRule, setActiveRule] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [wheelOpen, setWheelOpen] = useState(false);
+  // Which hole's Item Box the wheel modal is acting on (1–18).
+  const [wheelHole, setWheelHole] = useState<number | null>(null);
   const [confirmFinishOpen, setConfirmFinishOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
@@ -246,12 +248,11 @@ export default function Scorecard() {
   const [totalTeams, setTotalTeams] = useState(0);
   const { toast } = useToast();
 
-  // Note: front-9 lock happens INSIDE the wheel modal when the user actually
-  // taps "Spin Item Box". Until that moment they can dismiss the modal and
-  // edit their front-9 scores.
-
-  const front9Complete = holeOrder.slice(0, 9).every(n => scores[n - 1] !== null);
-  const spunItem = getWheelItem(wheelSpin?.item);
+  // The wheel is now a per-hole rule, not a front-9 lock. The currently selected
+  // hole's spin (if any) drives the "your item" panel.
+  const selSpin = wheelSpins[selectedIdx + 1] ?? null;
+  const spunItem = getWheelItem(selSpin?.item);
+  const anyWheelHole = holeRules.some(r => r?.type === 'wheel');
 
   // Play-order halves: first 9 played holes vs last 9, by hole index. For a
   // normal start these are [0..8] / [9..17]; a shotgun start wraps around.
@@ -308,31 +309,12 @@ export default function Scorecard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startingHole]);
 
-  // Front 9 is locked once the team has confirmed (normal start only — a
-  // shotgun round has no shared front 9).
-  const isHoleLocked = (idx: number) => !isShotgun && frontNineConfirmed && idx < 9;
-  const selLocked = isHoleLocked(selectedIdx);
+  // Scores lock only once the round is submitted (the old front-9 wheel lock is gone).
+  const selLocked = false;
 
-  // Gate any attempt to move into the back 9 — must spin the Item Box first.
-  // Disabled for a shotgun start (no front/back Item Box mechanic).
+  // Navigation into the back 9 no longer gates on the wheel — the wheel is a
+  // per-hole rule that fires when that hole's score is entered.
   const tryGoToBack = (targetIdx: number): boolean => {
-    if (isShotgun) {
-      setSelectedIdx(targetIdx);
-      return true;
-    }
-    if (!front9Complete) {
-      toast({
-        title: 'Finish the front 9 first',
-        description: 'Enter scores for all 9 front holes before moving on.',
-        variant: 'destructive',
-      });
-      return false;
-    }
-    if (!wheelSpin && !hasSubmitted) {
-      // Just open the wheel. Locking happens inside the modal when they actually spin.
-      setWheelOpen(true);
-      return false;
-    }
     setSelectedIdx(targetIdx);
     return true;
   };
@@ -376,6 +358,13 @@ export default function Scorecard() {
         score: next,
         par: selHole.par,
       });
+    }
+    // Auto-fire the Item Box the first time a wheel hole gets a score, if it
+    // hasn't been spun yet. recordWheelSpin guards against a second spin.
+    const selRule = holeRules[selectedIdx];
+    if (cur === null && selRule?.type === 'wheel' && !wheelSpins[selectedIdx + 1]) {
+      setWheelHole(selectedIdx + 1);
+      setWheelOpen(true);
     }
   };
 
@@ -666,6 +655,41 @@ export default function Scorecard() {
                 </td>
               </tr>
 
+              {/* WHEEL row — only shown when this tournament places the Item Box
+                  on at least one hole. A dot marks each wheel hole; once that
+                  hole is spun the dot takes the landed item's colour. */}
+              {anyWheelHole && (
+                <tr className="border-t border-primary/20">
+                  <td className={`${STICKY} text-primary/70`}>WHEEL</td>
+                  {halfHoles.map((h, i) => {
+                    const idx = halfIdxs[i];
+                    const isWheel = holeRules[idx]?.type === 'wheel';
+                    const spin = wheelSpins[idx + 1];
+                    const item = getWheelItem(spin?.item);
+                    return (
+                      <td
+                        key={h.hole}
+                        onClick={() => selectCell(idx)}
+                        className={`${CELL} py-1.5 ${selectedIdx === idx ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                      >
+                        {isWheel ? (
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-full"
+                            style={item
+                              ? { background: item.color }
+                              : { border: '1.5px solid hsl(var(--primary))' }}
+                            title={item ? item.label : 'Item Box'}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground/20">·</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className={`${CELL} py-1.5 border-l border-white/8`} />
+                </tr>
+              )}
+
             </tbody>
           </table>
         </div>
@@ -680,23 +704,23 @@ export default function Scorecard() {
           </span>
         </div>
 
-        {/* ── Front 9 complete → offer to open Item Box (no auto-lock).
-            Hidden after submit so there's no path back into the wheel. ── */}
-        {!isShotgun && half === 'front' && front9Complete && !wheelSpin && !hasSubmitted && (
+        {/* Selected hole is a wheel hole that's scored but not yet spun — let
+            them open the Item Box manually (auto-fire may have been dismissed). */}
+        {holeRules[selectedIdx]?.type === 'wheel' && selScore !== null && !selSpin && !hasSubmitted && (
           <button
-            onClick={() => setWheelOpen(true)}
+            onClick={() => { setWheelHole(selectedIdx + 1); setWheelOpen(true); }}
             data-testid="button-confirm-front-nine"
             className="mt-4 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-base uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
           >
             <Sparkles className="w-5 h-5" />
-            Spin Item Box
+            Spin Item Box · Hole {selectedIdx + 1}
           </button>
         )}
 
-        {/* Show what you spun — tap to re-open the wheel modal for details */}
+        {/* Show what you spun on this hole — tap to re-open the wheel modal */}
         {spunItem && (
           <button
-            onClick={() => setWheelOpen(true)}
+            onClick={() => { setWheelHole(selectedIdx + 1); setWheelOpen(true); }}
             data-testid="button-show-spun-item"
             className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2"
             style={{
@@ -783,7 +807,7 @@ export default function Scorecard() {
               </div>
             </div>
             <button
-              onClick={() => setActiveRule(selHole)}
+              onClick={() => setActiveRule(selectedIdx)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary/15 border border-primary/40 hover:bg-primary/25 transition-colors text-xs font-bold uppercase tracking-wider text-primary"
             >
               <Info className="w-3.5 h-3.5" />
@@ -825,15 +849,10 @@ export default function Scorecard() {
                 {selLocked || hasSubmitted ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
               </button>
             </div>
-            {hasSubmitted ? (
+            {hasSubmitted && (
               <p className="text-[10px] text-yellow-400/90 text-center mt-2 uppercase tracking-widest font-bold">
                 <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5" />
                 Round Submitted — Scores Final
-              </p>
-            ) : selLocked && (
-              <p className="text-[10px] text-muted-foreground/80 text-center mt-2 uppercase tracking-widest font-bold">
-                <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5 text-primary" />
-                Front 9 locked after the spin
               </p>
             )}
             {selOutOfOrder && !selLocked && firstUnscoredPos < 18 && (
@@ -884,35 +903,41 @@ export default function Scorecard() {
         </div>
       </div>
 
-      {/* ── Rule Sheet ── */}
-      <Sheet open={!!activeRule} onOpenChange={o => !o && setActiveRule(null)}>
+      {/* ── Rule Sheet — reads the resolved tournament rule for the hole ── */}
+      <Sheet open={activeRule !== null} onOpenChange={o => !o && setActiveRule(null)}>
         <SheetContent side="bottom" className="h-auto max-h-[80vh] rounded-t-3xl bg-card border-t border-primary/20">
-          {activeRule && (
+          {activeRule !== null && (() => {
+            const ruleHole = HOLES[activeRule];
+            const ruleEntry = holeRules[activeRule];
+            const isWheel = ruleEntry?.type === 'wheel';
+            return (
             <div className="py-6 px-2">
               <div className="flex items-center gap-4 mb-5">
                 <span className="font-condensed text-5xl font-black text-primary/30 leading-none">
-                  {activeRule.hole.toString().padStart(2, '0')}
+                  {ruleHole.hole.toString().padStart(2, '0')}
                 </span>
-                <SheetTitle className="font-condensed text-2xl uppercase tracking-wider text-left leading-tight">
-                  {activeRule.ruleName}
+                <SheetTitle className="font-condensed text-2xl uppercase tracking-wider text-left leading-tight flex items-center gap-2">
+                  {isWheel && <Sparkles className="w-5 h-5 text-primary shrink-0" />}
+                  {ruleEntry && ruleEntry.type !== 'none' ? ruleEntry.ruleName : 'No special rule'}
                 </SheetTitle>
               </div>
               <SheetDescription className="text-base text-foreground/90 leading-relaxed font-medium">
-                {activeRule.rule}
+                {ruleEntry && ruleEntry.type !== 'none' ? ruleEntry.ruleText : 'This hole plays as a standard hole.'}
               </SheetDescription>
               <div className="mt-4 pt-4 border-t border-border/40 flex gap-4 text-xs text-muted-foreground">
-                <span>Hole {activeRule.hole}</span>
-                <span>Par {activeRule.par}</span>
-                <span>Hdcp {activeRule.hdcp}</span>
-                {trackYardages && <span>{currentTee === 'tips' ? activeRule.tips : activeRule.womens} yds ({currentTee === 'tips' ? 'Tips' : "Women's"})</span>}
+                <span>Hole {ruleHole.hole}</span>
+                <span>Par {ruleHole.par}</span>
+                <span>Hdcp {ruleHole.hdcp}</span>
+                {trackYardages && <span>{currentTee === 'tips' ? ruleHole.tips : ruleHole.womens} yds ({currentTee === 'tips' ? 'Tips' : "Women's"})</span>}
               </div>
             </div>
-          )}
+            );
+          })()}
         </SheetContent>
       </Sheet>
 
       {/* ── Mario Kart Item Wheel ── */}
-      <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} />
+      <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} hole={wheelHole} />
 
       {/* ── Final Submit CONFIRMATION (gate before the actual lock) ── */}
       {confirmFinishOpen && (

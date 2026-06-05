@@ -47,10 +47,10 @@ function fmtNet(net: number) {
 }
 
 export default function HoleView() {
-  const { holes: HOLES, trackYardages } = useCourse();
+  const { holes: HOLES, holeRules, trackYardages } = useCourse();
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
-    frontNineConfirmed, wheelSpin, listTeamsOnce, logEvent,
+    wheelSpins, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
     holeOrder, startingHole, isShotgun,
   } = useWFC();
@@ -61,6 +61,8 @@ export default function HoleView() {
   const [orderPos, setOrderPos] = useState(0);
   const userNavigatedRef = useRef(false);
   const [wheelOpen, setWheelOpen] = useState(false);
+  // Which hole's Item Box the wheel modal is acting on (1–18).
+  const [wheelHole, setWheelHole] = useState<number | null>(null);
   const [finishOpen, setFinishOpen] = useState(false);
   const [finishPosition, setFinishPosition] = useState<number | null>(null);
   const [finishLoading, setFinishLoading] = useState(false);
@@ -124,13 +126,16 @@ export default function HoleView() {
   const score = scores[holeIdx];
   const diff = diffOf(score, hole.par);
   const { label: sLabel, color: sLabelColor } = scoreLabel(diff);
-  const yardage = currentTee === 'tips' ? hole.tips : hole.womens;
 
-  const front9Complete = scores.slice(0, 9).every(s => s !== null);
-  const spunItem = getWheelItem(wheelSpin?.item);
-  // Front-9 lock + back-9 Item Box gate only apply to a normal start. A shotgun
-  // round has no shared front/back, so those mechanics are disabled.
-  const holeLocked = hasSubmitted || (!isShotgun && frontNineConfirmed && holeIdx < 9);
+  // Rule for this hole comes from the resolved tournament rules (falls back to
+  // holes.ts inside the context). A 'wheel' rule turns this hole into an Item Box.
+  const rule = holeRules[holeIdx];
+  const isWheelHole = rule?.type === 'wheel';
+  const holeSpin = wheelSpins[holeIdx + 1] ?? null;
+  const spunItem = getWheelItem(holeSpin?.item);
+  // Scores lock only once the round is submitted. The old front-9 lock tied to
+  // spinning the wheel is gone — the wheel is now a per-hole rule.
+  const holeLocked = hasSubmitted;
 
   // ── The gate: enforces ordered scoring + back-9 lock.
   // Works on play-order positions (0–17), not raw hole indices.
@@ -157,20 +162,6 @@ export default function HoleView() {
       setOrderPos(missingPos);
       return false;
     }
-    // Back-9 lock (normal start only): must have spun the Item Box. Once
-    // submitted, the wheel never re-opens — navigation just goes through.
-    if (!isShotgun && targetPos >= 9 && !wheelSpin && !hasSubmitted) {
-      if (!front9Complete) {
-        toast({
-          title: 'Finish the front 9 first',
-          description: 'Enter scores for all 9 front holes before moving on.',
-          variant: 'destructive',
-        });
-        return false;
-      }
-      setWheelOpen(true);
-      return false;
-    }
     setOrderPos(targetPos);
     return true;
   };
@@ -178,10 +169,6 @@ export default function HoleView() {
   const handleScore = (delta: number) => {
     if (hasSubmitted) {
       toast({ title: 'Score locked', description: 'You already submitted your final score.' });
-      return;
-    }
-    if (holeLocked) {
-      toast({ title: 'Front 9 locked', description: 'You already spun the Item Box — scores 1–9 are final.' });
       return;
     }
     const current = scores[holeIdx];
@@ -194,6 +181,13 @@ export default function HoleView() {
     else if (d === -1) fireBirdieConfetti();
     if (teamInfo && d <= -1 && (prevDiff === null || prevDiff > -1)) {
       logEvent({ type: 'score', subtype: d <= -2 ? 'eagle' : 'birdie', teamName: teamInfo.teamName, hole: holeIdx + 1, score: next, par: hole.par });
+    }
+    // Auto-fire the Item Box the first time this hole gets a score, if this hole
+    // carries the wheel rule and hasn't been spun yet. recordWheelSpin guards
+    // against a second spin, so this can't double-fire.
+    if (isWheelHole && current === null && !holeSpin) {
+      setWheelHole(holeIdx + 1);
+      setWheelOpen(true);
     }
   };
 
@@ -281,13 +275,12 @@ export default function HoleView() {
                   else if (d === 0) dotColor = 'bg-foreground/40';
                   else dotColor = 'bg-orange-500/60';
                 }
-                const isBack9Locked = !isShotgun && p >= 9 && (!front9Complete || !wheelSpin);
                 return (
                   <button
                     key={holeNum}
                     onClick={() => tryGoToPos(p)}
                     className={`rounded-full transition-all ${
-                      isActive ? 'w-5 h-1.5 bg-primary' : `w-1.5 h-1.5 ${dotColor} ${isBack9Locked ? 'opacity-40' : ''}`
+                      isActive ? 'w-5 h-1.5 bg-primary' : `w-1.5 h-1.5 ${dotColor}`
                     }`}
                     aria-label={`Go to hole ${holeNum}`}
                   />
@@ -299,17 +292,11 @@ export default function HoleView() {
           <button
             onClick={goNext}
             disabled={orderPos === 17}
-            className={`w-10 h-10 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all ${
-              !isShotgun && orderPos === 8 && front9Complete && !wheelSpin
-                ? 'bg-primary text-primary-foreground animate-pulse shadow-lg shadow-primary/40'
-                : 'bg-secondary'
-            }`}
+            className="w-10 h-10 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
             data-testid="button-next-hole"
-            aria-label={!isShotgun && orderPos === 8 && front9Complete && !wheelSpin ? 'Spin Item Box to unlock back 9' : 'Next hole'}
+            aria-label="Next hole"
           >
-            {!isShotgun && orderPos === 8 && front9Complete && !wheelSpin
-              ? <Sparkles className="w-5 h-5" />
-              : <ChevronRight className="w-5 h-5" />}
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -379,26 +366,31 @@ export default function HoleView() {
           </div>
         </div>
 
-        {/* Rule Card — tighter padding & label rolled into the same row */}
-        <div className="bg-card border border-primary/30 rounded-2xl p-4 relative overflow-hidden">
+        {/* Rule Card — reads the resolved tournament rule for this hole. A wheel
+            rule gets the Item Box treatment (sparkles + accent). 'none' hides it. */}
+        {rule && rule.type !== 'none' && (
+        <div className={`bg-card border rounded-2xl p-4 relative overflow-hidden ${isWheelHole ? 'border-primary/60' : 'border-primary/30'}`}>
           <div className="flex items-center gap-2 mb-1.5">
-            <Flag className="w-3 h-3 text-primary" />
-            <p className="text-[9px] font-black text-primary uppercase tracking-widest">Hole Rule</p>
+            {isWheelHole ? <Sparkles className="w-3 h-3 text-primary" /> : <Flag className="w-3 h-3 text-primary" />}
+            <p className="text-[9px] font-black text-primary uppercase tracking-widest">
+              {isWheelHole ? 'Item Box Hole' : 'Hole Rule'}
+            </p>
           </div>
           <h3 className="font-condensed text-xl font-black uppercase tracking-tight leading-tight text-foreground mb-1.5">
-            {hole.ruleName}
+            {rule.ruleName}
           </h3>
           <p className="text-[13px] text-foreground/75 leading-snug">
-            {hole.rule}
+            {rule.ruleText}
           </p>
         </div>
+        )}
 
         {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown
             above) so the stepper fits without scrolling on most phones. */}
         <div className={`bg-card border rounded-2xl p-4 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
           <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-3 flex items-center justify-center gap-1.5">
             {holeLocked && <Lock className="w-3 h-3 text-primary" />}
-            {hasSubmitted ? 'Round Submitted' : holeLocked ? 'Front 9 Locked' : 'Enter Score'}
+            {hasSubmitted ? 'Round Submitted' : 'Enter Score'}
           </p>
 
           <div className="flex items-center justify-between gap-4">
@@ -434,27 +426,26 @@ export default function HoleView() {
           </div>
 
           {holeLocked && (
-            <p className={`text-[10px] text-center mt-2 uppercase tracking-widest font-bold ${hasSubmitted ? 'text-yellow-400/90' : 'text-muted-foreground'}`}>
-              {hasSubmitted ? 'Score submitted — scores are final' : 'Final — set when you spun the Item Box'}
+            <p className="text-[10px] text-center mt-2 uppercase tracking-widest font-bold text-yellow-400/90">
+              Score submitted — scores are final
             </p>
           )}
         </div>
 
-        {/* Big LOCK CTA when front 9 done & no spin yet — user must tap this
-            explicitly. No auto-pop. Hidden entirely once the round is
-            submitted so there is no path back into the wheel. */}
-        {!isShotgun && front9Complete && !wheelSpin && !hasSubmitted && (
+        {/* Re-open the Item Box on a wheel hole that hasn't been spun yet (e.g. if
+            the auto-fire was dismissed). Hidden once the round is submitted. */}
+        {isWheelHole && score !== null && !holeSpin && !hasSubmitted && (
           <button
-            onClick={() => setWheelOpen(true)}
+            onClick={() => { setWheelHole(holeIdx + 1); setWheelOpen(true); }}
             data-testid="button-open-item-box"
             className="w-full h-16 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/40 animate-pulse"
           >
-            <Lock className="w-5 h-5" />
-            Lock Front 9 &amp; Spin Item Box
+            <Sparkles className="w-5 h-5" />
+            Spin the Item Box
           </button>
         )}
 
-        {/* Subtle "what you spun" pill once they've spun */}
+        {/* Subtle "what you spun" pill once they've spun this hole's Item Box */}
         {spunItem && (
           <div
             className="rounded-2xl px-4 py-3 flex items-center gap-3"
@@ -489,7 +480,7 @@ export default function HoleView() {
         )}
       </div>
 
-      <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} />
+      <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} hole={wheelHole} />
 
       {/* ── Final Score Modal ── */}
       {finishOpen && (

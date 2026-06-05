@@ -20,6 +20,91 @@ export interface CourseHole {
   rule: string;
 }
 
+// ── Hole rules ──────────────────────────────────────────────────────────────
+// Each of the 18 holes carries a configurable rule. 'standard' is a plain WFC
+// rule (name + text); 'wheel' is the special Mario Kart Item Box that fires a
+// spin when the hole's score is entered; 'none' is an empty slot.
+export type HoleRuleType = 'standard' | 'wheel' | 'none';
+
+export interface HoleRule {
+  type: HoleRuleType;
+  ruleName: string;
+  ruleText: string;
+}
+
+// A rule that can be assigned to a hole — built-in (derived from the Dundee
+// course), the special wheel rule, or a host-authored custom rule.
+export interface RuleLibraryEntry {
+  id: string;
+  type: HoleRuleType;
+  ruleName: string;
+  ruleText: string;
+  builtIn: boolean;
+}
+
+// The wheel rule is a single well-known sentinel. Assigning it to a hole makes
+// that hole auto-fire the Mario Kart Item Box wheel when its score is entered.
+export const WHEEL_RULE_NAME = 'Mario Kart Item Box';
+export const WHEEL_RULE_TEXT =
+  'Entering your score on this hole triggers a spin of the Mario Kart Item Box. Whatever you land on applies immediately — to you or another team.';
+export const WHEEL_RULE_ID = 'wheel';
+
+export function wheelLibraryEntry(): RuleLibraryEntry {
+  return { id: WHEEL_RULE_ID, type: 'wheel', ruleName: WHEEL_RULE_NAME, ruleText: WHEEL_RULE_TEXT, builtIn: true };
+}
+
+// Built-in rule library, derived from the Dundee course rule set (deduped by
+// name). The wheel sentinel is always first.
+export function buildRuleLibrary(): RuleLibraryEntry[] {
+  const entries: RuleLibraryEntry[] = [wheelLibraryEntry()];
+  const seen = new Set<string>();
+  for (const h of HOLES) {
+    if (!h.ruleName || seen.has(h.ruleName)) continue;
+    seen.add(h.ruleName);
+    entries.push({ id: `builtin::${h.ruleName}`, type: 'standard', ruleName: h.ruleName, ruleText: h.rule, builtIn: true });
+  }
+  return entries;
+}
+
+export const RULE_LIBRARY: RuleLibraryEntry[] = buildRuleLibrary();
+
+// Derive an 18-slot rule set from a course's own ruleName/rule fields. No wheel
+// is placed — a generic tournament starts with plain rules only.
+export function holeRulesFromCourse(holes: CourseHole[]): HoleRule[] {
+  return Array.from({ length: 18 }, (_, i) => {
+    const h = holes[i];
+    if (h?.ruleName) return { type: 'standard', ruleName: h.ruleName, ruleText: h.rule };
+    return { type: 'none', ruleName: '', ruleText: '' };
+  });
+}
+
+// WFC default rule set: the Dundee rules with the wheel on hole 9 (index 8),
+// reproducing the existing June 27 experience exactly.
+export function wfcDefaultHoleRules(): HoleRule[] {
+  return HOLES.map((h, i) => {
+    if (i === 8) return { type: 'wheel', ruleName: WHEEL_RULE_NAME, ruleText: WHEEL_RULE_TEXT };
+    if (!h.ruleName) return { type: 'none', ruleName: '', ruleText: '' };
+    return { type: 'standard', ruleName: h.ruleName, ruleText: h.rule };
+  });
+}
+
+// Resolve the effective 18 hole rules for a tournament. Falls back to the
+// course's own rule fields per-hole when the tournament has no configured
+// holeRules (legacy docs created before the rule builder existed).
+export function resolveHoleRules(
+  configured: HoleRule[] | undefined | null,
+  courseHoles: CourseHole[],
+): HoleRule[] {
+  const hasConfig = Array.isArray(configured) && configured.length === 18;
+  return Array.from({ length: 18 }, (_, i) => {
+    const c = hasConfig ? configured![i] : undefined;
+    if (c && c.type) return c;
+    const h = courseHoles[i];
+    if (h?.ruleName) return { type: 'standard', ruleName: h.ruleName, ruleText: h.rule };
+    return { type: 'none', ruleName: '', ruleText: '' };
+  });
+}
+
 export type StartType = 'normal' | 'shotgun';
 export type TournamentStatus = 'setup' | 'live' | 'final';
 
@@ -35,7 +120,8 @@ export interface TournamentConfig {
   adminCode: string;
   hostKey: string;
   joinCode: string;
-  holeRules: unknown[]; // placeholder — edited by the rule-builder task
+  holeRules: HoleRule[]; // 18 configurable rule slots, edited by the rule builder
+  customRules?: RuleLibraryEntry[]; // host-authored rules available in the builder
   status: TournamentStatus;
   createdAt: number;
   // Shotgun-format only: maps a team id to its starting hole (1–18). Absent /
@@ -128,7 +214,8 @@ export function buildWfc2026Config(): TournamentConfig {
     adminCode: 'dundee2025',
     hostKey: WFC_2026_HOST_KEY,
     joinCode: WFC_2026_JOIN_CODE,
-    holeRules: [],
+    holeRules: wfcDefaultHoleRules(),
+    customRules: [],
     status: 'live',
     createdAt: Date.now(),
   };

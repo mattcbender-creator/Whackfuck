@@ -1,10 +1,10 @@
 import useEmblaCarousel from 'embla-carousel-react';
 import { useCourse } from '@/lib/tournamentContext';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export default function Rules() {
-  const { holes: HOLES, trackYardages } = useCourse();
+  const { holes: HOLES, holeRules, trackYardages } = useCourse();
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: 'center' });
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -94,12 +94,12 @@ export default function Rules() {
 
                   <div className="space-y-3 text-card-foreground/90 text-base leading-relaxed font-medium">
                     <p>
-                      After hole 9, every team spins the wheel <span className="font-black text-primary">once</span>.
+                      Some holes are <span className="font-black text-primary">Item Box</span> holes. Enter your score on one and you spin the wheel <span className="font-black text-primary">once</span>.
                     </p>
                     <ul className="space-y-2 text-sm">
                       <li className="flex gap-2">
                         <span className="text-primary font-black">›</span>
-                        <span>One spin per team, per round</span>
+                        <span>One spin per Item Box hole</span>
                       </li>
                       <li className="flex gap-2">
                         <span className="text-primary font-black">›</span>
@@ -177,9 +177,13 @@ export default function Rules() {
               </div>
             </div>
 
-            {HOLES.map((hole) => {
-              const ruleLen = hole.rule.length;
-              const ruleNameLen = hole.ruleName.length;
+            {HOLES.map((hole, idx) => {
+              const rule = holeRules[idx];
+              const isWheel = rule?.type === 'wheel';
+              const ruleName = rule && rule.type !== 'none' ? rule.ruleName : '';
+              const ruleText = rule && rule.type !== 'none' ? rule.ruleText : 'This hole plays as a standard hole.';
+              const ruleLen = ruleText.length;
+              const ruleNameLen = ruleName.length;
               // Tighten spacing and shrink text for longer rules
               const isLong = ruleLen > 130;
               const isVeryLong = ruleLen > 200;
@@ -193,7 +197,7 @@ export default function Rules() {
                 : 'text-base leading-relaxed';
               return (
                 <div key={hole.hole} className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
-                  <div className="h-full bg-card border border-border rounded-2xl p-5 flex flex-col shadow-xl relative overflow-hidden">
+                  <div className={`h-full bg-card border rounded-2xl p-5 flex flex-col shadow-xl relative overflow-hidden ${isWheel ? 'border-primary/60' : 'border-border'}`}>
                     {/* Big background number */}
                     <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
                       {hole.hole}
@@ -211,14 +215,21 @@ export default function Rules() {
                       </div>
                     </div>
 
-                    {hole.ruleName && (
+                    {isWheel && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span className="text-[10px] font-black text-primary uppercase tracking-widest">Item Box Hole</span>
+                      </div>
+                    )}
+
+                    {ruleName && (
                       <h3 className={`font-condensed ${titleSize} font-bold uppercase tracking-tight leading-none ${titleMb}`}>
-                        {hole.ruleName}
+                        {ruleName}
                       </h3>
                     )}
 
                     <p className={`${ruleTextClass} text-card-foreground/90 font-medium`}>
-                      {hole.rule}
+                      {ruleText}
                     </p>
                   </div>
                 </div>

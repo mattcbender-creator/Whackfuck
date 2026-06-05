@@ -61,6 +61,7 @@ interface TeamData {
   currentTee: string;
   lastUpdated?: string;
   wheelSpin?: WheelSpinRecord | null;
+  wheelSpins?: Record<string, WheelSpinRecord>;
   targetedBy?: TargetedByEntry[];
   wheelAdjustment?: number;
   scores?: (number | null)[];
@@ -414,8 +415,9 @@ export default function Leaderboard() {
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="grid grid-cols-12 gap-2 p-3 bg-secondary/50 border-b border-border text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             <div className="col-span-1 text-center">POS</div>
-            <div className="col-span-6">Team</div>
-            <div className="col-span-2 text-center">Thru</div>
+            <div className="col-span-5">Team</div>
+            <div className="col-span-2 text-center">Wheel</div>
+            <div className="col-span-1 text-center">Thru</div>
             <div className="col-span-3 text-right">Net</div>
           </div>
 
@@ -432,6 +434,13 @@ export default function Leaderboard() {
               const totalHits = allHits.length;
               const isExpanded = expandedId === team.id;
               const hasScores = Array.isArray(team.scores) && team.scores.some(s => s !== null && s !== undefined);
+              // One badge per wheel spin, ordered by hole. Fall back to the
+              // legacy single-spin field for older Firestore docs.
+              const spinEntries: [string, WheelSpinRecord][] = team.wheelSpins
+                ? Object.entries(team.wheelSpins).sort((a, b) => Number(a[0]) - Number(b[0]))
+                : team.wheelSpin
+                ? [['9', team.wheelSpin]]
+                : [];
               return (
                 <div key={team.id}>
                   <button
@@ -452,24 +461,30 @@ export default function Leaderboard() {
                         </span>
                       )}
                     </div>
-                    <div className="col-span-6 flex flex-col gap-1 min-w-0">
+                    <div className="col-span-5 flex flex-col gap-1 min-w-0">
                       <span className="font-bold text-sm truncate flex items-center gap-1.5">
                         {team.teamName}
                         <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                       </span>
                       <span className="text-[10px] text-muted-foreground truncate">{formatPlayers(team.players)}</span>
-                      {(team.wheelSpin || totalHits > 0) && (
+                      {totalHits > 0 && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
-                          {team.wheelSpin && (
-                            <WheelBadge item={team.wheelSpin.item} label={`Spun ${team.wheelSpin.item}`} />
-                          )}
                           {aggregated.map(h => (
                             <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
                           ))}
                         </div>
                       )}
                     </div>
-                    <div className="col-span-2 text-center font-condensed font-bold text-muted-foreground">
+                    <div className="col-span-2 flex flex-col items-center justify-center gap-1">
+                      {spinEntries.length > 0 ? (
+                        spinEntries.map(([holeStr, rec]) => (
+                          <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground/30 text-xs">—</span>
+                      )}
+                    </div>
+                    <div className="col-span-1 text-center font-condensed font-bold text-muted-foreground">
                       {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
                     </div>
                     <div className="col-span-3 text-right font-condensed text-xl font-black">

@@ -28,6 +28,38 @@ export interface WheelSpinRecord {
   targetTeam?: string; // team name we targeted (Green/Red/Boo)
 }
 
+// Read a team doc's per-hole wheel spins, tolerating the legacy single-spin
+// shape (one wheelSpin field) by bucketing it under hole 9 — the only hole the
+// old fixed wheel could ever fire on.
+export function spinsFromData(data: Record<string, unknown> | undefined | null): Record<number, WheelSpinRecord> {
+  const out: Record<number, WheelSpinRecord> = {};
+  if (!data) return out;
+  const map = data.wheelSpins;
+  if (map && typeof map === 'object') {
+    for (const [k, v] of Object.entries(map as Record<string, unknown>)) {
+      const n = parseInt(k, 10);
+      if (n >= 1 && n <= 18 && v && typeof v === 'object' && (v as WheelSpinRecord).item) {
+        out[n] = v as WheelSpinRecord;
+      }
+    }
+    return out;
+  }
+  const legacy = data.wheelSpin as WheelSpinRecord | undefined;
+  if (legacy && legacy.item) out[9] = legacy;
+  return out;
+}
+
+// Latest spin (by timestamp) across all holes, for back-compat single-spin UI.
+function latestSpin(spins: Record<number, WheelSpinRecord>): WheelSpinRecord | null {
+  const all = Object.values(spins);
+  if (all.length === 0) return null;
+  return all.reduce((a, b) => (b.at > a.at ? b : a));
+}
+
+function spinsEqual(a: Record<number, WheelSpinRecord>, b: Record<number, WheelSpinRecord>): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export interface WFCState {
   teamId: string;
   teamCode: string | null;
@@ -45,7 +77,10 @@ export interface WFCState {
   /** True when the active tournament uses a shotgun start. */
   isShotgun: boolean;
   frontNineConfirmed: boolean;
+  /** Latest spin across all holes (back-compat single-spin UI). */
   wheelSpin: WheelSpinRecord | null;
+  /** Per-hole wheel spins, keyed by hole number (1–18). */
+  wheelSpins: Record<number, WheelSpinRecord>;
   wheelAdjustment: number;
   targetedBy: TargetedByEntry[];
   hasSubmitted: boolean;
@@ -57,7 +92,7 @@ export interface WFCState {
   setScore: (hole: number, score: number | null) => void;
   resetScores: () => void;
   confirmFrontNine: () => void;
-  recordWheelSpin: (record: WheelSpinRecord) => Promise<void>;
+  recordWheelSpin: (hole: number, record: WheelSpinRecord) => Promise<void>;
   applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
   applyEffectToSelf: (delta: number) => void;
   submitFinal: () => void;
@@ -108,7 +143,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
   const [scores, setScoresState] = useState<(number | null)[]>(Array(18).fill(null));
   const [frontNineConfirmed, setFrontNineConfirmed] = useState(false);
-  const [wheelSpin, setWheelSpin] = useState<WheelSpinRecord | null>(null);
+  const [wheelSpins, setWheelSpins] = useState<Record<number, WheelSpinRecord>>({});
   const [wheelAdjustment, setWheelAdjustment] = useState(0);
   const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -146,7 +181,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (typeof parsed.teamCode === 'string') setTeamCode(parsed.teamCode);
         if (parsed.scores && Array.isArray(parsed.scores)) setScoresState(parsed.scores);
         if (typeof parsed.frontNineConfirmed === 'boolean') setFrontNineConfirmed(parsed.frontNineConfirmed);
-        if (parsed.wheelSpin) setWheelSpin(parsed.wheelSpin);
+        if (parsed.wheelSpins && typeof parsed.wheelSpins === 'object') {
+          setWheelSpins(spinsFromData(parsed));
+        } else if (parsed.wheelSpin) {
+          setWheelSpins({ 9: parsed.wheelSpin });
+        }
         if (typeof parsed.wheelAdjustment === 'number') setWheelAdjustment(parsed.wheelAdjustment);
         if (Array.isArray(parsed.targetedBy)) setTargetedBy(parsed.targetedBy);
         if (typeof parsed.hasSubmitted === 'boolean') setHasSubmitted(parsed.hasSubmitted);
@@ -212,14 +251,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming;
         });
       }
-      if (data.wheelSpin) {
-        setWheelSpin(prev => {
-          const incoming = data.wheelSpin as WheelSpinRecord;
-          if (prev && prev.item === incoming.item && prev.at === incoming.at) return prev;
-          return incoming;
-        });
-      } else if (data.wheelSpin === null && 'wheelSpin' in data) {
-        setWheelSpin(prev => prev === null ? prev : null);
+      if ('wheelSpins' in data || 'wheelSpin' in data) {
+        const incoming = spinsFromData(data);
+        setWheelSpins(prev => (spinsEqual(prev, incoming) ? prev : incoming));
       }
       if (typeof data.frontNineConfirmed === 'boolean') {
         setFrontNineConfirmed(prev => prev === data.frontNineConfirmed ? prev : data.frontNineConfirmed);
@@ -249,18 +283,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       for (const d of snap.docs) {
         if (d.id === teamId) continue;
         const data = d.data();
-        const spin = data?.wheelSpin as { item?: WheelItemId; at?: number; targetTeam?: string } | undefined;
-        if (!spin || !spin.item || typeof spin.at !== 'number') continue;
         const fromTeam = (data.teamName as string | undefined) ?? 'Unknown';
-        if (spin.item === 'lightning') {
-          expected.push({ item: 'lightning', fromTeam, at: spin.at });
-        } else if (
-          (spin.item === 'green_shell' || spin.item === 'red_shell' ||
-           spin.item === 'blue_shell' || spin.item === 'banana' ||
-           spin.item === 'boo') &&
-          spin.targetTeam === ourTeamName
-        ) {
-          expected.push({ item: spin.item, fromTeam, at: spin.at });
+        for (const spin of Object.values(spinsFromData(data))) {
+          if (!spin.item || typeof spin.at !== 'number') continue;
+          if (spin.item === 'lightning') {
+            expected.push({ item: 'lightning', fromTeam, at: spin.at });
+          } else if (
+            (spin.item === 'green_shell' || spin.item === 'red_shell' ||
+             spin.item === 'blue_shell' || spin.item === 'banana' ||
+             spin.item === 'boo') &&
+            spin.targetTeam === ourTeamName
+          ) {
+            expected.push({ item: spin.item, fromTeam, at: spin.at });
+          }
         }
       }
       if (expected.length === 0) return;
@@ -312,7 +347,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setScoresState(emptyScores);
         setTeamInfo(null);
         setFrontNineConfirmed(false);
-        setWheelSpin(null);
+        setWheelSpins({});
         setWheelAdjustment(0);
         setTargetedBy([]);
         setHasSubmitted(false);
@@ -332,7 +367,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     teamCode: string | null;
     scores: (number | null)[];
     frontNineConfirmed: boolean;
-    wheelSpin: WheelSpinRecord | null;
+    wheelSpins: Record<number, WheelSpinRecord>;
     wheelAdjustment: number;
     targetedBy: TargetedByEntry[];
     hasSubmitted: boolean;
@@ -340,7 +375,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }>) => {
     try {
       const current = {
-        teamInfo, teamCode, scores, frontNineConfirmed, wheelSpin,
+        teamInfo, teamCode, scores, frontNineConfirmed, wheelSpins,
         wheelAdjustment, targetedBy, hasSubmitted, submittedAt,
       };
       const next = { ...current, ...overrides };
@@ -388,6 +423,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
   const rawNet = holesPlayed > 0 ? totalScore - parPlayed : 0;
   const netScore = rawNet + wheelAdjustment;
+  // Latest spin across all holes, for single-spin UI (e.g. the "what you spun" pill).
+  const wheelSpin = latestSpin(wheelSpins);
   const currentTee: 'tips' | 'womens' = autoTeeRule ? (rawNet < 0 ? 'tips' : 'womens') : 'womens';
 
   // ── Tee-change notification (only when the auto-tee rule is on) ──
@@ -430,13 +467,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!lockResolved) return;
     if (hasSubmitted) return;
     const ref = teamDoc(db, teamId);
-    let cleanWheelSpin: Record<string, unknown> | null = null;
-    if (wheelSpin) {
-      cleanWheelSpin = {};
-      for (const [k, v] of Object.entries(wheelSpin)) {
-        if (v !== undefined) cleanWheelSpin[k] = v;
-      }
-    }
+    // Per-hole wheel spins are written by recordWheelSpin via field-level merge;
+    // this effect only pushes derived / identity fields.
     const payload: Record<string, unknown> = {
       teamName: teamInfo.teamName,
       players: teamInfo.players,
@@ -444,7 +476,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       holesPlayed,
       currentTee,
       frontNineConfirmed,
-      wheelSpin: cleanWheelSpin,
       lastUpdated: serverTimestamp(),
     };
     if (teamCode) payload.teamCode = teamCode;
@@ -454,7 +485,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     setDoc(ref, payload, { merge: true }).catch(err => console.error('Firestore sync failed', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId, teamInfo, teamCode, netScore, holesPlayed, currentTee, frontNineConfirmed, wheelSpin, hasSubmitted, submittedAt, lockResolved, tId]);
+  }, [teamId, teamInfo, teamCode, netScore, holesPlayed, currentTee, frontNineConfirmed, hasSubmitted, submittedAt, lockResolved, tId]);
 
   const updateTeamInfo = (info: TeamInfo) => {
     if (hasSubmitted) {
@@ -483,16 +514,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         let initialTargetedBy: TargetedByEntry[] = [];
         try {
           const teamsSnap = await getDocs(teamsCol(fdb));
-          const lightningTeams = teamsSnap.docs.filter(
-            d => d.id !== teamId && (d.data()?.wheelSpin as { item?: string } | undefined)?.item === 'lightning'
-          );
-          if (lightningTeams.length > 0) {
-            initialWheelAdj = lightningTeams.length;
-            initialTargetedBy = lightningTeams.map(d => ({
-              item: 'lightning' as WheelItemId,
-              fromTeam: (d.data().teamName as string | undefined) ?? 'Unknown',
-              at: ((d.data().wheelSpin as { at?: number } | undefined)?.at) ?? Date.now(),
-            }));
+          for (const d of teamsSnap.docs) {
+            if (d.id === teamId) continue;
+            const data = d.data();
+            for (const spin of Object.values(spinsFromData(data))) {
+              if (spin.item === 'lightning') {
+                initialTargetedBy.push({
+                  item: 'lightning',
+                  fromTeam: (data.teamName as string | undefined) ?? 'Unknown',
+                  at: spin.at ?? Date.now(),
+                });
+              }
+            }
+          }
+          if (initialTargetedBy.length > 0) {
+            initialWheelAdj = initialTargetedBy.length;
             setWheelAdjustment(initialWheelAdj);
             setTargetedBy(initialTargetedBy);
             saveToLocal({ wheelAdjustment: initialWheelAdj, targetedBy: initialTargetedBy });
@@ -507,7 +543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           holesPlayed: 0,
           currentTee: 'womens',
           frontNineConfirmed: false,
-          wheelSpin: null,
+          wheelSpins: {},
           wheelAdjustment: initialWheelAdj,
           targetedBy: initialTargetedBy,
         }, { merge: true }).catch(() => {});
@@ -550,14 +586,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setScoresState(newScores);
     setTeamInfo(null);
     setFrontNineConfirmed(false);
-    setWheelSpin(null);
+    setWheelSpins({});
     setWheelAdjustment(0);
     setTargetedBy([]);
     setHasSubmitted(false);
     setSubmittedAt(null);
     saveToLocal({
       teamInfo: null, scores: newScores, frontNineConfirmed: false,
-      wheelSpin: null, wheelAdjustment: 0, targetedBy: [],
+      wheelSpins: {}, wheelAdjustment: 0, targetedBy: [],
       hasSubmitted: false, submittedAt: null,
     });
   };
@@ -576,32 +612,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveToLocal({ hasSubmitted: true, submittedAt: at });
   };
 
-  const recordWheelSpin = async (record: WheelSpinRecord) => {
+  const recordWheelSpin = async (hole: number, record: WheelSpinRecord) => {
     if (hasSubmitted) return;
+    // Guard against a double-spin for this hole using the latest known state.
+    if (wheelSpins[hole]?.item) return;
     const cleanRecord: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(record)) {
       if (v !== undefined) cleanRecord[k] = v;
     }
+    const commitLocal = (spin: WheelSpinRecord) => {
+      setWheelSpins(prev => {
+        const next = { ...prev, [hole]: spin };
+        saveToLocal({ wheelSpins: next });
+        return next;
+      });
+    };
     if (isFirebaseConfigured && db && tId && teamInfo) {
       const ref = teamDoc(db, teamId);
       try {
         const finalRecord = await runTransaction(db, async (tx) => {
           const snap = await tx.get(ref);
           const data = snap.exists() ? snap.data() : undefined;
+          const existingSpins = spinsFromData(data);
           if (data?.hasSubmitted === true) {
-            const existingSpin = data.wheelSpin as WheelSpinRecord | undefined;
-            if (existingSpin && existingSpin.item) return existingSpin;
+            const existing = existingSpins[hole];
+            if (existing && existing.item) return existing;
             throw new Error('submitted');
           }
-          const existing = data?.wheelSpin as WheelSpinRecord | undefined;
-          if (existing && existing.item) {
-            return existing;
-          }
-          tx.set(ref, { wheelSpin: cleanRecord, frontNineConfirmed: true }, { merge: true });
+          // One spin per wheel-hole — never overwrite an existing spin.
+          const existing = existingSpins[hole];
+          if (existing && existing.item) return existing;
+          tx.set(ref, { wheelSpins: { [String(hole)]: cleanRecord } }, { merge: true });
           return record;
         });
-        setWheelSpin(finalRecord);
-        saveToLocal({ wheelSpin: finalRecord });
+        commitLocal(finalRecord);
       } catch (e) {
         const msg = e instanceof Error ? e.message : '';
         if (msg === 'submitted') {
@@ -611,12 +655,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return;
         }
         console.error('Failed to record wheel spin', e);
-        setWheelSpin(record);
-        saveToLocal({ wheelSpin: record });
+        commitLocal(record);
       }
     } else {
-      setWheelSpin(record);
-      saveToLocal({ wheelSpin: record });
+      commitLocal(record);
     }
   };
 
@@ -739,6 +781,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         resetDevice,
         frontNineConfirmed,
         wheelSpin,
+        wheelSpins,
         wheelAdjustment,
         targetedBy,
         hasSubmitted,
