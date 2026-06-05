@@ -82,7 +82,7 @@ function scoreColor(score: number | null | undefined, par: number): string {
 // All 18 holes in a single horizontally-scrollable row, with OUT / IN / TOT
 // totals tucked into the same table so the user can scrub across the whole
 // round without jumping between blocks.
-function MiniScorecard({ scores, holes: HOLES }: { scores: (number | null)[]; holes: CourseHole[] }) {
+function MiniScorecard({ scores, holes: HOLES, wheelAdjustment = 0 }: { scores: (number | null)[]; holes: CourseHole[]; wheelAdjustment?: number }) {
   const playedSum = (start: number, end: number) => {
     let s = 0; let any = false;
     for (let i = start; i < end; i++) {
@@ -136,7 +136,7 @@ function MiniScorecard({ scores, holes: HOLES }: { scores: (number | null)[]; ho
             <td className={`${totalCell} text-muted-foreground/60`}>{totPar}</td>
           </tr>
           {/* Score row */}
-          <tr>
+          <tr className={wheelAdjustment !== 0 ? 'border-b border-white/10' : ''}>
             <td className={`${labelCell} text-foreground/80 bg-[#0d0d0d]`}>Score</td>
             {HOLES.slice(0, 9).map((h, i) => {
               const s = scores[i] ?? null;
@@ -160,10 +160,51 @@ function MiniScorecard({ scores, holes: HOLES }: { scores: (number | null)[]; ho
             <td className={`${totalCell} text-base text-foreground/80 py-2`}>
               {inScore ?? ''}
             </td>
-            <td className={`${totalCell} text-base py-2 ${anyScored ? 'text-primary' : 'text-foreground/80'}`}>
+            <td className={`${totalCell} text-base py-2 ${anyScored ? 'text-foreground/70' : 'text-foreground/80'}`}>
               {anyScored ? totScore : ''}
             </td>
           </tr>
+          {/* Wheel row — only shown when a wheel adjustment exists */}
+          {wheelAdjustment !== 0 && (
+            <tr className="border-b border-white/10">
+              <td className={`${labelCell} bg-[#0d0d0d] font-black`} style={{ color: wheelAdjustment > 0 ? '#fb923c' : '#39FF14' }}>
+                Wheel
+              </td>
+              {/* 9 empty front-9 cells */}
+              {HOLES.slice(0, 9).map(h => (
+                <td key={h.hole} className="px-2 py-1.5 text-center text-muted-foreground/30 text-[10px]">—</td>
+              ))}
+              <td className={totalCell} />
+              {/* 9 empty back-9 cells */}
+              {HOLES.slice(9, 18).map(h => (
+                <td key={h.hole} className="px-2 py-1.5 text-center text-muted-foreground/30 text-[10px]">—</td>
+              ))}
+              <td className={totalCell} />
+              {/* Total wheel adjustment */}
+              <td className={`${totalCell} text-base font-black py-1.5`} style={{ color: wheelAdjustment > 0 ? '#fb923c' : '#39FF14' }}>
+                {wheelAdjustment > 0 ? `+${wheelAdjustment}` : wheelAdjustment}
+              </td>
+            </tr>
+          )}
+          {/* Net row — only shown when wheel is in play so the math is explicit */}
+          {wheelAdjustment !== 0 && anyScored && (
+            <tr>
+              <td className={`${labelCell} text-primary bg-[#0d0d0d] font-black`}>Net</td>
+              {HOLES.slice(0, 9).map(h => <td key={h.hole} className="px-2 py-1.5" />)}
+              <td className={totalCell} />
+              {HOLES.slice(9, 18).map(h => <td key={h.hole} className="px-2 py-1.5" />)}
+              <td className={totalCell} />
+              {(() => {
+                const net = totScore + wheelAdjustment - totPar;
+                const netLabel = net === 0 ? 'E' : net > 0 ? `+${net}` : `${net}`;
+                return (
+                  <td className={`${totalCell} text-base font-black py-1.5 ${net < 0 ? 'text-primary' : net > 0 ? 'text-orange-400' : 'text-foreground'}`}>
+                    {netLabel}
+                  </td>
+                );
+              })()}
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -470,10 +511,15 @@ export default function Leaderboard() {
                     <div className="col-span-1 text-center font-condensed font-bold text-muted-foreground">
                       {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
                     </div>
-                    <div className="col-span-3 text-right font-condensed text-xl font-black">
-                      <span className={team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}>
+                    <div className="col-span-3 text-right font-condensed font-black flex flex-col items-end justify-center gap-0.5">
+                      <span className={`text-xl leading-none ${team.netScore < 0 ? 'text-primary' : team.netScore > 0 ? 'text-orange-500' : 'text-foreground'}`}>
                         {team.netScore === 0 ? 'E' : team.netScore > 0 ? `+${team.netScore}` : team.netScore}
                       </span>
+                      {(team.wheelAdjustment ?? 0) !== 0 && (
+                        <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${(team.wheelAdjustment ?? 0) > 0 ? 'text-orange-400' : 'text-primary'}`}>
+                          whl {(team.wheelAdjustment ?? 0) > 0 ? `+${team.wheelAdjustment}` : team.wheelAdjustment}
+                        </span>
+                      )}
                     </div>
                   </button>
 
@@ -497,7 +543,7 @@ export default function Leaderboard() {
                         </div>
                       )}
                       {hasScores ? (
-                        <MiniScorecard scores={team.scores as (number | null)[]} holes={courseHoles} />
+                        <MiniScorecard scores={team.scores as (number | null)[]} holes={courseHoles} wheelAdjustment={team.wheelAdjustment ?? 0} />
                       ) : (
                         <p className="text-xs text-muted-foreground text-center py-4">
                           No scores entered yet.

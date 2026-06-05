@@ -149,7 +149,7 @@ function TeamInvite({ joinCode, teamCode }: { joinCode: string; teamCode: string
 export default function Home() {
   const [, setLocation] = useLocation();
   const { setTeamInfo, teamInfo, teamCode, hasSubmitted, serverTeamMissing, resetDevice } = useWFC();
-  const { tournament, activeId, autoTeeRule } = useTournament();
+  const { tournament, activeId, autoTeeRule, leaveTournament } = useTournament();
 
   const teamSize = Math.max(1, Math.min(4, tournament?.teamSize ?? 2));
   const joinCode = tournament?.joinCode ?? '';
@@ -291,10 +291,22 @@ export default function Home() {
                 </button>
               </div>
             ) : (
-              <div className="mt-3 w-full py-3 rounded-full border border-primary/40 bg-primary/10 flex items-center justify-center gap-2">
-                <span className="font-condensed font-bold uppercase tracking-widest text-xs text-primary">
-                  Round Submitted — Team Locked
-                </span>
+              <div className="mt-3 space-y-2">
+                <div className="w-full py-3 rounded-full border border-primary/40 bg-primary/10 flex items-center justify-center gap-2">
+                  <span className="font-condensed font-bold uppercase tracking-widest text-xs text-primary">
+                    Round Submitted — Team Locked
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm('Leave this tournament? You can join or create another one from the home screen.')) {
+                      leaveTournament();
+                    }
+                  }}
+                  className="w-full py-2.5 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-xs hover:bg-secondary/80 transition-colors"
+                >
+                  Leave Tournament
+                </button>
               </div>
             )}
           </div>
