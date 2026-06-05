@@ -180,7 +180,7 @@ export default function Home() {
   const setPlayerAt = (i: number, val: string) => {
     setPlayers(prev => prev.map((p, idx) => (idx === i ? val : p)));
   };
-  const addPlayer = () => setPlayers(prev => (prev.length < 4 ? [...prev, ''] : prev));
+  const addPlayer = () => setPlayers(prev => (prev.length < teamSize ? [...prev, ''] : prev));
   const removePlayer = (i: number) => setPlayers(prev => prev.filter((_, idx) => idx !== i));
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -380,7 +380,7 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {players.length < 4 && (
+                {players.length < teamSize && (
                   <button
                     type="button"
                     onClick={addPlayer}

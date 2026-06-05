@@ -19,6 +19,8 @@ interface TournamentContextValue {
   trackYardages: boolean;
   autoTeeRule: boolean;
   setActiveTournament: (id: string | null) => void;
+  /** Enter a tournament as a player, clearing any prior spectator flag for it. */
+  enterAsPlayer: (id: string) => void;
   enterSpectator: (id: string) => void;
   leaveTournament: () => void;
   /** Resolve a 6-char join code to a tournament id (Firestore lookup). */
@@ -68,6 +70,13 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
     } else {
       setIsSpectator(false);
     }
+  }, []);
+
+  const enterAsPlayer = useCallback((id: string) => {
+    try { localStorage.removeItem(spectatorKey(id)); } catch { /* ignore */ }
+    setActiveTournamentId(id);
+    setActiveIdState(id);
+    setIsSpectator(false);
   }, []);
 
   const enterSpectator = useCallback((id: string) => {
@@ -132,6 +141,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
         trackYardages,
         autoTeeRule,
         setActiveTournament,
+        enterAsPlayer,
         enterSpectator,
         leaveTournament,
         lookupJoinCode,

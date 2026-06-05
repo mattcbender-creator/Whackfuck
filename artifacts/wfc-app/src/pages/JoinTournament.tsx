@@ -16,7 +16,7 @@ type Step = 'code' | 'choose' | 'rejoin';
 export default function JoinTournament() {
   const [location, setLocation] = useLocation();
   const params = useParams<{ code?: string; teamCode?: string }>();
-  const { setActiveTournament, enterSpectator, lookupJoinCode } = useTournament();
+  const { enterAsPlayer, enterSpectator, lookupJoinCode } = useTournament();
 
   const watchIntent = location.startsWith('/watch');
 
@@ -32,7 +32,7 @@ export default function JoinTournament() {
 
   // Enter the tournament as a fresh device (registration happens on Home).
   const enterToRegister = (t: TournamentConfig) => {
-    setActiveTournament(t.id);
+    enterAsPlayer(t.id);
     setLocation('/home');
   };
 
@@ -43,7 +43,7 @@ export default function JoinTournament() {
       localStorage.setItem(joinedAtKey(t.id), String(Date.now()));
       localStorage.removeItem(storeKey(t.id));
     } catch { /* ignore */ }
-    setActiveTournament(t.id);
+    enterAsPlayer(t.id);
     setLocation('/home');
   };
 
