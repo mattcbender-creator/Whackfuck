@@ -4,9 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import {
-  addDoc, setDoc, getDocs, writeBatch, serverTimestamp, runTransaction,
+  addDoc, setDoc, getDocs, writeBatch, serverTimestamp,
   query, where, deleteDoc, updateDoc, onSnapshot, increment, Timestamp,
-  deleteField,
 } from 'firebase/firestore';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +17,7 @@ import {
   resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
+import { diffCorrectionEdits, correctTeamScores } from '@/lib/scoreSync';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
@@ -488,45 +488,16 @@ export default function Admin() {
       // modal opened with). Only these are applied; everything else stays under
       // the authority of whatever the player has written since.
       const snapshot = team.scores ?? [];
-      const edits: { idx: number; value: number | null }[] = [];
-      for (let i = 0; i < 18; i++) {
-        const before = snapshot[i] ?? null;
-        const after = correctDraft[i] ?? null;
-        if (before !== after) edits.push({ idx: i, value: after });
-      }
+      const edits = diffCorrectionEdits(snapshot, correctDraft);
       const teeChanged = autoTeeRule && (teeDraft ?? null) !== (team.teeOverride ?? null);
 
       if (edits.length === 0 && !teeChanged) { setCorrectingTeam(null); return; }
 
-      // Transaction: read latest team doc, apply only the edited holes onto the
-      // CURRENT server scores map, then recompute aggregates from that merged map
-      // plus the persisted wheel adjustment. This avoids clobbering concurrent
-      // player edits to other holes.
+      // Conflict-free correction: reads the latest team doc inside a transaction,
+      // applies only the edited holes onto the CURRENT server scores map, and
+      // recomputes aggregates. Concurrent player edits to other holes survive.
       const ref = teamDoc(db, team.id);
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(ref);
-        const data = snap.exists() ? snap.data() : {};
-        const merged = normalizeScores(data?.scores);
-        for (const e of edits) merged[e.idx] = e.value;
-
-        let strokes = 0, par = 0, hp = 0;
-        merged.forEach((s, i) => {
-          if (s !== null && s !== undefined) { strokes += s; par += holes[i]?.par ?? 4; hp += 1; }
-        });
-        const wheelAdj = typeof data?.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
-        const newNet = (hp > 0 ? strokes - par : 0) + wheelAdj;
-
-        const payload: Record<string, unknown> = { netScore: newNet, holesPlayed: hp };
-        if (edits.length > 0) {
-          const scoresPatch: Record<string, unknown> = {};
-          for (const e of edits) scoresPatch[String(e.idx + 1)] = e.value === null ? deleteField() : e.value;
-          payload.scores = scoresPatch;
-        }
-        if (teeChanged) {
-          payload.teeOverride = teeDraft === 'tips' || teeDraft === 'womens' ? teeDraft : deleteField();
-        }
-        tx.set(ref, payload, { merge: true });
-      });
+      await correctTeamScores(db, ref, edits, { changed: teeChanged, value: teeDraft }, holes);
 
       toast({ title: `Updated "${team.teamName}"` });
       setCorrectingTeam(null);

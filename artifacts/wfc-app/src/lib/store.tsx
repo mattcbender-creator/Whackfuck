@@ -4,8 +4,9 @@ import { useToast } from '@/hooks/use-toast';
 import {
   setDoc, onSnapshot, serverTimestamp,
   writeBatch, increment, arrayUnion, query, orderBy, getDocs,
-  runTransaction, addDoc, deleteField,
+  runTransaction, addDoc,
 } from 'firebase/firestore';
+import { writeHoleScore } from './scoreSync';
 import type { WheelItemId } from './wheel';
 import { useCourse, useTournament } from './tournamentContext';
 import {
@@ -584,11 +585,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Conflict-free per-hole write — field-level merge so concurrent scoring
     // of different holes by teammates never clobbers.
     if (isFirebaseConfigured && db && tId && teamInfo && lockResolved) {
-      const ref = teamDoc(db, teamId);
-      const payload = score === null
-        ? { scores: { [String(hole)]: deleteField() } }
-        : { scores: { [String(hole)]: score } };
-      setDoc(ref, payload, { merge: true }).catch(err => console.error('Score sync failed', err));
+      writeHoleScore(db, teamDoc(db, teamId), hole, score)
+        .catch(err => console.error('Score sync failed', err));
     }
   };
 
