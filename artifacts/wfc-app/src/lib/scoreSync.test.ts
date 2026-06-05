@@ -164,6 +164,7 @@ vi.mock('firebase/firestore', () => ({
 import {
   correctTeamScores, writeHoleScore,
   reconcileWheelHits, recordWheelSpinTx, applyManualAdjustment,
+  spinsFromData,
   type ParHole, type TargetedByEntry, type WheelSpinRecord,
 } from './scoreSync';
 import { normalizeScores } from './tournament';
@@ -555,5 +556,41 @@ describe('applyManualAdjustment', () => {
     const scores = data.scores as Record<string, number>;
     expect(scores['1']).toBe(4);
     expect(scores['5']).toBe(5); // concurrent player write survives
+  });
+});
+
+describe('spinsFromData (hole-agnostic wheel resolution)', () => {
+  const spin = (item: string): WheelSpinRecord => ({ item: item as WheelSpinRecord['item'], at: 1000 });
+
+  it('reads the per-hole wheelSpins map at arbitrary holes, not just hole 9', () => {
+    const out = spinsFromData({ wheelSpins: { '3': spin('banana'), '14': spin('mushroom') } });
+    expect(out[3]?.item).toBe('banana');
+    expect(out[14]?.item).toBe('mushroom');
+    expect(out[9]).toBeUndefined();
+  });
+
+  it('keeps every spin when multiple wheel holes are in play', () => {
+    const out = spinsFromData({
+      wheelSpins: { '1': spin('boo'), '7': spin('super_star'), '18': spin('lightning') },
+    });
+    expect(Object.keys(out).map(Number).sort((a, b) => a - b)).toEqual([1, 7, 18]);
+  });
+
+  it('falls back to the legacy single wheelSpin field bucketed under hole 9', () => {
+    const out = spinsFromData({ wheelSpin: spin('mushroom') });
+    expect(out[9]?.item).toBe('mushroom');
+  });
+
+  it('ignores out-of-range hole keys and entries with no item', () => {
+    const out = spinsFromData({
+      wheelSpins: { '0': spin('banana'), '19': spin('boo'), '5': { at: 1 } },
+    });
+    expect(out).toEqual({});
+  });
+
+  it('returns an empty map for a team that never spun', () => {
+    expect(spinsFromData({})).toEqual({});
+    expect(spinsFromData(null)).toEqual({});
+    expect(spinsFromData(undefined)).toEqual({});
   });
 });

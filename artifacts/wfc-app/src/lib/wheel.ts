@@ -92,7 +92,7 @@ export const WHEEL_ITEMS: WheelItem[] = [
     textColor: '#ffffff',
     selection: 'none',
     flavor: 'Boost',
-    description: '-1 stroke to your own back-9 total.',
+    description: '-1 stroke to your own net total.',
   },
   {
     id: 'super_star',
@@ -103,7 +103,7 @@ export const WHEEL_ITEMS: WheelItem[] = [
     textColor: '#1a1a1a',
     selection: 'none',
     flavor: 'Invincible!',
-    description: '-2 strokes to your own back-9 total.',
+    description: '-2 strokes to your own net total.',
   },
   {
     id: 'boo',

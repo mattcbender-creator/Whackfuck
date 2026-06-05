@@ -48,12 +48,12 @@ function fmtNet(net: number) {
 }
 
 export default function HoleView() {
-  const { holes: HOLES, holeRules, trackYardages } = useCourse();
+  const { holes: HOLES, holeRules, trackYardages, autoTeeRule } = useCourse();
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     wheelSpins, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
-    holeOrder, startingHole, isShotgun,
+    holeOrder, startingHole,
   } = useWFC();
   const { tournament, isHost } = useTournament();
   const isFinal = tournament?.status === 'final';
@@ -140,37 +140,11 @@ export default function HoleView() {
   // spinning the wheel is gone — the wheel is now a per-hole rule.
   const holeLocked = hasSubmitted;
 
-  // ── The gate: enforces ordered scoring + back-9 lock.
+  // Free navigation: players may move to any hole and score holes in any order.
   // Works on play-order positions (0–17), not raw hole indices.
-  // Returns true if navigation is allowed; false if blocked.
   const tryGoToPos = (targetPos: number): boolean => {
     if (targetPos === orderPos) return true;
     userNavigatedRef.current = true;
-    // Backwards is always fine.
-    if (targetPos < orderPos) {
-      setOrderPos(targetPos);
-      return true;
-    }
-    // Forwards: every hole earlier in the play order must have a score. The
-    // strict in-order gate applies to a normal start only — a shotgun start is
-    // non-linear (teams begin on different holes, unassigned teams fall back to
-    // hole 1) so enforcing order there would trap players. Let shotgun navigate
-    // freely.
-    if (!isShotgun) {
-      let missingPos = -1;
-      for (let p = 0; p < targetPos; p++) {
-        if (scores[holeOrder[p] - 1] === null) { missingPos = p; break; }
-      }
-      if (missingPos !== -1) {
-        toast({
-          title: `Score hole ${holeOrder[missingPos]} first`,
-          description: 'Holes must be entered in order.',
-          variant: 'destructive',
-        });
-        setOrderPos(missingPos);
-        return false;
-      }
-    }
     setOrderPos(targetPos);
     return true;
   };
@@ -243,11 +217,13 @@ export default function HoleView() {
               {teamInfo?.teamName || 'YOUR TEAM'}
             </p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
-              Thru {holesPlayed} · {currentTee === 'tips' ? 'Tips' : "Women's"} tees
+              Thru {holesPlayed}{autoTeeRule ? ` · ${currentTee === 'tips' ? 'Tips' : "Women's"} tees` : ''}
             </p>
             {/* Raw-vs-par chip: shows the value that actually drives the tee
                 assignment, so a player who sees TOTAL +2 / TIPS isn't
-                confused. Updates live as scores are entered. */}
+                confused. Updates live as scores are entered. Only shown when the
+                tournament uses the WFC auto-tee rule. */}
+            {autoTeeRule && (
             <p className="text-[10px] uppercase tracking-widest mt-1">
               <span className="text-muted-foreground/70 font-bold">Raw vs Par&nbsp;</span>
               <span className={`font-black ${rawNet < 0 ? 'text-primary' : 'text-foreground/80'}`}>
@@ -257,6 +233,7 @@ export default function HoleView() {
                 — drives your tee
               </span>
             </p>
+            )}
           </div>
           <div className="text-right">
             <div className={`font-condensed text-3xl font-black leading-none ${netScore < 0 ? 'text-primary' : 'text-foreground'}`}>
@@ -357,8 +334,9 @@ export default function HoleView() {
                 { key: 'womens', label: "Wmn's", val: hole.womens },
               ].map(({ key, label, val }) => {
                 const isActive =
-                  (key === 'tips' && currentTee === 'tips') ||
-                  (key === 'womens' && currentTee === 'womens');
+                  autoTeeRule &&
+                  ((key === 'tips' && currentTee === 'tips') ||
+                  (key === 'womens' && currentTee === 'womens'));
                 return (
                   <div
                     key={key}

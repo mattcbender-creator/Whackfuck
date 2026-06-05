@@ -17,7 +17,7 @@ import {
   resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
-import { diffCorrectionEdits, correctTeamScores, applyManualAdjustment } from '@/lib/scoreSync';
+import { diffCorrectionEdits, correctTeamScores, applyManualAdjustment, spinsFromData, type WheelSpinRecord } from '@/lib/scoreSync';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
@@ -92,6 +92,7 @@ interface LiveTeam {
   lastUpdated?: number | null;
   frontNineConfirmed?: boolean;
   wheelSpin?: { item?: string } | null;
+  wheelSpins?: Record<number, WheelSpinRecord>;
   teamCode?: string;
   teeOverride?: 'tips' | 'womens' | null;
 }
@@ -129,12 +130,17 @@ function mapTeam(id: string, data: Record<string, unknown>): LiveTeam {
     lastUpdated: toMs(lastUpdatedRaw),
     frontNineConfirmed: !!d.frontNineConfirmed,
     wheelSpin: (d.wheelSpin as { item?: string } | null | undefined) ?? null,
+    wheelSpins: spinsFromData(d),
     teamCode: typeof d.teamCode === 'string' ? d.teamCode : undefined,
     teeOverride: d.teeOverride === 'tips' || d.teeOverride === 'womens' ? d.teeOverride : null,
   };
 }
 
-function auditTeam(t: LiveTeam, holes: CourseHole[]): AuditFlag[] {
+function auditTeam(
+  t: LiveTeam,
+  holes: CourseHole[],
+  holeRules: Array<{ type?: string } | null | undefined>,
+): AuditFlag[] {
   const flags: AuditFlag[] = [];
   const scores = Array.isArray(t.scores) ? t.scores : [];
   let birdies = 0;
@@ -194,27 +200,25 @@ function auditTeam(t: LiveTeam, holes: CourseHole[]): AuditFlag[] {
       detail: 'Hole-in-one claimed — verify before paying out.',
     });
   }
-  const back9Scored = scores.slice(9).some(s => s !== null && s !== undefined);
-  if (back9Scored && !t.wheelSpin?.item) {
+  // Wheel-aware: only tournaments that place Item Box holes can be flagged for
+  // skipping a spin. For each scored wheel hole with no recorded spin, flag it.
+  // Plain tournaments (no wheel holes) never trip this.
+  const unspunWheelHoles = holeRules
+    .map((r, i) => (r?.type === 'wheel' ? i : -1))
+    .filter(i => i >= 0 && scores[i] !== null && scores[i] !== undefined && !t.wheelSpins?.[i + 1]?.item);
+  if (unspunWheelHoles.length > 0) {
+    const list = unspunWheelHoles.map(i => i + 1).join(', ');
     flags.push({
       severity: 'high',
-      label: 'Back 9 scored without Item Box spin',
-      detail: 'Players skipped the wheel — back-9 lock bypassed.',
-    });
-  }
-  const front9Filled = scores.slice(0, 9).every(s => s !== null && s !== undefined);
-  if (front9Filled && back9Scored && !t.frontNineConfirmed) {
-    flags.push({
-      severity: 'medium',
-      label: 'Front 9 never confirmed',
-      detail: 'Played the back 9 without locking the front — possible re-edits.',
+      label: 'Item Box hole scored without a spin',
+      detail: `Hole${unspunWheelHoles.length === 1 ? '' : 's'} ${list} scored but the wheel was never spun.`,
     });
   }
   return flags;
 }
 
 export default function Admin() {
-  const { holes, autoTeeRule } = useCourse();
+  const { holes, autoTeeRule, holeRules } = useCourse();
   const { tournament, isHost } = useTournament();
   const [, navigate] = useLocation();
   const [password, setPassword] = useState('');
@@ -1260,7 +1264,7 @@ export default function Admin() {
             </div>
             <div className="flex items-center gap-3">
               {(() => {
-                const flagged = realTeams.filter(t => auditTeam(t, holes).length > 0).length;
+                const flagged = realTeams.filter(t => auditTeam(t, holes, holeRules).length > 0).length;
                 return (
                   <span className={`font-condensed text-lg font-black leading-none ${flagged > 0 ? 'text-orange-400' : 'text-primary'}`}>
                     {flagged === 0 ? 'All Clear' : `${flagged} flagged`}
@@ -1274,13 +1278,13 @@ export default function Admin() {
           {auditOpen && (
             <div className="border-t border-border">
               <p className="text-[10px] text-muted-foreground/80 px-5 py-3 border-b border-border/40 leading-relaxed">
-                Real teams only. Flags catch likely score-glitches: edits after submitting, suspiciously low net scores, eagles on par 3s, skipped front-9 lock, back-9 scored without spinning the Item Box, etc. Tap a team for the breakdown.
+                Real teams only. Flags catch likely score-glitches: edits after submitting, suspiciously low net scores, eagles on par 3s, Item Box holes scored without a spin, etc. Tap a team for the breakdown.
               </p>
               {realTeams.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-6 px-5">No real teams yet.</p>
               )}
               {realTeams.map(team => {
-                const flags = auditTeam(team, holes);
+                const flags = auditTeam(team, holes, holeRules);
                 const hasHigh = flags.some(f => f.severity === 'high');
                 const expanded = auditExpandedId === team.id;
                 const showSubmitTime = team.hasSubmitted && team.submittedAt
@@ -1365,9 +1369,8 @@ export default function Admin() {
                         </div>
 
                         <div className="flex gap-2 text-[10px] text-muted-foreground/70 pt-1 px-1 flex-wrap">
-                          <span>Wheel: <span className="text-foreground/80">{team.wheelSpin?.item ?? 'none'}</span></span>
+                          <span>Spins: <span className="text-foreground/80">{Object.keys(team.wheelSpins ?? {}).length}</span></span>
                           <span>· Adj: <span className="text-foreground/80">{team.wheelAdjustment ?? 0}</span></span>
-                          <span>· F9 lock: <span className="text-foreground/80">{team.frontNineConfirmed ? 'yes' : 'no'}</span></span>
                         </div>
                       </div>
                     )}

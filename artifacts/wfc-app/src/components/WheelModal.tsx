@@ -524,9 +524,9 @@ export default function WheelModal({ open, onClose, hole }: Props) {
       case 'lightning':
         return 'Lightning struck every other team. +1 stroke each.';
       case 'mushroom':
-        return 'Speed boost! -1 stroke off your back 9.';
+        return 'Speed boost! -1 stroke off your net score.';
       case 'super_star':
-        return 'Invincibility! -2 strokes off your back 9.';
+        return 'Invincibility! -2 strokes off your net score.';
       case 'boo':
         return last
           ? `Boo stole 1 stroke from ${last}. They get +1, you get -1.`

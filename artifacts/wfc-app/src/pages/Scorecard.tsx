@@ -4,7 +4,7 @@ import { useWFC } from '@/lib/store';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
 import { FinalizedBanner } from '@/components/FinalizedBanner';
 import type { CourseHole } from '@/lib/tournament';
-import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers, firstUnscoredPlayPos, isHoleOutOfOrder } from '@/lib/tournament';
+import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X } from 'lucide-react';
@@ -212,14 +212,14 @@ function pickChirp(scores: (number | null)[], netScore: number, HOLES: CourseHol
 }
 
 export default function Scorecard() {
-  const { holes: HOLES, holeRules, trackYardages } = useCourse();
+  const { holes: HOLES, holeRules, trackYardages, autoTeeRule } = useCourse();
   const { tournament, isHost } = useTournament();
   const isFinal = tournament?.status === 'final';
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, wheelAdjustment, holesPlayed, setScore,
     wheelSpins, targetedBy, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
-    holeOrder, startingHole, isShotgun,
+    holeOrder, startingHole,
   } = useWFC();
   const [, setLocation] = useLocation();
   // Default to the first unscored hole in PLAY order so the scorecard opens on
@@ -256,6 +256,10 @@ export default function Scorecard() {
   const selSpin = wheelSpins[selectedIdx + 1] ?? null;
   const spunItem = getWheelItem(selSpin?.item);
   const anyWheelHole = holeRules.some(r => r?.type === 'wheel');
+  // The selected hole only gets a "Check Rule" affordance when it actually
+  // carries a rule — plain holes (type 'none') have nothing to show.
+  const selRule = holeRules[selectedIdx];
+  const selHasRule = !!selRule && selRule.type !== 'none';
 
   // Play-order halves: first 9 played holes vs last 9, by hole index. For a
   // normal start these are [0..8] / [9..17]; a shotgun start wraps around.
@@ -265,10 +269,8 @@ export default function Scorecard() {
   const halfHoles = halfIdxs.map(idx => HOLES[idx]);
   const halfScores = halfIdxs.map(idx => scores[idx]);
 
-  // Play position (0–17) of a given hole index, and the position of the first
-  // hole still unscored (18 when the round is complete).
+  // Play position (0–17) of a given hole index.
   const playPos = (idx: number) => holeOrder.indexOf(idx + 1);
-  const firstUnscoredPos = firstUnscoredPlayPos(holeOrder, scores);
 
   // Running cumulative to-par within this half
   let running = 0;
@@ -309,18 +311,7 @@ export default function Scorecard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startingHole]);
 
-  // Scores lock only once the round is submitted (the old front-9 wheel lock is gone).
-  const selLocked = false;
-
-  // Navigation into the back 9 no longer gates on the wheel — the wheel is a
-  // per-hole rule that fires when that hole's score is entered.
-  const tryGoToBack = (targetIdx: number): boolean => {
-    setSelectedIdx(targetIdx);
-    return true;
-  };
-
   const handleChange = (delta: number) => {
-    if (selLocked) return;
     if (isFinal) {
       toast({
         title: 'Tournament finalized',
@@ -337,19 +328,6 @@ export default function Scorecard() {
         description: 'Your final score has been submitted. Scores can no longer be changed.',
         variant: 'destructive',
       });
-      return;
-    }
-    // STRICT IN-ORDER (normal start only): cannot enter a score for a hole when
-    // any prior hole in play order is still blank. Snap them back to the first
-    // unscored hole. Shotgun starts relax this so players are never trapped.
-    if (isHoleOutOfOrder({ holeIdx: selectedIdx, order: holeOrder, scores, isShotgun }) && firstUnscoredPos < 18) {
-      const firstUnscoredHole = holeOrder[firstUnscoredPos];
-      toast({
-        title: `Score hole ${firstUnscoredHole} first`,
-        description: 'Enter scores in order — no skipping holes.',
-        variant: 'destructive',
-      });
-      setSelectedIdx(firstUnscoredHole - 1);
       return;
     }
     const cur = scores[selectedIdx];
@@ -378,13 +356,6 @@ export default function Scorecard() {
       setWheelOpen(true);
     }
   };
-
-  // True if entering a score for this hole would be out-of-order (play order).
-  // Always false for a shotgun start — those teams play their own wrap-around
-  // order and must never be blocked.
-  const isOutOfOrder = (idx: number) =>
-    isHoleOutOfOrder({ holeIdx: idx, order: holeOrder, scores, isShotgun });
-  const selOutOfOrder = isOutOfOrder(selectedIdx);
 
   const handleSync = async () => {
     if (!db || !teamInfo) return;
@@ -468,9 +439,11 @@ export default function Scorecard() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {/* Auto-Tee indicator. Shows RAW score-vs-par (not net) because
+              {/* Auto-Tee indicator — only when this tournament uses the WFC
+                  under-par tee rule. Shows RAW score-vs-par (not net) because
                   tees are driven by raw scoring only — wheel hits change net
                   but never move the tee block. */}
+              {autoTeeRule && (
               <div className="bg-card border border-border rounded-lg px-3 py-1.5 text-center min-w-[78px]">
                 <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Auto-Tee</p>
                 <p className={`font-condensed text-xl font-black leading-tight ${currentTee === 'tips' ? 'text-red-400' : 'text-primary'}`}>
@@ -483,6 +456,7 @@ export default function Scorecard() {
                   Raw vs Par
                 </p>
               </div>
+              )}
 
               <button
                 onClick={handleSync}
@@ -494,8 +468,10 @@ export default function Scorecard() {
             </div>
           </div>
 
-          {/* Score breakdown — raw strokes vs par, the wheel's net stroke
-              effect kept on its own, and the combined net the wheel folds into. */}
+          {/* Score breakdown. With the Item Box in play, raw strokes, the wheel's
+              net adjustment, and the combined net are split out. A plain
+              tournament just shows the score relative to par. */}
+          {anyWheelHole ? (
           <div className="mt-3 grid grid-cols-3 gap-2">
             <div className="bg-card/60 border border-border/60 rounded-lg py-1.5 text-center">
               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Raw</p>
@@ -516,9 +492,19 @@ export default function Scorecard() {
               </p>
             </div>
           </div>
+          ) : (
+          <div className="mt-3">
+            <div className="bg-card/60 border border-border/60 rounded-lg py-1.5 text-center" data-testid="summary-net-score">
+              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">To Par</p>
+              <p className={`font-condensed text-lg font-black leading-tight ${netCls(netScore)}`}>
+                {netScore === 0 ? 'E' : netScore > 0 ? `+${netScore}` : netScore}
+              </p>
+            </div>
+          </div>
+          )}
 
           {/* Tee threshold hint — go under par on your scorecard to unlock Tips */}
-          {currentTee === 'womens' && (
+          {autoTeeRule && currentTee === 'womens' && (
             <div className="mt-2 flex justify-between items-center">
               <span className="text-[9px] text-muted-foreground uppercase tracking-widest">
                 Get your scorecard under par to move to Tips
@@ -534,7 +520,7 @@ export default function Scorecard() {
                 key={h}
                 onClick={() => {
                   if (h === 'back') {
-                    if (!tryGoToBack(backIdxs[0])) return;
+                    selectCell(backIdxs[0]);
                     setHalf('back');
                   } else {
                     setHalf('front');
@@ -613,9 +599,9 @@ export default function Scorecard() {
               {trackYardages && (
               <tr className="border-b border-white/10">
                 <td
-                  className={`${STICKY} ${currentTee === 'tips' ? 'text-red-400' : 'text-blue-400'}`}
+                  className={`${STICKY} ${!autoTeeRule ? 'text-foreground/50' : currentTee === 'tips' ? 'text-red-400' : 'text-blue-400'}`}
                 >
-                  {currentTee === 'tips' ? 'TIPS' : "WMN'S"}
+                  {autoTeeRule ? (currentTee === 'tips' ? 'TIPS' : "WMN'S") : 'YDS'}
                 </td>
                 {halfHoles.map((h, i) => (
                   <td
@@ -849,6 +835,7 @@ export default function Scorecard() {
                 </p>
               </div>
             </div>
+            {selHasRule && (
             <button
               onClick={() => setActiveRule(selectedIdx)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary/15 border border-primary/40 hover:bg-primary/25 transition-colors text-xs font-bold uppercase tracking-wider text-primary"
@@ -856,18 +843,19 @@ export default function Scorecard() {
               <Info className="w-3.5 h-3.5" />
               Check Rule
             </button>
+            )}
           </div>
 
           {/* Score stepper */}
           <div className="px-4 py-4">
-            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${selLocked || selOutOfOrder || hasSubmitted ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
+            <div className={`flex items-center justify-between bg-background/60 rounded-xl p-2 border ${hasSubmitted ? 'border-primary/30 opacity-70' : 'border-border/50'}`}>
               <button
                 data-testid={`score-decrease-hole-${selHole.hole}`}
                 onClick={() => handleChange(-1)}
-                disabled={selLocked || selOutOfOrder || hasSubmitted}
+                disabled={hasSubmitted}
                 className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
-                {selLocked || hasSubmitted ? <Lock className="w-5 h-5" /> : <Minus className="w-6 h-6" />}
+                {hasSubmitted ? <Lock className="w-5 h-5" /> : <Minus className="w-6 h-6" />}
               </button>
 
               <div className="flex flex-col items-center min-w-[96px]">
@@ -878,18 +866,18 @@ export default function Scorecard() {
                   {selScore ?? '—'}
                 </span>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mt-1 h-4 flex items-center gap-1">
-                  {(selLocked || hasSubmitted) && <Lock className="w-3 h-3 text-primary" />}
-                  {hasSubmitted ? 'SUBMITTED' : selLocked ? 'LOCKED' : selOutOfOrder ? 'BLOCKED' : scoreLabel(selDiff)}
+                  {hasSubmitted && <Lock className="w-3 h-3 text-primary" />}
+                  {hasSubmitted ? 'SUBMITTED' : scoreLabel(selDiff)}
                 </span>
               </div>
 
               <button
                 data-testid={`score-increase-hole-${selHole.hole}`}
                 onClick={() => handleChange(1)}
-                disabled={selLocked || selOutOfOrder || hasSubmitted}
+                disabled={hasSubmitted}
                 className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary hover:bg-primary hover:text-primary-foreground transition-all active:scale-95 text-secondary-foreground disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-secondary disabled:hover:text-secondary-foreground"
               >
-                {selLocked || hasSubmitted ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
+                {hasSubmitted ? <Lock className="w-5 h-5" /> : <Plus className="w-6 h-6" />}
               </button>
             </div>
             {hasSubmitted && (
@@ -897,14 +885,6 @@ export default function Scorecard() {
                 <Lock className="w-3 h-3 inline-block mr-1 -mt-0.5" />
                 Round Submitted — Scores Final
               </p>
-            )}
-            {selOutOfOrder && !selLocked && firstUnscoredPos < 18 && (
-              <button
-                onClick={() => setSelectedIdx(holeOrder[firstUnscoredPos] - 1)}
-                className="block mx-auto mt-2 text-[10px] text-primary/90 hover:text-primary uppercase tracking-widest font-bold"
-              >
-                Score hole {holeOrder[firstUnscoredPos]} first →
-              </button>
             )}
           </div>
 
@@ -929,11 +909,6 @@ export default function Scorecard() {
               onClick={() => {
                 const pos = playPos(selectedIdx);
                 const nextPos = Math.min(17, pos + 1);
-                // Moving from the 9th played hole into the back 9 gates the Item Box (normal start only).
-                if (pos === 8 && nextPos === 9) {
-                  tryGoToBack(backIdxs[0]);
-                  return;
-                }
                 selectCell(holeOrder[nextPos] - 1);
               }}
               disabled={playPos(selectedIdx) === 17}
@@ -971,7 +946,7 @@ export default function Scorecard() {
                 <span>Hole {ruleHole.hole}</span>
                 <span>Par {ruleHole.par}</span>
                 <span>Hdcp {ruleHole.hdcp}</span>
-                {trackYardages && <span>{currentTee === 'tips' ? ruleHole.tips : ruleHole.womens} yds ({currentTee === 'tips' ? 'Tips' : "Women's"})</span>}
+                {trackYardages && <span>{currentTee === 'tips' ? ruleHole.tips : ruleHole.womens} yds{autoTeeRule ? ` (${currentTee === 'tips' ? 'Tips' : "Women's"})` : ''}</span>}
               </div>
             </div>
             );

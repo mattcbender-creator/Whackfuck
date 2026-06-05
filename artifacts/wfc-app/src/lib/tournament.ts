@@ -233,7 +233,7 @@ export function blankTournamentSetup(): TournamentSetupDefaults {
   };
 }
 
-// ── Shotgun play order & in-order scoring lock ──────────────────────────────
+// ── Shotgun play order ──────────────────────────────────────────────────────
 // A tournament starts either "normal" (everyone tees off hole 1) or "shotgun"
 // (each team begins on its own assigned hole and wraps around all 18). Play
 // order is the sequence of hole numbers a team plays. A normal start, and any
@@ -244,28 +244,11 @@ export function playOrder(startingHole: number): number[] {
 }
 
 // Position (0–17) of the first hole still unscored in play order; 18 when every
-// hole has a score.
+// hole has a score. Used for navigation defaults, not for blocking entry —
+// players may score any hole in any order.
 export function firstUnscoredPlayPos(order: number[], scores: (number | null)[]): number {
   const p = order.findIndex(n => scores[n - 1] == null);
   return p === -1 ? 18 : p;
-}
-
-// Whether entering a score for hole `holeIdx` (0–17) would be out of play order.
-// The strict in-order lock only applies to a NORMAL start. A shotgun start is
-// inherently non-linear — teams begin on different holes, and unassigned teams
-// (and the host, who never joins as a team) fall back to hole 1 — so enforcing
-// order there traps players on a blocked hole they can't score. Relaxing it for
-// shotgun lets every team score and navigate freely; normal start is unchanged.
-export function isHoleOutOfOrder(params: {
-  holeIdx: number;
-  order: number[];
-  scores: (number | null)[];
-  isShotgun: boolean;
-}): boolean {
-  if (params.isShotgun) return false;
-  const pos = params.order.indexOf(params.holeIdx + 1);
-  if (pos < 0) return false;
-  return pos > firstUnscoredPlayPos(params.order, params.scores);
 }
 
 // ── WFC 2026 seed ───────────────────────────────────────────────────────────

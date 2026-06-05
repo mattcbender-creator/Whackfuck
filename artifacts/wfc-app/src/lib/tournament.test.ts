@@ -10,7 +10,6 @@ import {
   WHEEL_RULE_NAME,
   playOrder,
   firstUnscoredPlayPos,
-  isHoleOutOfOrder,
   clearAllLocalAppState,
   getActiveTournamentId,
   setActiveTournamentId,
@@ -160,47 +159,6 @@ describe('firstUnscoredPlayPos', () => {
 
   it('is 18 when the round is complete', () => {
     expect(firstUnscoredPlayPos(playOrder(1), Array(18).fill(4))).toBe(18);
-  });
-});
-
-describe('isHoleOutOfOrder (in-order scoring lock)', () => {
-  const blank = (): (number | null)[] => Array(18).fill(null);
-
-  it('normal start blocks scoring a hole ahead of the first unscored one', () => {
-    const order = playOrder(1);
-    // Nothing scored yet → only hole 1 (idx 0) is allowed.
-    expect(isHoleOutOfOrder({ holeIdx: 0, order, scores: blank(), isShotgun: false })).toBe(false);
-    expect(isHoleOutOfOrder({ holeIdx: 2, order, scores: blank(), isShotgun: false })).toBe(true);
-  });
-
-  it('normal start allows the next hole once the prior one is scored', () => {
-    const order = playOrder(1);
-    const scores = blank();
-    scores[0] = 4; // hole 1 scored
-    expect(isHoleOutOfOrder({ holeIdx: 1, order, scores, isShotgun: false })).toBe(false);
-    expect(isHoleOutOfOrder({ holeIdx: 2, order, scores, isShotgun: false })).toBe(true);
-  });
-
-  it('shotgun never blocks any hole, even with everything blank', () => {
-    // Regression: shotgun teams (and the host, who falls back to hole 1) used to
-    // be trapped — every hole past the first appeared BLOCKED and steppers were
-    // disabled. They must now be freely scoreable.
-    const order = playOrder(12);
-    for (let idx = 0; idx < 18; idx++) {
-      expect(isHoleOutOfOrder({ holeIdx: idx, order, scores: blank(), isShotgun: true })).toBe(false);
-    }
-  });
-
-  it('shotgun fallback to hole 1 (unassigned team / host) is also unblocked', () => {
-    const order = playOrder(1); // unassigned shotgun team
-    for (let idx = 0; idx < 18; idx++) {
-      expect(isHoleOutOfOrder({ holeIdx: idx, order, scores: blank(), isShotgun: true })).toBe(false);
-    }
-  });
-
-  it('an unknown hole index is never out of order', () => {
-    const order = playOrder(1);
-    expect(isHoleOutOfOrder({ holeIdx: 99, order, scores: blank(), isShotgun: false })).toBe(false);
   });
 });
 

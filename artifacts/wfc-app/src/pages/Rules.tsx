@@ -4,9 +4,18 @@ import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export default function Rules() {
-  const { holes: HOLES, holeRules, trackYardages } = useCourse();
+  const { holes: HOLES, holeRules, trackYardages, autoTeeRule } = useCourse();
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: 'center' });
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Intro cards are opt-in: the tee card only when this tournament uses the
+  // WFC auto-tee rule, and the Item Box cards only when at least one hole
+  // carries the wheel. The carousel label + bounds derive from which exist.
+  const anyWheelHole = holeRules.some(r => r?.type === 'wheel');
+  const introLabels: string[] = [];
+  if (autoTeeRule) introLabels.push('TEE');
+  if (anyWheelHole) introLabels.push('BOX', 'ITEMS');
+  const introCount = introLabels.length;
 
   const scrollPrev = useCallback(() => {
     if (emblaApi) emblaApi.scrollPrev();
@@ -42,7 +51,8 @@ export default function Rules() {
       <div className="flex-1 flex flex-col justify-center w-full relative">
         <div className="overflow-hidden" ref={emblaRef}>
           <div className="flex touch-pan-y h-full">
-            {/* ── Intro card 1: How Tees Work ── */}
+            {/* ── Intro card 1: How Tees Work (auto-tee tournaments only) ── */}
+            {autoTeeRule && (
             <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
               <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
                 <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
@@ -77,8 +87,10 @@ export default function Rules() {
                 </div>
               </div>
             </div>
+            )}
 
-            {/* ── Intro card 2: Item Box rules ── */}
+            {/* ── Intro card 2: Item Box rules (wheel tournaments only) ── */}
+            {anyWheelHole && (
             <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
               <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
                 <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
@@ -121,8 +133,10 @@ export default function Rules() {
                 </div>
               </div>
             </div>
+            )}
 
-            {/* ── Intro card 3: The 8 items ── */}
+            {/* ── Intro card 3: The 8 items (wheel tournaments only) ── */}
+            {anyWheelHole && (
             <div className="flex-[0_0_85%] min-w-0 pl-4 relative h-[60vh]">
               <div className="h-full bg-card border-2 border-primary/50 rounded-2xl p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
                 <div className="absolute -top-10 -right-10 font-condensed text-[200px] font-black text-primary/5 pointer-events-none leading-none select-none">
@@ -159,11 +173,11 @@ export default function Rules() {
                     </div>
                     <div className="flex gap-2">
                       <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#ff7043' }}>Mushroom</span>
-                      <span className="text-card-foreground/90">−1 off your back 9</span>
+                      <span className="text-card-foreground/90">−1 off your net score</span>
                     </div>
                     <div className="flex gap-2">
                       <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#ffd700' }}>Star</span>
-                      <span className="text-card-foreground/90">−2 off your back 9</span>
+                      <span className="text-card-foreground/90">−2 off your net score</span>
                     </div>
                     <div className="flex gap-2">
                       <span className="font-condensed font-black uppercase tracking-wider w-24 shrink-0" style={{ color: '#a05ec6' }}>Boo</span>
@@ -176,6 +190,7 @@ export default function Rules() {
                 </div>
               </div>
             </div>
+            )}
 
             {HOLES.map((hole, idx) => {
               const rule = holeRules[idx];
@@ -251,18 +266,14 @@ export default function Rules() {
           </button>
           
           <div className="font-condensed text-xl font-bold tracking-widest">
-            {selectedIndex === 0
-              ? 'TEE'
-              : selectedIndex === 1
-              ? 'BOX'
-              : selectedIndex === 2
-              ? 'ITEMS'
-              : `${selectedIndex - 2} / 18`}
+            {selectedIndex < introCount
+              ? introLabels[selectedIndex]
+              : `${selectedIndex - introCount + 1} / 18`}
           </div>
 
           <button 
             onClick={scrollNext}
-            disabled={selectedIndex === HOLES.length + 2}
+            disabled={selectedIndex === HOLES.length + introCount - 1}
             data-testid="button-rule-next"
             className="w-12 h-12 flex items-center justify-center rounded-full bg-secondary text-secondary-foreground disabled:opacity-30 transition-opacity"
           >
