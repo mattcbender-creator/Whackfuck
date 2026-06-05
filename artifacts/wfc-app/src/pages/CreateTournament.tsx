@@ -9,7 +9,7 @@ import { useTournament, createTournamentDoc, fetchTournament } from '@/lib/tourn
 import { isFirebaseConfigured } from '@/lib/firebase';
 import {
   type CourseHole, type TournamentConfig, type HoleRule, type RuleLibraryEntry,
-  blankCourse, holeRulesFromCourse,
+  blankCourse, holeRulesFromCourse, blankTournamentSetup, tracksYardages,
   generateTournamentId, generateJoinCode, generateHostKey,
   buildWfc2026Config, WFC_2026_ID, WFC_2026_JOIN_CODE, WFC_2026_HOST_KEY,
   hostKeyKey,
@@ -72,17 +72,17 @@ export default function CreateTournament() {
     } else {
       // Clean slate: blank holes (par placeholder, no yardages, no rules) and
       // default settings — nothing pre-filled from Dundee.
-      const blank = blankCourse();
-      setName('');
-      setCourseName('');
-      setTeamSize(2);
-      setStartType('normal');
-      setAutoTeeRule(false);
-      setHoles(blank);
+      const blank = blankTournamentSetup();
+      setName(blank.name);
+      setCourseName(blank.courseName);
+      setTeamSize(blank.teamSize);
+      setStartType(blank.startType);
+      setAutoTeeRule(blank.autoTeeRule);
+      setHoles(blank.holes);
       setRulesDirty(false);
-      setHoleRules(holeRulesFromCourse(blank));
-      setCustomRules([]);
-      setAdminCode('');
+      setHoleRules(blank.holeRules);
+      setCustomRules(blank.customRules);
+      setAdminCode(blank.adminCode);
     }
   };
 
@@ -112,7 +112,7 @@ export default function CreateTournament() {
 
       // Derive yardage tracking from the data: a course with any distance
       // entered tracks yardages; pars-only stays par-only.
-      const trackYardages = holes.some(h => (h.tips ?? 0) > 0 || (h.mid ?? 0) > 0 || (h.womens ?? 0) > 0);
+      const trackYardages = tracksYardages(holes);
 
       const config: TournamentConfig = {
         id: wfcPreset ? WFC_2026_ID : generateTournamentId(),

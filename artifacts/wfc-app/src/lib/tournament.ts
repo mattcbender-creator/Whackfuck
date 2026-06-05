@@ -198,6 +198,41 @@ export function blankCourse(): CourseHole[] {
   }));
 }
 
+// A course "tracks yardages" when any hole carries a non-zero distance. This
+// lets a par-only course render cleanly without relying on a manual toggle.
+export function tracksYardages(holes: CourseHole[]): boolean {
+  return holes.some(h => (h.tips ?? 0) > 0 || (h.mid ?? 0) > 0 || (h.womens ?? 0) > 0);
+}
+
+// The clean-slate setup applied when the WFC preset is OFF: blank holes (par
+// placeholder, no yardages, no rules) and empty/default settings.
+export interface TournamentSetupDefaults {
+  name: string;
+  courseName: string;
+  teamSize: number;
+  startType: StartType;
+  autoTeeRule: boolean;
+  adminCode: string;
+  holes: CourseHole[];
+  holeRules: HoleRule[];
+  customRules: RuleLibraryEntry[];
+}
+
+export function blankTournamentSetup(): TournamentSetupDefaults {
+  const holes = blankCourse();
+  return {
+    name: '',
+    courseName: '',
+    teamSize: 2,
+    startType: 'normal',
+    autoTeeRule: false,
+    adminCode: '',
+    holes,
+    holeRules: holeRulesFromCourse(holes),
+    customRules: [],
+  };
+}
+
 // ── WFC 2026 seed ───────────────────────────────────────────────────────────
 // Fixed identifiers so the existing June 27 event resolves to a stable
 // tournament regardless of which device seeds it.

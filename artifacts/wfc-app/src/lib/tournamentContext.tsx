@@ -3,7 +3,7 @@ import { collection, doc, setDoc, onSnapshot, getDoc, getDocs, query, where } fr
 import { db, isFirebaseConfigured } from './firebase';
 import {
   type TournamentConfig, type CourseHole, type HoleRule,
-  dundeeCourseDefaults, resolveHoleRules,
+  dundeeCourseDefaults, resolveHoleRules, tracksYardages,
   getActiveTournamentId, setActiveTournamentId,
   tournamentDoc, hostKeyKey, spectatorKey,
 } from './tournament';
@@ -131,7 +131,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
   // Derive yardage tracking from the actual course data: if any hole has a
   // distance, show yardages; otherwise the course is par-only. This keeps the
   // par-only flow clean without relying on a manual toggle.
-  const trackYardages = courseHoles.some(h => (h.tips ?? 0) > 0 || (h.mid ?? 0) > 0 || (h.womens ?? 0) > 0);
+  const trackYardages = tracksYardages(courseHoles);
   const autoTeeRule = tournament ? !!tournament.autoTeeRule : true;
   const holeRules = resolveHoleRules(tournament?.holeRules, courseHoles);
 
