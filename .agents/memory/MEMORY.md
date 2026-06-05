@@ -1,3 +1,4 @@
 - [StoreProvider remount key](storeprovider-remount-key.md) — `activeId` is the `key` on `<StoreProvider>` in wfc-app App.tsx; changing it mid-screen remounts the whole Router subtree and wipes local component state.
 - [createTournamentDoc overwrites](createtournamentdoc-overwrites.md) — it's a full setDoc (no merge); never call it just to re-enter an existing event, persist the host key locally instead.
 - [Testing Firestore concurrency](testing-firestore-concurrency.md) — wfc-app fakes firebase/firestore (vi.hoisted) with versioned retry + deep-merge to test score-correction races without an emulator.
+- [jsdom Radix Dialog UI tests](jsdom-radix-dialog-tests.md) — drive shadcn/Radix dialogs with fireEvent (userEvent dismisses them under jsdom); jsdom env via docblock + polyfills + location stub.
