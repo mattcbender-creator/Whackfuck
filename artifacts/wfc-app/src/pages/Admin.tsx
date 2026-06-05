@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'wouter';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import {
-  addDoc, setDoc, getDocs, writeBatch, serverTimestamp,
+  addDoc, setDoc, getDocs, writeBatch, serverTimestamp, runTransaction,
   query, where, deleteDoc, updateDoc, onSnapshot, increment, Timestamp,
+  deleteField,
 } from 'firebase/firestore';
+import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
 import { RuleBuilder } from '@/components/RuleBuilder';
 import {
   teamsCol, eventsCol, drivesCol, teamDoc, configDoc, tournamentDoc,
   getActiveTournamentId, formatPlayers, normalizeScores, scoresToMap,
-  resolveHoleRules,
+  resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
@@ -20,6 +23,7 @@ import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
   ShieldAlert, AlertTriangle, CheckCircle2, Flag, ClipboardList,
+  Share2, Copy, Check, KeyRound, Grid3x3, Trophy,
 } from 'lucide-react';
 
 const DEMO_TEAM_NAMES = [
@@ -88,6 +92,8 @@ interface LiveTeam {
   lastUpdated?: number | null;
   frontNineConfirmed?: boolean;
   wheelSpin?: { item?: string } | null;
+  teamCode?: string;
+  teeOverride?: 'tips' | 'womens' | null;
 }
 
 interface AuditFlag {
@@ -123,6 +129,8 @@ function mapTeam(id: string, data: Record<string, unknown>): LiveTeam {
     lastUpdated: toMs(lastUpdatedRaw),
     frontNineConfirmed: !!d.frontNineConfirmed,
     wheelSpin: (d.wheelSpin as { item?: string } | null | undefined) ?? null,
+    teamCode: typeof d.teamCode === 'string' ? d.teamCode : undefined,
+    teeOverride: d.teeOverride === 'tips' || d.teeOverride === 'womens' ? d.teeOverride : null,
   };
 }
 
@@ -206,8 +214,9 @@ function auditTeam(t: LiveTeam, holes: CourseHole[]): AuditFlag[] {
 }
 
 export default function Admin() {
-  const { holes } = useCourse();
+  const { holes, autoTeeRule } = useCourse();
   const { tournament, isHost } = useTournament();
+  const [, navigate] = useLocation();
   const [password, setPassword] = useState('');
   const [auth, setAuth] = useState(false);
   const [message, setMessage] = useState('');
@@ -229,6 +238,26 @@ export default function Admin() {
   const [saving, setSaving] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
+
+  // Share & invite panel
+  const [shareOpen, setShareOpen] = useState(false);
+  const [qr, setQr] = useState('');
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // Per-hole score correction modal
+  const [correctingTeam, setCorrectingTeam] = useState<LiveTeam | null>(null);
+  const [correctDraft, setCorrectDraft] = useState<(number | null)[]>([]);
+  const [teeDraft, setTeeDraft] = useState<'tips' | 'womens' | null>(null);
+  const [correctSaving, setCorrectSaving] = useState(false);
+
+  // Code management
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [newHostKey, setNewHostKey] = useState<string | null>(null);
+
+  // Finalize flow
+  const [finalizing, setFinalizing] = useState(false);
+  const isFinal = tournament?.status === 'final';
 
   // Shotgun-start hole assignments (only used when startType === 'shotgun').
   const isShotgun = tournament?.startType === 'shotgun';
@@ -256,9 +285,9 @@ export default function Admin() {
     if (isHost) setAuth(true);
   }, [isHost]);
 
-  // Live listener while either panel is open
+  // Live listener while any team-driven panel is open
   useEffect(() => {
-    if (!auth || (!teamsOpen && !auditOpen) || !db || !getActiveTournamentId()) return;
+    if (!auth || (!teamsOpen && !auditOpen && !shareOpen) || !db || !getActiveTournamentId()) return;
     const unsub = onSnapshot(teamsCol(db), snap => {
       const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
       list.sort((a, b) => a.netScore - b.netScore);
@@ -266,7 +295,21 @@ export default function Admin() {
     });
     return () => unsub();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth, teamsOpen, auditOpen]);
+  }, [auth, teamsOpen, auditOpen, shareOpen]);
+
+  // Build the join QR whenever the share panel opens / the join code changes.
+  const joinCode = tournament?.joinCode ?? '';
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const joinLink = joinCode ? `${origin}${import.meta.env.BASE_URL}join/${joinCode}` : '';
+  const inviteLink = (teamCode: string) =>
+    joinCode && teamCode ? `${origin}${import.meta.env.BASE_URL}join/${joinCode}/${teamCode}` : '';
+
+  useEffect(() => {
+    if (!auth || !shareOpen || !joinLink) { setQr(''); return; }
+    QRCode.toDataURL(joinLink, { margin: 1, width: 220, color: { dark: '#39FF14', light: '#0a0a0a' } })
+      .then(setQr)
+      .catch(() => setQr(''));
+  }, [auth, shareOpen, joinLink]);
 
   // Keep a live team list for the shotgun assignment card without needing the
   // host to open the Team Management panel first.
@@ -427,6 +470,147 @@ export default function Admin() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── Per-hole score correction (conflict-free scores.{hole} merge) ──
+  const openCorrect = (team: LiveTeam) => {
+    setCorrectingTeam(team);
+    setCorrectDraft(team.scores && team.scores.length === 18 ? [...team.scores] : Array(18).fill(null));
+    setTeeDraft(team.teeOverride ?? null);
+  };
+
+  const handleSaveCorrection = async () => {
+    const team = correctingTeam;
+    if (!db || !team || !getActiveTournamentId()) { setCorrectingTeam(null); return; }
+    setCorrectSaving(true);
+    try {
+      // Determine which holes the admin explicitly touched (vs. the snapshot the
+      // modal opened with). Only these are applied; everything else stays under
+      // the authority of whatever the player has written since.
+      const snapshot = team.scores ?? [];
+      const edits: { idx: number; value: number | null }[] = [];
+      for (let i = 0; i < 18; i++) {
+        const before = snapshot[i] ?? null;
+        const after = correctDraft[i] ?? null;
+        if (before !== after) edits.push({ idx: i, value: after });
+      }
+      const teeChanged = autoTeeRule && (teeDraft ?? null) !== (team.teeOverride ?? null);
+
+      if (edits.length === 0 && !teeChanged) { setCorrectingTeam(null); return; }
+
+      // Transaction: read latest team doc, apply only the edited holes onto the
+      // CURRENT server scores map, then recompute aggregates from that merged map
+      // plus the persisted wheel adjustment. This avoids clobbering concurrent
+      // player edits to other holes.
+      const ref = teamDoc(db, team.id);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const data = snap.exists() ? snap.data() : {};
+        const merged = normalizeScores(data?.scores);
+        for (const e of edits) merged[e.idx] = e.value;
+
+        let strokes = 0, par = 0, hp = 0;
+        merged.forEach((s, i) => {
+          if (s !== null && s !== undefined) { strokes += s; par += holes[i]?.par ?? 4; hp += 1; }
+        });
+        const wheelAdj = typeof data?.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
+        const newNet = (hp > 0 ? strokes - par : 0) + wheelAdj;
+
+        const payload: Record<string, unknown> = { netScore: newNet, holesPlayed: hp };
+        if (edits.length > 0) {
+          const scoresPatch: Record<string, unknown> = {};
+          for (const e of edits) scoresPatch[String(e.idx + 1)] = e.value === null ? deleteField() : e.value;
+          payload.scores = scoresPatch;
+        }
+        if (teeChanged) {
+          payload.teeOverride = teeDraft === 'tips' || teeDraft === 'womens' ? teeDraft : deleteField();
+        }
+        tx.set(ref, payload, { merge: true });
+      });
+
+      toast({ title: `Updated "${team.teamName}"` });
+      setCorrectingTeam(null);
+    } catch (e) {
+      toast({ title: 'Save failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setCorrectSaving(false);
+    }
+  };
+
+  // ── Code management ──
+  const handleRegenAdminCode = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    if (!window.confirm('Generate a new admin code? The current code stops working immediately.')) return;
+    setCodeBusy(true);
+    try {
+      const code = generateAdminCode();
+      await setDoc(tournamentDoc(db, tId), { adminCode: code }, { merge: true });
+      toast({ title: 'New admin code', description: code });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  const handleRotateHostKey = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    if (!window.confirm('Rotate the host recovery key? Any previously saved host key (and host links using it) stops working. This device stays signed in.')) return;
+    setCodeBusy(true);
+    try {
+      const key = generateHostKey();
+      await setDoc(tournamentDoc(db, tId), { hostKey: key }, { merge: true });
+      // Keep this device authenticated as host after the rotation.
+      try { localStorage.setItem(hostKeyKey(tId), key); } catch { /* ignore */ }
+      setNewHostKey(key);
+      toast({ title: 'Host key rotated', description: 'Screenshot the new key now.' });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  // ── Finalize / reopen ──
+  const handleFinalize = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    if (!window.confirm('Finalize the tournament? Scoring locks for ALL teams and everyone is moved to the results page.')) return;
+    setFinalizing(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { status: 'final' }, { merge: true });
+      toast({ title: 'Tournament finalized', description: 'Scoring is locked. Players see the results page.' });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    if (!window.confirm('Reopen scoring? Teams can edit scores again and the results page stops being forced.')) return;
+    setFinalizing(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { status: 'live' }, { merge: true });
+      toast({ title: 'Scoring reopened' });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
+  const copy = async (text: string, which: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied(c => (c === which ? null : c)), 1500);
+    } catch { /* ignore */ }
   };
 
   const handleSeedDemo = async () => {
@@ -856,6 +1040,87 @@ export default function Admin() {
           </form>
         </div>
 
+        {/* ── Share & Invite ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setShareOpen(v => !v)}
+            data-testid="button-toggle-share"
+          >
+            <div className="flex items-center gap-2">
+              <Share2 className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Share &amp; Invite</h3>
+            </div>
+            <div className="flex items-center gap-3">
+              {joinCode && (
+                <span className="font-condensed text-lg font-black tracking-widest text-primary leading-none">{joinCode}</span>
+              )}
+              {shareOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          </button>
+
+          {shareOpen && (
+            <div className="border-t border-border p-5 space-y-5">
+              {!joinCode ? (
+                <p className="text-xs text-muted-foreground">No join code — a live connection is required.</p>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center gap-3">
+                    {qr && (
+                      <div className="bg-[#0a0a0a] border border-primary/30 rounded-2xl p-3">
+                        <img src={qr} alt="Join QR code" className="w-44 h-44" />
+                      </div>
+                    )}
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Join code</p>
+                      <p className="font-condensed text-4xl font-black tracking-[0.3em]" data-testid="text-share-join-code">{joinCode}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                      onClick={() => copy(joinLink, 'joinlink')}
+                      data-testid="button-copy-join-link"
+                    >
+                      {copied === 'joinlink' ? <><Check className="w-3.5 h-3.5 mr-2" /> Copied</> : <><Copy className="w-3.5 h-3.5 mr-2" /> Copy join link</>}
+                    </Button>
+                  </div>
+
+                  {/* Per-team invite links */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Per-team invite links</p>
+                    {realTeams.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No real teams registered yet.</p>
+                    ) : (
+                      realTeams.map(team => {
+                        const link = inviteLink(team.teamCode ?? '');
+                        return (
+                          <div key={`invite-${team.id}`} className="flex items-center gap-3 bg-secondary/30 rounded-lg px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">{team.teamCode ? `Code · ${team.teamCode}` : 'No team code yet'}</p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!link}
+                              onClick={() => copy(link, `invite-${team.id}`)}
+                              className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
+                              data-testid={`button-copy-invite-${team.id}`}
+                              title="Copy invite link"
+                            >
+                              {copied === `invite-${team.id}` ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* ── Shotgun Assignments (shotgun-start tournaments only) ── */}
         {isShotgun && (
           <div className="bg-card p-6 rounded-xl border border-border space-y-4">
@@ -984,6 +1249,7 @@ export default function Admin() {
                       onDelete={() => handleDelete(team)}
                       onEdit={() => openEdit(team)}
                       onAdjust={() => openAdjust(team)}
+                      onCorrect={() => openCorrect(team)}
                     />
                   ))}
                 </div>
@@ -1213,6 +1479,115 @@ export default function Admin() {
           </Button>
         </div>
 
+        {/* ── Code Management ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setCodeOpen(v => !v)}
+            data-testid="button-toggle-codes"
+          >
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Code Management</h3>
+            </div>
+            {codeOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+
+          {codeOpen && (
+            <div className="border-t border-border p-5 space-y-5">
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Admin code</p>
+                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                  Regenerating creates a new admin code. Anyone using the old code can no longer reach this panel — re-share the new code with co-hosts.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                  onClick={handleRegenAdminCode}
+                  disabled={codeBusy}
+                  data-testid="button-regen-admin-code"
+                >
+                  <KeyRound className="w-3.5 h-3.5 mr-2" /> Regenerate admin code
+                </Button>
+              </div>
+
+              <div className="space-y-2 pt-1 border-t border-border/50">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">Host key</p>
+                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                  Rotating the host key immediately signs out every other host device. This device stays in control. Only do this if a host link leaked.
+                </p>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                  onClick={handleRotateHostKey}
+                  disabled={codeBusy}
+                  data-testid="button-rotate-host-key"
+                >
+                  <KeyRound className="w-3.5 h-3.5 mr-2" /> Rotate host key
+                </Button>
+                {newHostKey && (
+                  <p className="text-[11px] text-primary leading-relaxed">
+                    Host key rotated. This device remains the host. Other host devices must rejoin with a fresh invite.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Finalize Tournament ── */}
+        <div className="bg-card p-6 rounded-xl border border-border space-y-4">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-primary" />
+            <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Tournament Finale</h3>
+          </div>
+          {isFinal ? (
+            <>
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                Scoring is locked and all players see the Results podium. Reopen to return everyone to live scoring.
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full h-12 font-condensed font-black uppercase tracking-widest"
+                  onClick={() => navigate('/results')}
+                  data-testid="button-view-results"
+                >
+                  <Trophy className="w-4 h-4 mr-2" /> View Results
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-12 font-condensed font-black uppercase tracking-widest"
+                  onClick={handleReopen}
+                  disabled={finalizing}
+                  data-testid="button-reopen-tournament"
+                >
+                  Reopen Scoring
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                Finalizing locks all scoring across every device and shows the Results podium. You can reopen at any time.
+              </p>
+              <Button
+                type="button"
+                className="w-full h-12 font-condensed font-black uppercase tracking-widest"
+                onClick={handleFinalize}
+                disabled={finalizing}
+                data-testid="button-finalize-tournament"
+              >
+                <Trophy className="w-4 h-4 mr-2" /> Finalize &amp; Crown Winners
+              </Button>
+            </>
+          )}
+        </div>
+
         {/* ── Danger Zone ── */}
         <div className="bg-red-950/20 p-6 rounded-xl border border-red-900/50 space-y-4">
           <div className="flex items-center gap-2">
@@ -1336,6 +1711,128 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {/* ── Score Correction Modal ── */}
+      {correctingTeam && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setCorrectingTeam(null)}>
+          <div
+            className="bg-card border border-border rounded-t-2xl sm:rounded-xl w-full max-w-md max-h-[90vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+              <div>
+                <h3 className="font-condensed text-xl font-black uppercase tracking-wider">Correct Scores</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{correctingTeam.teamName}</p>
+              </div>
+              <button onClick={() => setCorrectingTeam(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 space-y-2 flex-1">
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed mb-2">
+                Edit any hole's gross strokes. Leave a hole blank to mark it unplayed. Net score and holes played are recalculated on save.
+              </p>
+              {holes.map((hole, i) => {
+                const val = correctDraft[i] ?? null;
+                return (
+                  <div key={`correct-${hole.hole}`} className="flex items-center gap-3 bg-secondary/30 rounded-lg px-3 py-2">
+                    <div className="w-16 shrink-0">
+                      <p className="font-condensed text-lg font-black leading-none">H{hole.hole}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Par {hole.par}</p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-auto">
+                      <button
+                        onClick={() => setCorrectDraft(d => {
+                          const next = [...d];
+                          const cur = next[i] ?? hole.par;
+                          next[i] = Math.max(1, cur - 1);
+                          return next;
+                        })}
+                        className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/70 transition-colors"
+                        aria-label={`Decrease hole ${hole.hole}`}
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <div className="w-12 text-center">
+                        <span className={`font-condensed text-2xl font-black leading-none ${val == null ? 'text-muted-foreground/40' : 'text-foreground'}`}>
+                          {val == null ? '—' : val}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setCorrectDraft(d => {
+                          const next = [...d];
+                          const cur = next[i] ?? hole.par - 1;
+                          next[i] = Math.min(20, cur + 1);
+                          return next;
+                        })}
+                        className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/70 transition-colors"
+                        aria-label={`Increase hole ${hole.hole}`}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setCorrectDraft(d => {
+                          const next = [...d];
+                          next[i] = null;
+                          return next;
+                        })}
+                        disabled={val == null}
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-950/30 transition-colors disabled:opacity-30"
+                        aria-label={`Clear hole ${hole.hole}`}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {autoTeeRule && (
+                <div className="bg-secondary/30 rounded-lg p-3 mt-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Flag className="w-3.5 h-3.5 text-primary" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tee override</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                    Auto-tee is on. Override forces this team's tee regardless of net score. "Auto" returns to the automatic rule.
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { key: null, label: 'Auto' },
+                      { key: 'tips' as const, label: 'Tips' },
+                      { key: 'womens' as const, label: "Women's" },
+                    ]).map(opt => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setTeeDraft(opt.key)}
+                        className={`h-10 rounded-lg font-condensed font-bold uppercase tracking-wide text-xs transition-colors ${
+                          teeDraft === opt.key ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'
+                        }`}
+                        data-testid={`button-tee-${opt.label.toLowerCase()}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 p-5 border-t border-border shrink-0">
+              <Button variant="outline" className="flex-1 h-11" onClick={() => setCorrectingTeam(null)}>Cancel</Button>
+              <Button
+                className="flex-1 h-11 font-bold"
+                onClick={handleSaveCorrection}
+                disabled={correctSaving}
+                data-testid="button-save-correction"
+              >
+                {correctSaving ? 'Saving…' : 'Save Scores'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1346,9 +1843,10 @@ interface TeamRowProps {
   onDelete: () => void;
   onEdit: () => void;
   onAdjust: () => void;
+  onCorrect: () => void;
 }
 
-function TeamRow({ team, deleting, onDelete, onEdit, onAdjust }: TeamRowProps) {
+function TeamRow({ team, deleting, onDelete, onEdit, onAdjust, onCorrect }: TeamRowProps) {
   const net = team.netScore;
   const netLabel = net === 0 ? 'E' : net > 0 ? `+${net}` : String(net);
   const netColor = net < 0 ? 'text-primary' : net > 0 ? 'text-orange-400' : 'text-muted-foreground';
@@ -1359,12 +1857,20 @@ function TeamRow({ team, deleting, onDelete, onEdit, onAdjust }: TeamRowProps) {
         <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
         <p className="text-[11px] text-muted-foreground truncate mt-0.5">
           {formatPlayers(team.players)} · {team.holesPlayed}/18
+          {team.teeOverride ? ` · ${team.teeOverride === 'tips' ? 'Tips' : "Women's"} (set)` : ''}
         </p>
       </div>
 
       <span className={`font-condensed text-lg font-black leading-none shrink-0 ${netColor}`}>{netLabel}</span>
 
       <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onCorrect}
+          title="Correct scores"
+          className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+        >
+          <Grid3x3 className="w-4 h-4" />
+        </button>
         <button
           onClick={onAdjust}
           title="Adjust strokes"

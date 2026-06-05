@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'wouter';
-import { Home, ClipboardList, Trophy, Flag, BookOpen } from 'lucide-react';
+import { Home, ClipboardList, Trophy, Flag, BookOpen, Award } from 'lucide-react';
 import { useTournament } from '@/lib/tournamentContext';
 
 const SCORING_TABS = new Set(['/hole', '/scorecard']);
@@ -9,7 +9,8 @@ const HIDE_PREFIXES = ['/create', '/join', '/watch'];
 
 export function BottomNav() {
   const [location] = useLocation();
-  const { activeId, isSpectator } = useTournament();
+  const { activeId, isSpectator, tournament } = useTournament();
+  const isFinal = tournament?.status === 'final';
 
   const allTabs = [
     { href: '/home',        icon: Home,          label: 'Home',      testid: 'tab-home' },
@@ -19,7 +20,17 @@ export function BottomNav() {
     { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
   ];
 
-  const tabs = isSpectator ? allTabs.filter(t => !SCORING_TABS.has(t.href)) : allTabs;
+  const finalTabs = [
+    { href: '/results',     icon: Award,         label: 'Results',   testid: 'tab-results' },
+    { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard' },
+    { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
+  ];
+
+  const tabs = isFinal
+    ? finalTabs
+    : isSpectator
+      ? allTabs.filter(t => !SCORING_TABS.has(t.href))
+      : allTabs;
 
   if (location === '/') return null;
   if (!activeId) return null;

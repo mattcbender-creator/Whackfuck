@@ -16,6 +16,7 @@ import HoleView from "@/pages/HoleView";
 import Rules from "@/pages/Rules";
 import Stats from "@/pages/Stats";
 import Admin from "@/pages/Admin";
+import Results from "@/pages/Results";
 import NotFound from "@/pages/not-found";
 import { BottomNav } from "@/components/BottomNav";
 import { LiveTicker } from "@/components/LiveTicker";
@@ -24,9 +25,10 @@ const queryClient = new QueryClient();
 
 // Gameplay routes require an active tournament. Scoring routes additionally
 // block spectators (redirect them to the leaderboard).
-function Guard({ children, allowSpectator = false }: { children: ReactNode; allowSpectator?: boolean }) {
-  const { activeId, isSpectator } = useTournament();
+function Guard({ children, allowSpectator = false, blockOnFinal = false }: { children: ReactNode; allowSpectator?: boolean; blockOnFinal?: boolean }) {
+  const { activeId, isSpectator, tournament } = useTournament();
   if (!activeId) return <Redirect to="/" />;
+  if (blockOnFinal && tournament?.status === 'final') return <Redirect to="/results" />;
   if (isSpectator && !allowSpectator) return <Redirect to="/leaderboard" />;
   return <>{children}</>;
 }
@@ -44,13 +46,16 @@ function Router() {
         <Route path="/watch/:code" component={JoinTournament} />
 
         <Route path="/home">
-          <Guard><Home /></Guard>
+          <Guard blockOnFinal><Home /></Guard>
         </Route>
         <Route path="/scorecard">
-          <Guard><Scorecard /></Guard>
+          <Guard blockOnFinal><Scorecard /></Guard>
         </Route>
         <Route path="/hole">
-          <Guard><HoleView /></Guard>
+          <Guard blockOnFinal><HoleView /></Guard>
+        </Route>
+        <Route path="/results">
+          <Guard allowSpectator><Results /></Guard>
         </Route>
         <Route path="/leaderboard">
           <Guard allowSpectator><Leaderboard /></Guard>

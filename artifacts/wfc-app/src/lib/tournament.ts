@@ -150,6 +150,10 @@ export function generateJoinCode(): string {
   return randomCode(6);
 }
 
+export function generateAdminCode(): string {
+  return randomCode(6);
+}
+
 export function generateTeamCode(): string {
   return randomCode(4);
 }

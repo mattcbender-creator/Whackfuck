@@ -149,6 +149,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
   const [serverTeamMissing, setServerTeamMissing] = useState(false);
+  // Admin-set manual tee override ('tips'|'womens'); null means follow the
+  // auto-tee rule. Read from the server doc, written only by the admin panel.
+  const [teeOverride, setTeeOverride] = useState<'tips' | 'womens' | null>(null);
   // Starting hole (1–18) for this team. Initialised from the per-tournament
   // cache so a shotgun player keeps the right wrap-around order offline, before
   // the tournament doc resolves. Defaults to 1 (normal start).
@@ -257,6 +260,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       if (typeof data.frontNineConfirmed === 'boolean') {
         setFrontNineConfirmed(prev => prev === data.frontNineConfirmed ? prev : data.frontNineConfirmed);
+      }
+      // Admin-set manual tee override; anything else clears it (auto-tee rule).
+      {
+        const ov = data.teeOverride === 'tips' || data.teeOverride === 'womens'
+          ? data.teeOverride
+          : null;
+        setTeeOverride(prev => prev === ov ? prev : ov);
       }
       if (data.hasSubmitted === true) {
         setHasSubmitted(prev => prev ? prev : true);
@@ -425,7 +435,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const netScore = rawNet + wheelAdjustment;
   // Latest spin across all holes, for single-spin UI (e.g. the "what you spun" pill).
   const wheelSpin = latestSpin(wheelSpins);
-  const currentTee: 'tips' | 'womens' = autoTeeRule ? (rawNet < 0 ? 'tips' : 'womens') : 'womens';
+  const currentTee: 'tips' | 'womens' = teeOverride ?? (autoTeeRule ? (rawNet < 0 ? 'tips' : 'womens') : 'womens');
 
   // ── Tee-change notification (only when the auto-tee rule is on) ──
   const { toast } = useToast();
@@ -566,6 +576,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setScore = (hole: number, score: number | null) => {
     if (hasSubmitted) return;
+    if (tournament?.status === 'final') return;
     const newScores = [...scores];
     newScores[hole - 1] = score;
     setScoresState(newScores);
@@ -614,6 +625,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const recordWheelSpin = async (hole: number, record: WheelSpinRecord) => {
     if (hasSubmitted) return;
+    if (tournament?.status === 'final') return;
     // Guard against a double-spin for this hole using the latest known state.
     if (wheelSpins[hole]?.item) return;
     const cleanRecord: Record<string, unknown> = {};
