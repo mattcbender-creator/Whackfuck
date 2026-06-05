@@ -63,6 +63,8 @@ export function RuleBuilder({
     next[holeIdx] = entryToHoleRule(entry);
     onHoleRulesChange(next);
     setOpenHole(null);
+    // Notify parent so it can re-open the section (same as dismissing the dialog).
+    onHoleClose?.();
   };
 
   const openEditor = (idx: number) => {

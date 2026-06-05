@@ -43,7 +43,7 @@ export function CourseSetup({ holes, onHolesChange, showYardages = false }: Prop
     </div>
   );
 
-  const yardInput = (h: CourseHole, idx: number, field: 'tips' | 'mid' | 'womens', testid: string) => (
+  const yardInput = (h: CourseHole, idx: number, field: 'tips' | 'womens', testid: string) => (
     <input
       key={field}
       type="number"
@@ -54,7 +54,7 @@ export function CourseSetup({ holes, onHolesChange, showYardages = false }: Prop
       onChange={e => updateHole(idx, { [field]: parseInt(e.target.value, 10) || 0 })}
       data-testid={testid}
       placeholder="—"
-      className="w-full h-8 text-center bg-input/60 border border-border/80 rounded-md text-sm font-condensed font-bold text-foreground focus:border-primary focus:outline-none"
+      className="w-full h-9 text-center bg-input/60 border border-border/80 rounded-md text-sm font-condensed font-bold text-foreground focus:border-primary focus:outline-none"
     />
   );
 
@@ -103,27 +103,27 @@ export function CourseSetup({ holes, onHolesChange, showYardages = false }: Prop
     );
   }
 
-  // ── Yardage layout: full table with par stepper + yardage inputs ─────────
+  // ── Yardage layout: full table with par stepper + Tips + Wmn ────────────
+  // Grid: [#=2rem] [Par stepper=88px fixed] [Tips=1fr] [Wmn=1fr]
+  const COL = 'grid-cols-[2rem_88px_1fr_1fr]';
   return (
     <div className="space-y-2.5">
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Set par and yardages for each tee. Tip: Tips = longest, Wmn = shortest.
+        Tips = longest tee, Wmn = shortest. Leave blank if you don't have the yardages handy.
       </p>
       <div className="rounded-xl border border-border/60 overflow-hidden">
-        <div className="grid grid-cols-[2rem_auto_1fr_1fr_1fr] gap-x-2 gap-y-0 px-2 py-2 bg-secondary/50 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+        <div className={`grid ${COL} gap-x-2 px-2 py-2 bg-secondary/50 text-[9px] font-bold uppercase tracking-widest text-muted-foreground`}>
           <span className="text-center">#</span>
-          <span className="text-center px-1">Par</span>
+          <span className="text-center">Par</span>
           <span className="text-center">Tips</span>
-          <span className="text-center">Mid</span>
           <span className="text-center">Wmn</span>
         </div>
         <div className="divide-y divide-border/40">
           {holes.map((h, i) => (
-            <div key={h.hole} className="grid grid-cols-[2rem_auto_1fr_1fr_1fr] gap-x-2 px-2 py-1.5 items-center">
+            <div key={h.hole} className={`grid ${COL} gap-x-2 px-2 py-1.5 items-center`}>
               <span className="text-center font-condensed font-black text-primary text-sm">{h.hole}</span>
-              <div className="flex justify-center px-0.5">{parStepper(h, i)}</div>
+              <div className="flex justify-center">{parStepper(h, i)}</div>
               {yardInput(h, i, 'tips', `input-tips-${h.hole}`)}
-              {yardInput(h, i, 'mid', `input-mid-${h.hole}`)}
               {yardInput(h, i, 'womens', `input-womens-${h.hole}`)}
             </div>
           ))}
