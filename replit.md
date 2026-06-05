@@ -6,6 +6,7 @@ Live golf tournament scoring PWA for the Whack Fuck Cup at Dundee Country Club (
 
 - `pnpm --filter @workspace/wfc-app run dev` — run the WFC PWA (reads PORT env var)
 - `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run test` — run all workspace package test suites (vitest)
 - `pnpm run build` — typecheck + build all packages
 
 ## Stack
