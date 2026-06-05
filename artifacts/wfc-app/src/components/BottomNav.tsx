@@ -9,7 +9,7 @@ const HIDE_PREFIXES = ['/create', '/join', '/watch'];
 
 export function BottomNav() {
   const [location] = useLocation();
-  const { activeId, isSpectator, tournament } = useTournament();
+  const { activeId, isSpectator, isHost, tournament } = useTournament();
   const isFinal = tournament?.status === 'final';
 
   const allTabs = [
@@ -21,6 +21,8 @@ export function BottomNav() {
   ];
 
   const finalTabs = [
+    // Hosts keep a Home tab after finalization — it's the only entry point to Admin.
+    ...(isHost ? [{ href: '/home', icon: Home, label: 'Home', testid: 'tab-home' }] : []),
     { href: '/results',     icon: Award,         label: 'Results',   testid: 'tab-results' },
     { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard' },
     { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },

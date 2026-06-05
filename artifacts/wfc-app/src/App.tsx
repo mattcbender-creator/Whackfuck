@@ -26,9 +26,11 @@ const queryClient = new QueryClient();
 // Gameplay routes require an active tournament. Scoring routes additionally
 // block spectators (redirect them to the leaderboard).
 function Guard({ children, allowSpectator = false, blockOnFinal = false }: { children: ReactNode; allowSpectator?: boolean; blockOnFinal?: boolean }) {
-  const { activeId, isSpectator, tournament } = useTournament();
+  const { activeId, isSpectator, isHost, tournament } = useTournament();
   if (!activeId) return <Redirect to="/" />;
-  if (blockOnFinal && tournament?.status === 'final') return <Redirect to="/results" />;
+  // Hosts keep access to Home/Admin/scoring after a tournament is finalized;
+  // players are bounced to the read-only Results screen.
+  if (blockOnFinal && tournament?.status === 'final' && !isHost) return <Redirect to="/results" />;
   if (isSpectator && !allowSpectator) return <Redirect to="/leaderboard" />;
   return <>{children}</>;
 }

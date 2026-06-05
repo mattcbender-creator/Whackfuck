@@ -3,9 +3,9 @@ import { useLocation } from 'wouter';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { onSnapshot, query, orderBy } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
-import { useCourse } from '@/lib/tournamentContext';
+import { useCourse, useTournament } from '@/lib/tournamentContext';
 import { teamsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
-import { Trophy, Crown, Medal, Flame, Target, Star, Flag, Share2, Check, ChevronDown } from 'lucide-react';
+import { Trophy, Crown, Medal, Flame, Target, Star, Flag, Share2, Check, ChevronDown, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fireEagleConfetti } from '@/lib/confetti';
 import { useToast } from '@/hooks/use-toast';
@@ -166,6 +166,7 @@ function TeamScorecard({ team, holes }: { team: TeamData; holes: CourseHole[] })
 export default function Results() {
   const [, navigate] = useLocation();
   const { holes } = useCourse();
+  const { leaveTournament } = useTournament();
   const { teamInfo, netScore, holesPlayed, scores: myScores } = useWFC();
   const { toast } = useToast();
   const [teams, setTeams] = useState<TeamData[]>([]);
@@ -384,6 +385,15 @@ export default function Results() {
           data-testid="button-view-leaderboard"
         >
           View Leaderboard
+        </Button>
+
+        <Button
+          variant="ghost"
+          className="w-full h-11 mt-3 font-condensed font-bold uppercase tracking-widest gap-2 text-muted-foreground"
+          onClick={() => { leaveTournament(); navigate('/'); }}
+          data-testid="button-main-menu"
+        >
+          <Repeat className="w-4 h-4" /> Main Menu / Switch Tournament
         </Button>
       </div>
     </div>
