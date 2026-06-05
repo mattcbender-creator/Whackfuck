@@ -5,10 +5,10 @@ import { useTournament, fetchTeamsForTournament, type TeamLookup } from '@/lib/t
 import { isFirebaseConfigured } from '@/lib/firebase';
 import {
   type TournamentConfig, formatPlayers,
-  teamIdKey, joinedAtKey, storeKey,
+  teamIdKey, joinedAtKey, storeKey, hostKeyKey,
 } from '@/lib/tournament';
 import {
-  ArrowLeft, LogIn, UserPlus, Repeat, Eye, AlertTriangle, ArrowRight, Users, WifiOff,
+  ArrowLeft, LogIn, UserPlus, Repeat, Eye, AlertTriangle, ArrowRight, Users, WifiOff, KeyRound,
 } from 'lucide-react';
 
 type Step = 'code' | 'choose' | 'rejoin';
@@ -29,6 +29,19 @@ export default function JoinTournament() {
   const [teams, setTeams] = useState<TeamLookup[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<TeamLookup | null>(null);
   const [teamCodeInput, setTeamCodeInput] = useState('');
+
+  const [showHostEntry, setShowHostEntry] = useState(false);
+  const [hostKeyInput, setHostKeyInput] = useState('');
+  const [hostKeyError, setHostKeyError] = useState('');
+
+  const claimAndEnterAsHost = (t: TournamentConfig) => {
+    const key = hostKeyInput.trim();
+    if (!key) { setHostKeyError('Enter the recovery key.'); return; }
+    if (key !== t.hostKey) { setHostKeyError('That key doesn\u2019t match. Check your screenshot.'); return; }
+    try { localStorage.setItem(hostKeyKey(t.id), key); } catch { /* ignore */ }
+    enterAsPlayer(t.id);
+    setLocation('/home');
+  };
 
   // Enter the tournament as a fresh device (registration happens on Home).
   const enterToRegister = (t: TournamentConfig) => {
@@ -168,6 +181,54 @@ export default function JoinTournament() {
             <ChoiceButton icon={UserPlus} title="Register new team" desc="Start a fresh team and get an invite link" onClick={() => enterToRegister(resolved)} testid="button-register" />
             <ChoiceButton icon={Repeat} title="Rejoin my team" desc="Get back in on this device" onClick={openRejoin} testid="button-open-rejoin" />
             <ChoiceButton icon={Eye} title="Spectate" desc="Watch the leaderboard, read-only" onClick={() => enterToSpectate(resolved)} testid="button-spectate-choice" />
+
+            {/* Subtle host recovery — only shown when tapped */}
+            {!showHostEntry ? (
+              <button
+                type="button"
+                onClick={() => { setShowHostEntry(true); setHostKeyError(''); }}
+                data-testid="button-show-host-recovery"
+                className="w-full text-center text-[11px] text-muted-foreground/50 hover:text-muted-foreground py-1 transition-colors"
+              >
+                I&apos;m the host on a new device
+              </button>
+            ) : (
+              <div className="bg-card border border-border/60 rounded-2xl px-4 py-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-primary shrink-0" />
+                  <p className="font-condensed text-lg font-black uppercase tracking-wide text-foreground leading-tight">Host Recovery</p>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Enter the recovery key from your tournament setup screenshot.
+                </p>
+                <Input
+                  value={hostKeyInput}
+                  onChange={e => { setHostKeyInput(e.target.value.trim()); setHostKeyError(''); }}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  data-testid="input-host-key"
+                  className="h-12 text-center font-mono text-sm font-bold tracking-widest bg-input/60 border-border/80 focus:border-primary"
+                  autoCapitalize="characters"
+                />
+                {hostKeyError && <ErrorNote text={hostKeyError} />}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowHostEntry(false); setHostKeyInput(''); setHostKeyError(''); }}
+                    className="flex-1 h-11 rounded-xl border border-border/70 text-sm font-bold uppercase tracking-widest text-muted-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => claimAndEnterAsHost(resolved)}
+                    data-testid="button-claim-host"
+                    className="flex-1 h-11 rounded-xl bg-primary text-primary-foreground text-sm font-black uppercase tracking-widest"
+                  >
+                    Claim Access
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
