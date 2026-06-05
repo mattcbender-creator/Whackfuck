@@ -4,9 +4,12 @@ import { useToast } from '@/hooks/use-toast';
 import {
   setDoc, onSnapshot, serverTimestamp,
   writeBatch, increment, arrayUnion, query, orderBy, getDocs,
-  runTransaction, addDoc,
+  addDoc,
 } from 'firebase/firestore';
-import { writeHoleScore } from './scoreSync';
+import {
+  writeHoleScore, spinsFromData, reconcileWheelHits, recordWheelSpinTx,
+  type WheelSpinRecord, type TargetedByEntry,
+} from './scoreSync';
 import type { WheelItemId } from './wheel';
 import { useCourse, useTournament } from './tournamentContext';
 import {
@@ -17,38 +20,11 @@ import {
 
 export interface TeamInfo { teamName: string; players: string[]; }
 
-export interface TargetedByEntry {
-  item: WheelItemId;
-  fromTeam: string;
-  at: number;
-}
-
-export interface WheelSpinRecord {
-  item: WheelItemId;
-  at: number;
-  targetTeam?: string; // team name we targeted (Green/Red/Boo)
-}
-
-// Read a team doc's per-hole wheel spins, tolerating the legacy single-spin
-// shape (one wheelSpin field) by bucketing it under hole 9 — the only hole the
-// old fixed wheel could ever fire on.
-export function spinsFromData(data: Record<string, unknown> | undefined | null): Record<number, WheelSpinRecord> {
-  const out: Record<number, WheelSpinRecord> = {};
-  if (!data) return out;
-  const map = data.wheelSpins;
-  if (map && typeof map === 'object') {
-    for (const [k, v] of Object.entries(map as Record<string, unknown>)) {
-      const n = parseInt(k, 10);
-      if (n >= 1 && n <= 18 && v && typeof v === 'object' && (v as WheelSpinRecord).item) {
-        out[n] = v as WheelSpinRecord;
-      }
-    }
-    return out;
-  }
-  const legacy = data.wheelSpin as WheelSpinRecord | undefined;
-  if (legacy && legacy.item) out[9] = legacy;
-  return out;
-}
+// TargetedByEntry, WheelSpinRecord and spinsFromData now live in scoreSync.ts
+// (so the wheel write paths can be unit-tested with the Firestore fake). They're
+// re-exported here for the existing `@/lib/store` import sites.
+export type { TargetedByEntry, WheelSpinRecord };
+export { spinsFromData };
 
 // Latest spin (by timestamp) across all holes, for back-compat single-spin UI.
 function latestSpin(spins: Record<number, WheelSpinRecord>): WheelSpinRecord | null {
@@ -316,23 +292,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reconcileInFlightRef.current = true;
       try {
         const ref = teamDoc(fdb, teamId);
-        await runTransaction(fdb, async (tx) => {
-          const ourSnap = await tx.get(ref);
-          if (!ourSnap.exists()) return;
-          const ourData = ourSnap.data();
-          if (ourData.hasSubmitted === true) return;
-          const currentTargeted = Array.isArray(ourData.targetedBy)
-            ? ourData.targetedBy as TargetedByEntry[]
-            : [];
-          const serverKeys = new Set(currentTargeted.map(t => `${t.fromTeam}|${t.at}`));
-          const toAdd = possiblyMissing.filter(e => !serverKeys.has(`${e.fromTeam}|${e.at}`));
-          if (toAdd.length === 0) return;
-          tx.set(ref, {
-            wheelAdjustment: increment(toAdd.length),
-            netScore: increment(toAdd.length),
-            targetedBy: arrayUnion(...toAdd),
-          }, { merge: true });
-        });
+        await reconcileWheelHits(fdb, ref, possiblyMissing);
       } catch (e) {
         console.error('Hit reconciliation failed', e);
       } finally {
@@ -626,10 +586,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (tournament?.status === 'final') return;
     // Guard against a double-spin for this hole using the latest known state.
     if (wheelSpins[hole]?.item) return;
-    const cleanRecord: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(record)) {
-      if (v !== undefined) cleanRecord[k] = v;
-    }
     const commitLocal = (spin: WheelSpinRecord) => {
       setWheelSpins(prev => {
         const next = { ...prev, [hole]: spin };
@@ -640,21 +596,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isFirebaseConfigured && db && tId && teamInfo) {
       const ref = teamDoc(db, teamId);
       try {
-        const finalRecord = await runTransaction(db, async (tx) => {
-          const snap = await tx.get(ref);
-          const data = snap.exists() ? snap.data() : undefined;
-          const existingSpins = spinsFromData(data);
-          if (data?.hasSubmitted === true) {
-            const existing = existingSpins[hole];
-            if (existing && existing.item) return existing;
-            throw new Error('submitted');
-          }
-          // One spin per wheel-hole — never overwrite an existing spin.
-          const existing = existingSpins[hole];
-          if (existing && existing.item) return existing;
-          tx.set(ref, { wheelSpins: { [String(hole)]: cleanRecord } }, { merge: true });
-          return record;
-        });
+        const finalRecord = await recordWheelSpinTx(db, ref, hole, record);
         commitLocal(finalRecord);
       } catch (e) {
         const msg = e instanceof Error ? e.message : '';

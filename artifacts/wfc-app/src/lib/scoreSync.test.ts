@@ -12,13 +12,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const h = vi.hoisted(() => {
   const DELETE = Symbol('deleteField');
 
+  // FieldValue sentinels (increment / arrayUnion) are modelled as tagged objects
+  // so deepMerge can apply them against the *current* stored value rather than
+  // overwriting it — this is what makes concurrent score/wheel writes compose.
+  class FieldOp {
+    constructor(public kind: 'increment' | 'arrayUnion', public arg: unknown) {}
+  }
+  const increment = (n: number) => new FieldOp('increment', n);
+  const arrayUnion = (...items: unknown[]) => new FieldOp('arrayUnion', items);
+
   interface Ref { id: string; }
   const docs = new Map<string, Record<string, unknown>>();
   const versions = new Map<string, number>();
   let afterFirstGet: (() => void | Promise<void>) | null = null;
 
   function isPlainObject(v: unknown): v is Record<string, unknown> {
-    return !!v && typeof v === 'object' && !Array.isArray(v) && v !== DELETE;
+    return !!v && typeof v === 'object' && !Array.isArray(v)
+      && v !== DELETE && !(v instanceof FieldOp);
   }
 
   function deepMerge(
@@ -29,6 +39,18 @@ const h = vi.hoisted(() => {
     for (const [k, v] of Object.entries(patch)) {
       if (v === DELETE) {
         delete out[k];
+      } else if (v instanceof FieldOp) {
+        if (v.kind === 'increment') {
+          const cur = typeof out[k] === 'number' ? (out[k] as number) : 0;
+          out[k] = cur + (v.arg as number);
+        } else {
+          // arrayUnion: append items not already present (deep-equality dedupe).
+          const cur = Array.isArray(out[k]) ? [...(out[k] as unknown[])] : [];
+          for (const item of v.arg as unknown[]) {
+            if (!cur.some(x => JSON.stringify(x) === JSON.stringify(item))) cur.push(item);
+          }
+          out[k] = cur;
+        }
       } else if (isPlainObject(v)) {
         const prev = isPlainObject(out[k]) ? (out[k] as Record<string, unknown>) : {};
         out[k] = deepMerge(prev, v);
@@ -57,6 +79,12 @@ const h = vi.hoisted(() => {
     opts?: { merge?: boolean },
   ) => {
     commit(ref, payload, !!opts?.merge);
+  };
+
+  // updateDoc is a non-transactional field-level merge (the admin manual adjust
+  // path). Increment sentinels apply against the stored value, like Firestore.
+  const updateDoc = async (ref: Ref, payload: Record<string, unknown>) => {
+    commit(ref, payload, true);
   };
 
   const runTransaction = async <T>(
@@ -118,7 +146,7 @@ const h = vi.hoisted(() => {
   }
 
   return {
-    DELETE, deleteField, setDoc, runTransaction,
+    DELETE, deleteField, setDoc, updateDoc, runTransaction, increment, arrayUnion,
     reset, seed, get, queueAfterFirstGet,
     ref: (id: string): Ref => ({ id }),
   };
@@ -127,10 +155,17 @@ const h = vi.hoisted(() => {
 vi.mock('firebase/firestore', () => ({
   runTransaction: h.runTransaction,
   setDoc: h.setDoc,
+  updateDoc: h.updateDoc,
   deleteField: h.deleteField,
+  increment: h.increment,
+  arrayUnion: h.arrayUnion,
 }));
 
-import { correctTeamScores, writeHoleScore, type ParHole } from './scoreSync';
+import {
+  correctTeamScores, writeHoleScore,
+  reconcileWheelHits, recordWheelSpinTx, applyManualAdjustment,
+  type ParHole, type TargetedByEntry, type WheelSpinRecord,
+} from './scoreSync';
 import { normalizeScores } from './tournament';
 
 // All-par-4 course is enough for the aggregate math here.
@@ -289,5 +324,236 @@ describe('correctTeamScores vs. concurrent player scoring', () => {
     );
 
     expect(JSON.stringify(h.get(TEAM))).toBe(before);
+  });
+});
+
+// ── Cross-team wheel-hit reconciliation ─────────────────────────────────────
+describe('reconcileWheelHits', () => {
+  beforeEach(() => h.reset());
+
+  const HIT = (over: Partial<TargetedByEntry> = {}): TargetedByEntry => ({
+    item: 'green_shell', fromTeam: 'B', at: 1000, ...over,
+  });
+
+  it('adds a missing hit and bumps wheelAdjustment + netScore once', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
+
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+
+    expect(added).toBe(1);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1);
+    expect(data.netScore).toBe(1);
+    expect(data.targetedBy).toEqual([HIT()]);
+  });
+
+  it('does not double-count a hit already present on the team doc', async () => {
+    h.seed(TEAM, { wheelAdjustment: 1, netScore: 1, targetedBy: [HIT()] });
+
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+
+    expect(added).toBe(0);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1);
+    expect(data.netScore).toBe(1);
+    expect((data.targetedBy as unknown[]).length).toBe(1);
+  });
+
+  it('applies a hit exactly once when the same hit lands concurrently mid-flight', async () => {
+    // Two teams interleave: our reconcile reads an empty targetedBy, but before it
+    // commits the spinner's own write lands the very same hit on our doc. The
+    // transaction must retry, see the hit already there, and NOT add it twice.
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
+    h.queueAfterFirstGet(() =>
+      h.setDoc(h.ref(TEAM) as never, {
+        wheelAdjustment: h.increment(1),
+        netScore: h.increment(1),
+        targetedBy: h.arrayUnion(HIT()),
+      }, { merge: true }),
+    );
+
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+
+    expect(added).toBe(0); // retried, found nothing left to add
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1); // not 2
+    expect(data.netScore).toBe(1);
+    expect((data.targetedBy as unknown[]).length).toBe(1);
+  });
+
+  it('adds only the genuinely missing hits from a mixed batch', async () => {
+    const known = HIT({ fromTeam: 'B', at: 1000 });
+    const fresh = HIT({ item: 'red_shell', fromTeam: 'C', at: 2000 });
+    h.seed(TEAM, { wheelAdjustment: 1, netScore: 1, targetedBy: [known] });
+
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [known, fresh]);
+
+    expect(added).toBe(1);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(2);
+    expect(data.netScore).toBe(2);
+    expect(data.targetedBy).toEqual([known, fresh]);
+  });
+
+  it('skips reconciliation entirely once the round is submitted', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [], hasSubmitted: true });
+
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+
+    expect(added).toBe(0);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(0);
+    expect(data.netScore).toBe(0);
+    expect(data.targetedBy).toEqual([]);
+  });
+});
+
+// ── Wheel-spin recording (one spin per hole) ────────────────────────────────
+describe('recordWheelSpinTx', () => {
+  beforeEach(() => h.reset());
+
+  it('records a brand-new spin for a hole', async () => {
+    h.seed(TEAM, {});
+    const rec: WheelSpinRecord = { item: 'green_shell', at: 1000, targetTeam: 'B' };
+
+    const result = await recordWheelSpinTx({} as never, h.ref(TEAM) as never, 9, rec);
+
+    expect(result).toEqual(rec);
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, unknown>;
+    expect(spins['9']).toEqual(rec);
+  });
+
+  it('never overwrites an existing spin on the same hole', async () => {
+    const first: WheelSpinRecord = { item: 'banana', at: 1000 };
+    h.seed(TEAM, { wheelSpins: { '9': first } });
+
+    const result = await recordWheelSpinTx(
+      {} as never, h.ref(TEAM) as never, 9, { item: 'boo', at: 2000 },
+    );
+
+    expect(result).toEqual(first); // returns the spin that was already there
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, unknown>;
+    expect(spins['9']).toEqual(first);
+  });
+
+  it('applies a spin exactly once when two callers race the same hole', async () => {
+    h.seed(TEAM, {});
+    const winner: WheelSpinRecord = { item: 'lightning', at: 1000 };
+    const loser: WheelSpinRecord = { item: 'blue_shell', at: 1001 };
+    // The winner writes the hole after our transaction's first read but before it
+    // commits, forcing the retry that observes and preserves the winner.
+    h.queueAfterFirstGet(() =>
+      h.setDoc(h.ref(TEAM) as never, { wheelSpins: { '9': winner } }, { merge: true }),
+    );
+
+    const result = await recordWheelSpinTx({} as never, h.ref(TEAM) as never, 9, loser);
+
+    expect(result).toEqual(winner);
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, unknown>;
+    expect(spins['9']).toEqual(winner); // loser never clobbers the winner
+  });
+
+  it('strips undefined fields before writing the spin', async () => {
+    h.seed(TEAM, {});
+
+    await recordWheelSpinTx(
+      {} as never, h.ref(TEAM) as never, 5,
+      { item: 'red_shell', at: 1000, targetTeam: undefined },
+    );
+
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, Record<string, unknown>>;
+    expect(spins['5']).toEqual({ item: 'red_shell', at: 1000 });
+    expect('targetTeam' in spins['5']).toBe(false);
+  });
+
+  it('preserves a concurrent spin on a different hole', async () => {
+    h.seed(TEAM, {});
+    h.queueAfterFirstGet(() =>
+      h.setDoc(h.ref(TEAM) as never,
+        { wheelSpins: { '3': { item: 'banana', at: 900 } } }, { merge: true }),
+    );
+
+    await recordWheelSpinTx(
+      {} as never, h.ref(TEAM) as never, 9, { item: 'boo', at: 1000 },
+    );
+
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, unknown>;
+    expect(spins['3']).toEqual({ item: 'banana', at: 900 }); // other hole survives
+    expect(spins['9']).toEqual({ item: 'boo', at: 1000 });
+  });
+
+  it('throws "submitted" when the round is submitted and the hole has no spin', async () => {
+    h.seed(TEAM, { hasSubmitted: true });
+
+    await expect(
+      recordWheelSpinTx({} as never, h.ref(TEAM) as never, 9, { item: 'boo', at: 1000 }),
+    ).rejects.toThrow('submitted');
+    expect(h.get(TEAM)!.wheelSpins).toBeUndefined();
+  });
+
+  it('returns the existing spin when submitted but the hole already spun', async () => {
+    const existing: WheelSpinRecord = { item: 'banana', at: 1000 };
+    h.seed(TEAM, { hasSubmitted: true, wheelSpins: { '9': existing } });
+
+    const result = await recordWheelSpinTx(
+      {} as never, h.ref(TEAM) as never, 9, { item: 'boo', at: 2000 },
+    );
+
+    expect(result).toEqual(existing);
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, unknown>;
+    expect(spins['9']).toEqual(existing);
+  });
+});
+
+// ── Admin manual stroke adjustment ──────────────────────────────────────────
+describe('applyManualAdjustment', () => {
+  beforeEach(() => h.reset());
+
+  it('increments wheelAdjustment and netScore by a positive delta', async () => {
+    h.seed(TEAM, { wheelAdjustment: 2, netScore: 5 });
+
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 3);
+
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(5);
+    expect(data.netScore).toBe(8);
+  });
+
+  it('applies a negative delta', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 1 });
+
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, -2);
+
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(-2);
+    expect(data.netScore).toBe(-1);
+  });
+
+  it('treats missing aggregate fields as zero', async () => {
+    h.seed(TEAM, {});
+
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 4);
+
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(4);
+    expect(data.netScore).toBe(4);
+  });
+
+  it('composes with a concurrent per-hole score write without clobbering it', async () => {
+    // A player writes a new hole via the field-level merge while the admin adjusts
+    // strokes. Both must land: the adjustment increments, the score is preserved.
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, scores: { '1': 4 } });
+
+    await Promise.all([
+      applyManualAdjustment({} as never, h.ref(TEAM) as never, 2),
+      writeHoleScore({} as never, h.ref(TEAM) as never, 5, 5),
+    ]);
+
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(2);
+    expect(data.netScore).toBe(2);
+    const scores = data.scores as Record<string, number>;
+    expect(scores['1']).toBe(4);
+    expect(scores['5']).toBe(5); // concurrent player write survives
   });
 });

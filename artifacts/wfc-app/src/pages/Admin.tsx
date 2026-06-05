@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import {
   addDoc, setDoc, getDocs, writeBatch, serverTimestamp,
-  query, where, deleteDoc, updateDoc, onSnapshot, increment, Timestamp,
+  query, where, deleteDoc, updateDoc, onSnapshot, Timestamp,
 } from 'firebase/firestore';
 import QRCode from 'qrcode';
 import { useToast } from '@/hooks/use-toast';
@@ -17,7 +17,7 @@ import {
   resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
-import { diffCorrectionEdits, correctTeamScores } from '@/lib/scoreSync';
+import { diffCorrectionEdits, correctTeamScores, applyManualAdjustment } from '@/lib/scoreSync';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
@@ -456,10 +456,7 @@ export default function Admin() {
     if (!db || !adjustingTeam || adjustDelta === 0 || !getActiveTournamentId()) { setAdjustingTeam(null); return; }
     setSaving(true);
     try {
-      await updateDoc(teamDoc(db, adjustingTeam.id), {
-        wheelAdjustment: increment(adjustDelta),
-        netScore: increment(adjustDelta),
-      });
+      await applyManualAdjustment(db, teamDoc(db, adjustingTeam.id), adjustDelta);
       toast({
         title: `Adjusted "${adjustingTeam.teamName}"`,
         description: `${adjustDelta > 0 ? '+' : ''}${adjustDelta} stroke${Math.abs(adjustDelta) !== 1 ? 's' : ''} applied`,
