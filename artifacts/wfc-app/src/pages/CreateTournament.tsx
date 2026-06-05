@@ -83,7 +83,11 @@ export default function CreateTournament() {
     };
     try {
       await createTournamentDoc(config);
-      setActiveTournament(config.id);
+      // Show the success screen first. We deliberately do NOT switch the active
+      // tournament here: activeId is the key on <StoreProvider> in App, so
+      // changing it now would remount this whole subtree and discard the
+      // success screen (the create would look like it "reset" the form). The
+      // tournament becomes active only when the host taps "Enter Tournament".
       setCreated(config);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create tournament.');
@@ -93,7 +97,15 @@ export default function CreateTournament() {
   };
 
   if (created) {
-    return <SuccessScreen config={created} onEnter={() => setLocation('/home')} />;
+    return (
+      <SuccessScreen
+        config={created}
+        onEnter={() => {
+          setActiveTournament(created.id);
+          setLocation('/home');
+        }}
+      />
+    );
   }
 
   return (
