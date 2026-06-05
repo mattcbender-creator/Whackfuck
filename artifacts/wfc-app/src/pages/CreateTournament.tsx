@@ -5,12 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { CourseSetup } from '@/components/CourseSetup';
 import { RuleBuilder } from '@/components/RuleBuilder';
-import { useTournament, createTournamentDoc } from '@/lib/tournamentContext';
+import { useTournament, createTournamentDoc, fetchTournament } from '@/lib/tournamentContext';
 import { isFirebaseConfigured } from '@/lib/firebase';
 import {
   type CourseHole, type TournamentConfig, type HoleRule, type RuleLibraryEntry,
   dundeeCourseDefaults, holeRulesFromCourse,
   generateTournamentId, generateJoinCode, generateHostKey,
+  buildWfc2026Config, WFC_2026_ID, WFC_2026_JOIN_CODE, WFC_2026_HOST_KEY,
+  hostKeyKey,
 } from '@/lib/tournament';
 import {
   ArrowLeft, Copy, Check, Share2, KeyRound, AlertTriangle, ArrowRight,
@@ -30,6 +32,7 @@ export default function CreateTournament() {
   const [startType, setStartType] = useState<'normal' | 'shotgun'>('normal');
   const [adminCode, setAdminCode] = useState('');
   const [autoTeeRule, setAutoTeeRule] = useState(false);
+  const [wfcPreset, setWfcPreset] = useState(false);
 
   const [holes, setHoles] = useState<CourseHole[]>(() => dundeeCourseDefaults());
   const [usingDefaults, setUsingDefaults] = useState(true);
@@ -55,6 +58,43 @@ export default function CreateTournament() {
     if (!rulesDirty) setHoleRules(holeRulesFromCourse(holes));
   }, [holes, rulesDirty]);
 
+  // Autofill (or clear) the form with the canonical WFC 2026 / Dundee CC setup.
+  const applyWfcPreset = (on: boolean) => {
+    setWfcPreset(on);
+    setError('');
+    if (on) {
+      const c = buildWfc2026Config();
+      setName(c.name);
+      setCourseName(c.courseName);
+      setTeamSize(c.teamSize);
+      setStartType(c.startType);
+      setAutoTeeRule(c.autoTeeRule);
+      setTrackYardages(c.trackYardages);
+      setHoles(c.holes);
+      setUsingDefaults(true);
+      setHoleRules(c.holeRules);
+      // The preset's hole rules (e.g. the wheel) aren't derivable from the
+      // course, so mark rules dirty to stop the holes→rules mirror clobbering them.
+      setRulesDirty(true);
+      setCustomRules(c.customRules ?? []);
+      setAdminCode(c.adminCode);
+    } else {
+      const d = dundeeCourseDefaults();
+      setName('');
+      setCourseName('Dundee Country Club');
+      setTeamSize(2);
+      setStartType('normal');
+      setAutoTeeRule(false);
+      setTrackYardages(false);
+      setHoles(d);
+      setUsingDefaults(true);
+      setRulesDirty(false);
+      setHoleRules(holeRulesFromCourse(d));
+      setCustomRules([]);
+      setAdminCode('');
+    }
+  };
+
   const handleSubmit = async () => {
     setError('');
     if (!name.trim()) { setError('Tournament name is required.'); return; }
@@ -64,24 +104,38 @@ export default function CreateTournament() {
     if (!isFirebaseConfigured) { setError('A live connection is required to create a tournament.'); return; }
 
     setSubmitting(true);
-    const config: TournamentConfig = {
-      id: generateTournamentId(),
-      name: name.trim(),
-      courseName: courseName.trim(),
-      holes,
-      trackYardages,
-      teamSize,
-      startType,
-      autoTeeRule,
-      adminCode: adminCode.trim(),
-      hostKey: generateHostKey(),
-      joinCode: generateJoinCode(),
-      holeRules,
-      customRules,
-      status: 'live',
-      createdAt: Date.now(),
-    };
     try {
+      // WFC 2026 preset → initialize (or re-enter) the canonical Dundee CC event
+      // so its fixed join code stays stable. If it already exists, don't clobber
+      // a possibly-live event — just open it.
+      if (wfcPreset) {
+        const existing = await fetchTournament(WFC_2026_ID);
+        if (existing) {
+          // Already initialized — re-enter read-only, don't overwrite a live
+          // event. Just persist the canonical host key locally for admin access.
+          try { localStorage.setItem(hostKeyKey(existing.id), existing.hostKey); } catch { /* ignore */ }
+          setCreated(existing);
+          return;
+        }
+      }
+
+      const config: TournamentConfig = {
+        id: wfcPreset ? WFC_2026_ID : generateTournamentId(),
+        name: name.trim(),
+        courseName: courseName.trim(),
+        holes,
+        trackYardages,
+        teamSize,
+        startType,
+        autoTeeRule,
+        adminCode: adminCode.trim(),
+        hostKey: wfcPreset ? WFC_2026_HOST_KEY : generateHostKey(),
+        joinCode: wfcPreset ? WFC_2026_JOIN_CODE : generateJoinCode(),
+        holeRules,
+        customRules,
+        status: 'live',
+        createdAt: Date.now(),
+      };
       await createTournamentDoc(config);
       // Show the success screen first. We deliberately do NOT switch the active
       // tournament here: activeId is the key on <StoreProvider> in App, so
@@ -124,6 +178,14 @@ export default function CreateTournament() {
         </h1>
 
         <div className="space-y-5">
+          <label className="flex items-center justify-between bg-primary/10 border border-primary/40 rounded-xl px-4 py-3 cursor-pointer">
+            <div className="pr-3">
+              <p className="text-sm font-bold text-foreground">WFC 2026 preset</p>
+              <p className="text-[11px] text-muted-foreground">Autofill the Whack Fuck Cup at Dundee CC — course, rules, tees, and settings.</p>
+            </div>
+            <Switch checked={wfcPreset} onCheckedChange={applyWfcPreset} data-testid="switch-wfc-preset" />
+          </label>
+
           <Field label="Tournament name">
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Spring Scramble"
               className="h-12 bg-input/60 border-border/80 focus:border-primary text-base" data-testid="input-name" />

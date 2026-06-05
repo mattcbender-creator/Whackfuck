@@ -195,7 +195,7 @@ export default function Home() {
   const showForm = !teamInfo || (editing && !hasSubmitted);
 
   return (
-    <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center bg-background relative overflow-hidden px-6">
+    <div className="min-h-[100dvh] w-full flex flex-col items-center bg-background relative overflow-x-hidden overflow-y-auto px-6">
 
       {/* Dot grid background */}
       <div
@@ -210,7 +210,7 @@ export default function Home() {
         style={{ background: 'radial-gradient(circle, rgba(57,255,20,0.05) 0%, transparent 70%)' }}
       />
 
-      <div className="z-10 flex flex-col items-center text-center w-full max-w-sm mx-auto gap-5 py-10">
+      <div className="z-10 flex flex-col items-center text-center w-full max-w-sm mx-auto gap-5 pt-10 pb-28 my-auto">
 
         {/* Logo */}
         <div

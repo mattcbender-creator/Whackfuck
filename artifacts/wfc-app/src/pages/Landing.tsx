@@ -7,25 +7,7 @@ const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
 export default function Landing() {
   const [, setLocation] = useLocation();
-  const { activeId, tournament, isSpectator, setActiveTournament, leaveTournament } = useTournament();
-  const [seeding, setSeeding] = useState(false);
-
-  const seedWfc = async () => {
-    if (!isFirebaseConfigured) return;
-    setSeeding(true);
-    try {
-      const existing = await fetchTournament(WFC_2026_ID);
-      if (!existing) {
-        await createTournamentDoc(buildWfc2026Config());
-      } else {
-        try { localStorage.setItem(`wfc-host-key::${WFC_2026_ID}`, existing.hostKey); } catch { /* ignore */ }
-      }
-      setActiveTournament(WFC_2026_ID);
-      setLocation('/home');
-    } finally {
-      setSeeding(false);
-    }
-  };
+  const { activeId, tournament, isSpectator, leaveTournament } = useTournament();
 
   return (
     <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center bg-background relative overflow-hidden px-6 py-10">
@@ -113,18 +95,6 @@ export default function Landing() {
             <Eye className="w-5 h-5" /> Spectate
           </button>
         </div>
-
-        {/* WFC 2026 seed */}
-        {isFirebaseConfigured && (
-          <button
-            onClick={seedWfc}
-            disabled={seeding}
-            data-testid="button-seed-wfc"
-            className="text-[11px] text-muted-foreground/70 hover:text-primary transition-colors underline underline-offset-4 disabled:opacity-50"
-          >
-            {seeding ? 'Setting up…' : 'Initialize WFC 2026 (Dundee CC)'}
-          </button>
-        )}
       </div>
     </div>
   );
