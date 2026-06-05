@@ -2,15 +2,11 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { useTournament } from '@/lib/tournamentContext';
-import { WFC_2026_ID, formatPlayers, clearAllLocalAppState } from '@/lib/tournament';
+import { WFC_2026_ID, formatPlayers } from '@/lib/tournament';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
-import { Users, ShieldAlert, Share2, Copy, Check, Plus, X, RotateCcw } from 'lucide-react';
-
-const RESET_PASSWORD = '0010110';
+import { ResetControl } from '@/components/ResetControl';
+import { Users, ShieldAlert, Share2, Copy, Check, Plus, X } from 'lucide-react';
 
 // June 27 2026, 7:00 AM Eastern (UTC-4 in summer / EDT)
 const EVENT_START = new Date('2026-06-27T07:00:00-04:00');
@@ -163,29 +159,6 @@ export default function Home() {
   const [animate, setAnimate] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  // ── Password-gated full local reset ──
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetPwd, setResetPwd] = useState('');
-  const [resetError, setResetError] = useState(false);
-
-  const openReset = () => {
-    setResetPwd('');
-    setResetError(false);
-    setResetOpen(true);
-  };
-
-  const confirmReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (resetPwd !== RESET_PASSWORD) {
-      setResetError(true);
-      return;
-    }
-    // Wipe every local key (active tournament + all per-tournament state), then
-    // hard-navigate to the root so the app reloads into a clean main menu.
-    clearAllLocalAppState();
-    window.location.href = import.meta.env.BASE_URL;
-  };
-
   useEffect(() => {
     const t = setTimeout(() => setAnimate(true), 80);
     return () => clearTimeout(t);
@@ -237,16 +210,6 @@ export default function Home() {
         className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full pointer-events-none z-0"
         style={{ background: 'radial-gradient(circle, rgba(57,255,20,0.05) 0%, transparent 70%)' }}
       />
-
-      {/* Subtle password-gated full reset */}
-      <button
-        onClick={openReset}
-        data-testid="button-open-reset"
-        aria-label="Reset this device"
-        className="absolute top-3 right-3 z-20 p-2 rounded-full text-muted-foreground/30 hover:text-primary hover:bg-primary/10 transition-colors"
-      >
-        <RotateCcw className="w-4 h-4" />
-      </button>
 
       <div className="z-10 flex flex-col items-center text-center w-full max-w-sm mx-auto gap-5 pt-10 pb-28 my-auto">
 
@@ -491,58 +454,10 @@ export default function Home() {
           </button>
         </div>
 
-      </div>
+        {/* Password-gated full reset — wipes all local data on this device */}
+        <ResetControl label="Reset app" />
 
-      {/* ── Password-gated full reset dialog ── */}
-      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="bg-card border-border/70 max-w-xs">
-          <DialogHeader>
-            <DialogTitle className="font-condensed uppercase tracking-widest text-primary flex items-center gap-2">
-              <RotateCcw className="w-4 h-4" /> Reset This Device
-            </DialogTitle>
-            <DialogDescription className="text-xs leading-relaxed">
-              Enter the reset password to clear the active tournament and all data
-              saved on this device, then return to the main menu. This only affects
-              this device — it does not delete anything on the leaderboard.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={confirmReset} className="space-y-3">
-            <div className="space-y-1.5 text-left">
-              <Input
-                data-testid="input-reset-password"
-                type="password"
-                inputMode="numeric"
-                autoFocus
-                value={resetPwd}
-                onChange={e => { setResetPwd(e.target.value); setResetError(false); }}
-                placeholder="Reset password"
-                className="h-12 bg-input/60 border-border/80 focus:border-primary text-base text-center tracking-widest"
-              />
-              {resetError && (
-                <p data-testid="text-reset-error" className="text-[11px] font-bold text-destructive uppercase tracking-widest">
-                  Incorrect password
-                </p>
-              )}
-            </div>
-            <DialogFooter className="gap-2 sm:gap-2">
-              <button
-                type="button"
-                onClick={() => setResetOpen(false)}
-                className="flex-1 py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-xs hover:bg-secondary/80 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                data-testid="button-confirm-reset"
-                className="flex-1 py-3 rounded-full bg-primary text-primary-foreground font-condensed font-bold uppercase tracking-widest text-xs transition-all active:scale-95"
-              >
-                Reset
-              </button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </div>
     </div>
   );
 }

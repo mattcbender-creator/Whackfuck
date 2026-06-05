@@ -1,6 +1,7 @@
 import { useLocation } from 'wouter';
 import { useTournament } from '@/lib/tournamentContext';
 import { isFirebaseConfigured } from '@/lib/firebase';
+import { ResetControl } from '@/components/ResetControl';
 import { PlusCircle, LogIn, Eye, Trophy, ArrowRight, Repeat, WifiOff } from 'lucide-react';
 
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
@@ -95,6 +96,9 @@ export default function Landing() {
             <Eye className="w-5 h-5" /> Spectate
           </button>
         </div>
+
+        {/* Password-gated full reset — wipes all local data on this device */}
+        <ResetControl label="Reset app" />
       </div>
     </div>
   );
