@@ -14,6 +14,13 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+
+// This suite exercises the localStorage-only device-reset path (see header note),
+// so force Firebase off regardless of any VITE_FIREBASE_* env present in the
+// runner. With `db` null the reset skips its Firestore wipe and only clears
+// local state + redirects — exactly the flow asserted below.
+vi.mock('@/lib/firebase', () => ({ db: null, isFirebaseConfigured: false }));
+
 import App from '@/App';
 import {
   WFC_2026_ID,

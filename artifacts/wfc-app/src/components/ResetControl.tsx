@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { clearAllLocalAppState } from '@/lib/tournament';
+import {
+  clearAllLocalAppState, getActiveTournamentId,
+  teamsCol, eventsCol, drivesCol, tournamentDoc, configDoc,
+} from '@/lib/tournament';
+import { db } from '@/lib/firebase';
+import {
+  getDocs, writeBatch, setDoc, serverTimestamp, type CollectionReference,
+} from 'firebase/firestore';
 import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -8,10 +15,13 @@ import { RotateCcw } from 'lucide-react';
 
 const RESET_PASSWORD = '0010110';
 
-// A small, password-gated control that wipes ALL local app state (the active
-// tournament plus every per-tournament key) and reloads into the clean main
-// menu. Local only — never touches Firestore. Shared by the main menu (Landing)
-// and the in-tournament Home screen.
+// A small, password-gated control that fully resets the app. It is completely
+// nuclear: when a tournament is active it wipes ALL teams, scores, wheel spins,
+// events and drives from Firestore and flips the tournament status back to
+// 'live' (clearing any finalized/locked state), then wipes ALL local app state
+// and reloads into the clean main menu. Other connected devices reset too via
+// the configDoc resetAt signal. Shared by the main menu (Landing) and the
+// in-tournament Home screen.
 export function ResetControl({ label = 'Reset app' }: { label?: string }) {
   const [open, setOpen] = useState(false);
   const [pwd, setPwd] = useState('');
@@ -23,12 +33,39 @@ export function ResetControl({ label = 'Reset app' }: { label?: string }) {
     setOpen(true);
   };
 
-  const confirm = (e: React.FormEvent) => {
+  const confirm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pwd !== RESET_PASSWORD) {
       setError(true);
       return;
     }
+    try {
+      const fdb = db;
+      const tId = getActiveTournamentId();
+      if (fdb && tId) {
+        const wipeCol = async (col: CollectionReference) => {
+          const snap = await getDocs(col);
+          if (snap.empty) return;
+          // Firestore batches cap at 500 ops; chunk so large collections
+          // (e.g. a busy live events feed) are still fully wiped.
+          for (let i = 0; i < snap.docs.length; i += 500) {
+            const batch = writeBatch(fdb);
+            snap.docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+            await batch.commit();
+          }
+        };
+        await Promise.all([
+          wipeCol(teamsCol(fdb)),
+          wipeCol(eventsCol(fdb)),
+          wipeCol(drivesCol(fdb)),
+        ]);
+        // Clear the finished/locked state so the tournament behaves like a
+        // brand-new one when it is re-entered (the WFC preset reuses the same
+        // deterministic doc, so leftover status would otherwise persist).
+        await setDoc(tournamentDoc(fdb, tId), { status: 'live' }, { merge: true });
+        await setDoc(configDoc(fdb), { resetAt: serverTimestamp() }, { merge: true });
+      }
+    } catch { /* ignore — still clear local state and reload */ }
     clearAllLocalAppState();
     window.location.href = import.meta.env.BASE_URL;
   };
@@ -51,9 +88,10 @@ export function ResetControl({ label = 'Reset app' }: { label?: string }) {
               <RotateCcw className="w-4 h-4" /> Reset This Device
             </DialogTitle>
             <DialogDescription className="text-xs leading-relaxed">
-              Enter the reset password to clear the active tournament and all data
-              saved on this device, then return to the main menu. This only affects
-              this device — it does not delete anything on the leaderboard.
+              Enter the reset password to fully wipe the active tournament —
+              all teams, scores, wheel spins and the leaderboard — and return it
+              to a fresh, unlocked state, then go back to the main menu. Every
+              connected device resets too. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={confirm} className="space-y-3">

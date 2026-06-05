@@ -933,15 +933,24 @@ export default function Admin() {
         const wipeCol = async (col: ReturnType<typeof teamsCol>) => {
           const snap = await getDocs(col);
           if (snap.empty) return;
-          const batch = writeBatch(fdb);
-          snap.docs.forEach(d => batch.delete(d.ref));
-          await batch.commit();
+          // Firestore batches cap at 500 ops; chunk so large collections
+          // (e.g. a busy live events feed) are still fully wiped.
+          for (let i = 0; i < snap.docs.length; i += 500) {
+            const batch = writeBatch(fdb);
+            snap.docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+            await batch.commit();
+          }
         };
         await Promise.all([
           wipeCol(teamsCol(fdb)),
           wipeCol(eventsCol(fdb)),
           wipeCol(drivesCol(fdb)),
         ]);
+        // Clear the finished/locked state so the tournament behaves like a
+        // brand-new one when it is re-entered (the WFC preset reuses the same
+        // deterministic doc, so leftover 'final' status would otherwise persist).
+        const tId = getActiveTournamentId();
+        if (tId) await setDoc(tournamentDoc(fdb, tId), { status: 'live' }, { merge: true });
         await setDoc(configDoc(fdb), { resetAt: serverTimestamp() }, { merge: true });
       }
       localStorage.clear();
