@@ -175,13 +175,6 @@ export default function HoleView() {
     if (teamInfo && d <= -1 && (prevDiff === null || prevDiff > -1)) {
       logEvent({ type: 'score', subtype: d <= -2 ? 'eagle' : 'birdie', teamName: teamInfo.teamName, hole: holeIdx + 1, score: next, par: hole.par });
     }
-    // Auto-fire the Item Box the first time this hole gets a score, if this hole
-    // carries the wheel rule and hasn't been spun yet. recordWheelSpin guards
-    // against a second spin, so this can't double-fire.
-    if (isWheelHole && current === null && !holeSpin) {
-      setWheelHole(holeIdx + 1);
-      setWheelOpen(true);
-    }
   };
 
   const goPrev = () => {

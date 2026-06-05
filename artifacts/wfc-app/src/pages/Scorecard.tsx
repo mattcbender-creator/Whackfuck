@@ -348,13 +348,6 @@ export default function Scorecard() {
         par: selHole.par,
       });
     }
-    // Auto-fire the Item Box the first time a wheel hole gets a score, if it
-    // hasn't been spun yet. recordWheelSpin guards against a second spin.
-    const selRule = holeRules[selectedIdx];
-    if (cur === null && selRule?.type === 'wheel' && !wheelSpins[selectedIdx + 1]) {
-      setWheelHole(selectedIdx + 1);
-      setWheelOpen(true);
-    }
   };
 
   const handleSync = async () => {
