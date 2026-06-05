@@ -260,6 +260,7 @@ export default function CreateTournament() {
               <CourseSetup
                 holes={holes}
                 onHolesChange={setHoles}
+                showYardages={autoTeeRule}
               />
             </Section>
 
