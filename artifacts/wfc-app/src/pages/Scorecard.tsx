@@ -3,7 +3,7 @@ import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
 import { useCourse } from '@/lib/tournamentContext';
 import type { CourseHole } from '@/lib/tournament';
-import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers } from '@/lib/tournament';
+import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers, firstUnscoredPlayPos, isHoleOutOfOrder } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X } from 'lucide-react';
@@ -265,10 +265,7 @@ export default function Scorecard() {
   // Play position (0–17) of a given hole index, and the position of the first
   // hole still unscored (18 when the round is complete).
   const playPos = (idx: number) => holeOrder.indexOf(idx + 1);
-  const firstUnscoredPos = (() => {
-    const p = holeOrder.findIndex(n => scores[n - 1] === null);
-    return p === -1 ? 18 : p;
-  })();
+  const firstUnscoredPos = firstUnscoredPlayPos(holeOrder, scores);
 
   // Running cumulative to-par within this half
   let running = 0;
@@ -329,9 +326,10 @@ export default function Scorecard() {
       });
       return;
     }
-    // STRICT IN-ORDER: cannot enter a score for a hole when any prior hole in
-    // play order is still blank. Snap them back to the first unscored hole.
-    if (playPos(selectedIdx) > firstUnscoredPos && firstUnscoredPos < 18) {
+    // STRICT IN-ORDER (normal start only): cannot enter a score for a hole when
+    // any prior hole in play order is still blank. Snap them back to the first
+    // unscored hole. Shotgun starts relax this so players are never trapped.
+    if (isHoleOutOfOrder({ holeIdx: selectedIdx, order: holeOrder, scores, isShotgun }) && firstUnscoredPos < 18) {
       const firstUnscoredHole = holeOrder[firstUnscoredPos];
       toast({
         title: `Score hole ${firstUnscoredHole} first`,
@@ -368,8 +366,11 @@ export default function Scorecard() {
     }
   };
 
-  // True if entering a score for this hole would be out-of-order (play order)
-  const isOutOfOrder = (idx: number) => playPos(idx) > firstUnscoredPos;
+  // True if entering a score for this hole would be out-of-order (play order).
+  // Always false for a shotgun start — those teams play their own wrap-around
+  // order and must never be blocked.
+  const isOutOfOrder = (idx: number) =>
+    isHoleOutOfOrder({ holeIdx: idx, order: holeOrder, scores, isShotgun });
   const selOutOfOrder = isOutOfOrder(selectedIdx);
 
   const handleSync = async () => {

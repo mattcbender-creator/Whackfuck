@@ -148,19 +148,25 @@ export default function HoleView() {
       setOrderPos(targetPos);
       return true;
     }
-    // Forwards: every hole earlier in the play order must have a score.
-    let missingPos = -1;
-    for (let p = 0; p < targetPos; p++) {
-      if (scores[holeOrder[p] - 1] === null) { missingPos = p; break; }
-    }
-    if (missingPos !== -1) {
-      toast({
-        title: `Score hole ${holeOrder[missingPos]} first`,
-        description: 'Holes must be entered in order.',
-        variant: 'destructive',
-      });
-      setOrderPos(missingPos);
-      return false;
+    // Forwards: every hole earlier in the play order must have a score. The
+    // strict in-order gate applies to a normal start only — a shotgun start is
+    // non-linear (teams begin on different holes, unassigned teams fall back to
+    // hole 1) so enforcing order there would trap players. Let shotgun navigate
+    // freely.
+    if (!isShotgun) {
+      let missingPos = -1;
+      for (let p = 0; p < targetPos; p++) {
+        if (scores[holeOrder[p] - 1] === null) { missingPos = p; break; }
+      }
+      if (missingPos !== -1) {
+        toast({
+          title: `Score hole ${holeOrder[missingPos]} first`,
+          description: 'Holes must be entered in order.',
+          variant: 'destructive',
+        });
+        setOrderPos(missingPos);
+        return false;
+      }
     }
     setOrderPos(targetPos);
     return true;

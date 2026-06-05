@@ -16,6 +16,7 @@ import {
   getActiveTournamentId, teamDoc, teamsCol, eventsCol, configDoc,
   normalizeScores, generateTeamCode,
   storeKey, teamIdKey, joinedAtKey, serverConfirmedKey, startingHoleKey,
+  playOrder,
 } from './tournament';
 
 export interface TeamInfo { teamName: string; players: string[]; }
@@ -379,7 +380,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Play order of hole numbers (1–18). Normal start reduces to [1..18], so all
   // downstream play-order math collapses to the original index math.
-  const holeOrder = Array.from({ length: 18 }, (_, i) => ((startingHole - 1 + i) % 18) + 1);
+  const holeOrder = playOrder(startingHole);
 
   // ── Derive aggregates ──
   let totalScore = 0;
