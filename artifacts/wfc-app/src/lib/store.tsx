@@ -63,6 +63,9 @@ export interface WFCState {
   targetedBy: TargetedByEntry[];
   hasSubmitted: boolean;
   submittedAt: number | null;
+  /** Per-hole lock state (1-indexed). True once a teammate has confirmed the
+   *  score for that hole. Synced via Firestore so all devices lock instantly. */
+  lockedHoles: Record<number, boolean>;
   serverTeamMissing: boolean;
   resetDevice: () => void;
   setTeamInfo: (info: TeamInfo) => void;
@@ -73,6 +76,8 @@ export interface WFCState {
   recordWheelSpin: (hole: number, record: WheelSpinRecord) => Promise<void>;
   applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
   applyEffectToSelf: (delta: number) => void;
+  /** Lock a single hole for all teammates. No-op if already locked or submitted. */
+  lockHole: (hole: number) => Promise<void>;
   submitFinal: () => void;
   listTeamsOnce: () => Promise<TeamSnapshot[]>;
   logEvent: (event: Record<string, unknown>) => void;
@@ -126,6 +131,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [targetedBy, setTargetedBy] = useState<TargetedByEntry[]>([]);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
+  // Per-hole lock, keyed by 1-indexed hole number. Written by the first
+  // teammate to confirm a hole; read by all via onSnapshot.
+  const [lockedHoles, setLockedHoles] = useState<Record<number, boolean>>({});
   const [serverTeamMissing, setServerTeamMissing] = useState(false);
   // Admin-set manual tee override ('tips'|'womens'); null means follow the
   // auto-tee rule. Read from the server doc, written only by the admin panel.
@@ -171,6 +179,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (Array.isArray(parsed.targetedBy)) setTargetedBy(parsed.targetedBy);
         if (typeof parsed.hasSubmitted === 'boolean') setHasSubmitted(parsed.hasSubmitted);
         if (typeof parsed.submittedAt === 'number') setSubmittedAt(parsed.submittedAt);
+        if (parsed.lockedHoles && typeof parsed.lockedHoles === 'object') {
+          const lh: Record<number, boolean> = {};
+          for (const [k, v] of Object.entries(parsed.lockedHoles as Record<string, unknown>)) {
+            const n = parseInt(k, 10);
+            if (n >= 1 && n <= 18 && v === true) lh[n] = true;
+          }
+          setLockedHoles(lh);
+        }
       }
     } catch (e) {
       console.error('Failed to load store', e);
@@ -251,6 +267,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (typeof data.submittedAt === 'number') {
           setSubmittedAt(prev => prev ?? data.submittedAt);
         }
+      }
+      // Per-hole lock: sync from server so all teammates see it immediately.
+      if ('lockedHoles' in data && data.lockedHoles && typeof data.lockedHoles === 'object') {
+        const incoming: Record<number, boolean> = {};
+        for (const [k, v] of Object.entries(data.lockedHoles as Record<string, unknown>)) {
+          const n = parseInt(k, 10);
+          if (n >= 1 && n <= 18 && v === true) incoming[n] = true;
+        }
+        setLockedHoles(prev =>
+          JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming,
+        );
       }
     });
     return () => unsub();
@@ -344,11 +371,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     targetedBy: TargetedByEntry[];
     hasSubmitted: boolean;
     submittedAt: number | null;
+    lockedHoles: Record<number, boolean>;
   }>) => {
     try {
       const current = {
         teamInfo, teamCode, scores, frontNineConfirmed, wheelSpins,
-        wheelAdjustment, targetedBy, hasSubmitted, submittedAt,
+        wheelAdjustment, targetedBy, hasSubmitted, submittedAt, lockedHoles,
       };
       const next = { ...current, ...overrides };
       localStorage.setItem(STORE_KEY, JSON.stringify(next));
@@ -539,6 +567,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setScore = (hole: number, score: number | null) => {
     if (hasSubmitted) return;
     if (tournament?.status === 'final') return;
+    if (lockedHoles[hole]) return; // hole already confirmed — ignore stray taps
     const newScores = [...scores];
     newScores[hole - 1] = score;
     setScoresState(newScores);
@@ -561,11 +590,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTargetedBy([]);
     setHasSubmitted(false);
     setSubmittedAt(null);
+    setLockedHoles({});
     saveToLocal({
       teamInfo: null, scores: newScores, frontNineConfirmed: false,
       wheelSpins: {}, wheelAdjustment: 0, targetedBy: [],
-      hasSubmitted: false, submittedAt: null,
+      hasSubmitted: false, submittedAt: null, lockedHoles: {},
     });
+  };
+
+  const lockHole = async (hole: number): Promise<void> => {
+    if (hasSubmitted) return;
+    if (tournament?.status === 'final') return;
+    if (lockedHoles[hole]) return;
+    // Optimistic local update — teammates will get the Firestore push.
+    const next = { ...lockedHoles, [hole]: true } as Record<number, boolean>;
+    setLockedHoles(next);
+    saveToLocal({ lockedHoles: next });
+    if (isFirebaseConfigured && db && tId && teamInfo && lockResolved) {
+      setDoc(teamDoc(db, teamId), { lockedHoles: { [String(hole)]: true } }, { merge: true })
+        .catch(err => console.error('lockHole sync failed', err));
+    }
   };
 
   const confirmFrontNine = () => {
@@ -743,6 +787,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         targetedBy,
         hasSubmitted,
         submittedAt,
+        lockedHoles,
         setTeamInfo: updateTeamInfo,
         adoptTeam,
         setScore,
@@ -751,6 +796,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         recordWheelSpin,
         applyEffectToOthers,
         applyEffectToSelf,
+        lockHole,
         submitFinal,
         listTeamsOnce,
         logEvent,

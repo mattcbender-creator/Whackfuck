@@ -104,10 +104,15 @@ export async function correctTeamScores(
     const payload: Record<string, unknown> = { netScore, holesPlayed };
     if (edits.length > 0) {
       const scoresPatch: Record<string, unknown> = {};
+      // Admin override also unlocks every corrected hole so the team can
+      // re-enter a score if needed (mirrors the UI lock the player set).
+      const lockedHolesPatch: Record<string, unknown> = {};
       for (const e of edits) {
         scoresPatch[String(e.idx + 1)] = e.value === null ? deleteField() : e.value;
+        lockedHolesPatch[String(e.idx + 1)] = deleteField();
       }
       payload.scores = scoresPatch;
+      payload.lockedHoles = lockedHolesPatch;
     }
     if (teeChange.changed) {
       payload.teeOverride = teeChange.value === 'tips' || teeChange.value === 'womens'
