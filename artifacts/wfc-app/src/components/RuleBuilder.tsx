@@ -18,6 +18,9 @@ interface RuleBuilderProps {
   // Fired when a per-hole rule editor opens, so a parent section can collapse
   // to keep the editor focused (used on the New Tournament screen).
   onHoleOpen?: () => void;
+  // Fired when a per-hole rule editor closes (rule selected or dismissed), so
+  // the parent section can re-open for quick multi-hole editing.
+  onHoleClose?: () => void;
 }
 
 const NONE_ID = 'none';
@@ -41,7 +44,7 @@ function ruleMatchesEntry(rule: HoleRule, e: RuleLibraryEntry): boolean {
 }
 
 export function RuleBuilder({
-  holeRules, onHoleRulesChange, customRules, onCustomRulesChange, onHoleOpen,
+  holeRules, onHoleRulesChange, customRules, onCustomRulesChange, onHoleOpen, onHoleClose,
 }: RuleBuilderProps) {
   const [openHole, setOpenHole] = useState<number | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
@@ -205,7 +208,7 @@ export function RuleBuilder({
       </div>
 
       {/* ── Per-hole rule editor ── */}
-      <Dialog open={openHole !== null} onOpenChange={o => { if (!o) setOpenHole(null); }}>
+      <Dialog open={openHole !== null} onOpenChange={o => { if (!o) { setOpenHole(null); onHoleClose?.(); } }}>
         <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto bg-card border-border">
           {openHole !== null && (
             <>

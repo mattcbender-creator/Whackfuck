@@ -247,10 +247,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setTeeOverride(prev => prev === ov ? prev : ov);
       }
       if (data.hasSubmitted === true) {
-        setHasSubmitted(prev => prev ? prev : true);
+        setHasSubmitted(true);
         if (typeof data.submittedAt === 'number') {
           setSubmittedAt(prev => prev ?? data.submittedAt);
         }
+      } else if (data.hasSubmitted === false) {
+        // Admin has unlocked this scorecard — allow editing again.
+        setHasSubmitted(false);
+        setSubmittedAt(null);
       }
     });
     return () => unsub();

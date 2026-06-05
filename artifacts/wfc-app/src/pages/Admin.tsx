@@ -20,7 +20,7 @@ import {
 import { diffCorrectionEdits, correctTeamScores, applyManualAdjustment, spinsFromData, type WheelSpinRecord } from '@/lib/scoreSync';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
 import {
-  Sparkles, Trash2, Beaker, Megaphone, Lock, Users, Pencil, X,
+  Sparkles, Trash2, Beaker, Megaphone, Lock, LockOpen, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
   ShieldAlert, AlertTriangle, CheckCircle2, Flag, ClipboardList,
   Share2, Copy, Check, KeyRound, Grid3x3, Trophy,
@@ -403,6 +403,17 @@ export default function Admin() {
       setMessage('');
     } catch {
       toast({ title: 'Failed to send', variant: 'destructive' });
+    }
+  };
+
+  const handleUnlockScorecard = async (team: LiveTeam) => {
+    if (!db || !getActiveTournamentId()) return;
+    if (!window.confirm(`Unlock scorecard for "${team.teamName}"? They will be able to edit scores again.`)) return;
+    try {
+      await updateDoc(teamDoc(db, team.id), { hasSubmitted: false, submittedAt: null });
+      toast({ title: `Unlocked "${team.teamName}"`, description: 'Scorecard is editable again.' });
+    } catch (e) {
+      toast({ title: 'Unlock failed', description: String(e), variant: 'destructive' });
     }
   };
 
@@ -1245,6 +1256,7 @@ export default function Admin() {
                       onEdit={() => openEdit(team)}
                       onAdjust={() => openAdjust(team)}
                       onCorrect={() => openCorrect(team)}
+                      onUnlock={() => handleUnlockScorecard(team)}
                     />
                   ))}
                 </div>
@@ -1838,9 +1850,10 @@ interface TeamRowProps {
   onEdit: () => void;
   onAdjust: () => void;
   onCorrect: () => void;
+  onUnlock: () => void;
 }
 
-function TeamRow({ team, deleting, onDelete, onEdit, onAdjust, onCorrect }: TeamRowProps) {
+function TeamRow({ team, deleting, onDelete, onEdit, onAdjust, onCorrect, onUnlock }: TeamRowProps) {
   const net = team.netScore;
   const netLabel = net === 0 ? 'E' : net > 0 ? `+${net}` : String(net);
   const netColor = net < 0 ? 'text-primary' : net > 0 ? 'text-orange-400' : 'text-muted-foreground';
@@ -1872,6 +1885,15 @@ function TeamRow({ team, deleting, onDelete, onEdit, onAdjust, onCorrect }: Team
         >
           <Plus className="w-4 h-4" />
         </button>
+        {team.hasSubmitted && (
+          <button
+            onClick={onUnlock}
+            title="Unlock scorecard"
+            className="p-2 rounded-lg text-yellow-400 hover:text-yellow-300 hover:bg-yellow-950/30 transition-colors"
+          >
+            <LockOpen className="w-4 h-4" />
+          </button>
+        )}
         <button
           onClick={onEdit}
           title="Edit team"

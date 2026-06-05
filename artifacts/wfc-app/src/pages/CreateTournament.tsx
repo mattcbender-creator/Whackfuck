@@ -276,6 +276,7 @@ export default function CreateTournament() {
                 customRules={customRules}
                 onCustomRulesChange={setCustomRules}
                 onHoleOpen={() => setOpenSection(null)}
+                onHoleClose={() => setOpenSection('rules')}
               />
             </Section>
           </div>

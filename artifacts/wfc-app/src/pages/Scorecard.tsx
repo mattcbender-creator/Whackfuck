@@ -7,7 +7,7 @@ import type { CourseHole } from '@/lib/tournament';
 import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X } from 'lucide-react';
+import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X, Check } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -384,11 +384,15 @@ export default function Scorecard() {
       return;
     }
     setFinishLoading(true);
-    // Force a sync first so our final score is in Firestore
+    const at = Date.now();
+    // Lock local state immediately so this device can't edit further.
+    submitFinal();
+    // Write hasSubmitted to Firestore so every teammate sees the lock instantly.
     if (db && getActiveTournamentId()) {
       try {
         await setDoc(teamDoc(db, teamId), {
           ...teamInfo, scores: scoresToMap(scores), netScore, holesPlayed, currentTee,
+          hasSubmitted: true, submittedAt: at,
           lastUpdated: serverTimestamp(),
         }, { merge: true });
       } catch { /* non-fatal */ }
@@ -425,6 +429,21 @@ export default function Scorecard() {
       {isFinal && (
         <div className="px-4 pt-3 max-w-lg mx-auto w-full">
           <FinalizedBanner />
+        </div>
+      )}
+
+      {/* ── Submitted lock banner — shown on every team member's device ── */}
+      {hasSubmitted && !isFinal && (
+        <div className="px-4 pt-3 max-w-lg mx-auto w-full">
+          <div className="flex items-center gap-3 bg-primary/10 border border-primary/40 rounded-2xl px-4 py-3">
+            <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/50 flex items-center justify-center shrink-0">
+              <Check className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-black uppercase tracking-widest text-primary leading-tight">Scorecard Submitted</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">Scores are locked and final. Admin can override in Tournament Control.</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -812,7 +831,8 @@ export default function Scorecard() {
             onClick={() => setConfirmFinishOpen(true)}
             disabled={finishLoading}
             data-testid="button-submit-final"
-            className="mt-4 w-full h-16 rounded-2xl bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-yellow-500/30 disabled:opacity-60"
+            className="mt-4 w-full h-16 rounded-2xl text-black font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
+            style={{ background: '#FFD700', boxShadow: '0 4px 24px #FFD70055' }}
           >
             <Trophy className="w-6 h-6" />
             {finishLoading ? 'Submitting…' : 'Submit Final Score'}
@@ -1001,7 +1021,8 @@ export default function Scorecard() {
                 }}
                 disabled={finishLoading}
                 data-testid="button-confirm-final"
-                className="w-full h-14 rounded-full bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-condensed font-black text-base uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-60 flex items-center justify-center gap-2"
+                className="w-full h-14 rounded-full text-black font-condensed font-black text-base uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ background: '#FFD700' }}
               >
                 <Trophy className="w-5 h-5" />
                 {finishLoading ? 'Submitting…' : 'Yes, Lock It In'}
