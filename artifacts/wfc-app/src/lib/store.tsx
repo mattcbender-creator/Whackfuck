@@ -409,6 +409,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (autoTeeRule !== true) return;
     if (!hydratedRef.current) return;
+    // Never fire tee toasts for finalized/submitted rounds — hydration changes
+    // to currentTee when joining an already-finished tournament must be silent.
+    if (hasSubmitted || tournament?.status === 'final') return;
     if (!teeMountRef.current) {
       teeMountRef.current = true;
       return;
@@ -430,7 +433,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         className: teeToastClass,
       });
     }
-  }, [currentTee, toast, autoTeeRule]);
+  }, [currentTee, toast, autoTeeRule, hasSubmitted, tournament?.status]);
 
   // ── Push own (non-score) changes to Firestore ──
   // Per-hole scores are written by setScore via field-level merges so two
