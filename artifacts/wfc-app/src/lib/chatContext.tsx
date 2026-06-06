@@ -41,6 +41,10 @@ export function ChatNotifProvider({ children }: { children: ReactNode }) {
   const lastOpenedRef = useRef<number>(
     parseInt(localStorage.getItem(LAST_OPENED_KEY) ?? '0', 10),
   );
+  // Newest message timestamp this device has observed. markOpened() marks read
+  // up to this point (not just Date.now()), so a freshly-arrived message whose
+  // server ts is ahead of the device clock still clears the badge.
+  const latestMsgTsRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !db || !teamId) return;
@@ -50,6 +54,11 @@ export function ChatNotifProvider({ children }: { children: ReactNode }) {
         id: d.id,
         ...(d.data() as Omit<ChatMsg, 'id'>),
       }));
+
+      for (const m of msgs) {
+        const t = m.ts?.toMillis?.() ?? 0;
+        if (t > latestMsgTsRef.current) latestMsgTsRef.current = t;
+      }
 
       // Badge: ANY new message from someone else — lobby (toTeamId null) OR a DM to me.
       const unread = msgs.some(
@@ -73,9 +82,9 @@ export function ChatNotifProvider({ children }: { children: ReactNode }) {
   }, [teamId]);
 
   const markOpened = () => {
-    const now = Date.now();
-    localStorage.setItem(LAST_OPENED_KEY, String(now));
-    lastOpenedRef.current = now;
+    const upTo = Math.max(Date.now(), latestMsgTsRef.current);
+    localStorage.setItem(LAST_OPENED_KEY, String(upTo));
+    lastOpenedRef.current = upTo;
     setLatestDm(null);
     setHasUnread(false);
   };

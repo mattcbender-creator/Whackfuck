@@ -203,8 +203,11 @@ export default function Chat() {
   const allMsgsRef = useRef<ChatMsg[]>([]);
   const whackyMsgIdx = useRef(Math.floor(Math.random() * 100));
 
-  // Mark chat as opened — clears unread badge
-  useEffect(() => { markOpened(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mark chat as opened — clears the unread badge for THIS device. Re-run
+  // whenever a new message arrives while the chat is open so the badge stays
+  // cleared as the user reads, instead of popping back on every incoming message.
+  const latestMsg = allMsgs[allMsgs.length - 1];
+  useEffect(() => { markOpened(); }, [latestMsg?.id, latestMsg?.ts?.toMillis?.()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Firestore subscription — one listener, filter client-side
   useEffect(() => {
