@@ -198,7 +198,8 @@ export default function HoleView() {
       const idx = whackyMsgIdx.current++;
       const roast = pickRoast({ ...roastParamsRef.current, msgIndex: idx });
       const id = Date.now() + idx;
-      setWhackyMsgs(prev => [...prev.slice(-1), { id, text: roast.text, face: roast.face }]);
+      // Only ever one Whacky bubble on screen at a time — a new one replaces it.
+      setWhackyMsgs([{ id, text: roast.text, face: roast.face }]);
       // Auto-expire after 7-10 s
       addTimer(() => setWhackyMsgs(prev => prev.filter(m => m.id !== id)), 7000 + Math.random() * 3000);
     };
@@ -206,10 +207,6 @@ export default function HoleView() {
     const schedule = (initialDelay: number) => {
       addTimer(() => {
         pushMsg();
-        // 30% chance of a double-chirp
-        if (Math.random() < 0.30) {
-          addTimer(pushMsg, 1200 + Math.random() * 1200);
-        }
         // Schedule next burst: 12–22 s gap
         schedule(12000 + Math.random() * 10000);
       }, initialDelay);

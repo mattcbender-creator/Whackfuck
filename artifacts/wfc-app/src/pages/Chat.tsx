@@ -118,7 +118,7 @@ function MessageList({ msgs, teamId }: { msgs: ChatMsg[]; teamId: string }) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+    <div className="flex-1 overflow-y-auto px-4 pt-3 pb-28 flex flex-col gap-3">
       <AnimatePresence initial={false}>
         {msgs.map(m => (
           <motion.div
@@ -172,6 +172,20 @@ function SendBar({
       >
         <Send className="w-4 h-4" strokeWidth={2.5} />
       </button>
+    </div>
+  );
+}
+
+// Input bar pinned just above the bottom nav so it's always reachable — no
+// scrolling — and it rides above the keyboard (viewport resizes on focus).
+function ChatInputBar({
+  onSend, disabled,
+}: { onSend: (text: string) => Promise<void>; disabled?: boolean }) {
+  return (
+    <div className="fixed bottom-16 inset-x-0 z-40 bg-background">
+      <div className="max-w-md mx-auto">
+        <SendBar onSend={onSend} disabled={disabled} />
+      </div>
     </div>
   );
 }
@@ -331,10 +345,7 @@ export default function Chat() {
         </div>
 
         <MessageList msgs={dmMsgs} teamId={teamId} />
-
-        <div className="pb-[68px]">
-          <SendBar onSend={sendDm} />
-        </div>
+        <ChatInputBar onSend={sendDm} />
       </div>
     );
   }
@@ -368,9 +379,7 @@ export default function Chat() {
       {tab === 'lobby' && (
         <>
           <MessageList msgs={lobbyMsgs} teamId={teamId} />
-          <div className="pb-[68px]">
-            <SendBar onSend={sendToLobby} />
-          </div>
+          <ChatInputBar onSend={sendToLobby} />
         </>
       )}
 

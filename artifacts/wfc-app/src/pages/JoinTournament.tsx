@@ -9,7 +9,7 @@ import {
   teamIdKey, joinedAtKey, storeKey, hostKeyKey,
 } from '@/lib/tournament';
 import {
-  ArrowLeft, LogIn, UserPlus, Repeat, Eye, AlertTriangle, ArrowRight, Users, WifiOff, KeyRound,
+  ArrowLeft, LogIn, UserPlus, Eye, AlertTriangle, ArrowRight, Users, WifiOff, KeyRound,
 } from 'lucide-react';
 
 type Step = 'code' | 'choose' | 'rejoin';
@@ -102,9 +102,10 @@ export default function JoinTournament() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Real-time team list while the rejoin step is active.
+  // Real-time team list while the choose / rejoin steps are active, so players
+  // can spot and tap their team right away.
   useEffect(() => {
-    if (step !== 'rejoin' || !resolved || !isFirebaseConfigured || !db) return;
+    if ((step !== 'rejoin' && step !== 'choose') || !resolved || !isFirebaseConfigured || !db) return;
     const col = collection(db, 'tournaments', resolved.id, 'teams');
     const unsub = onSnapshot(col, snap => {
       const entries = snap.docs.map(d => {
@@ -129,12 +130,6 @@ export default function JoinTournament() {
     }, () => { /* ignore snapshot errors */ });
     return () => unsub();
   }, [step, resolved?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const openRejoin = () => {
-    if (!resolved) return;
-    setTeams([]);
-    setStep('rejoin');
-  };
 
   const confirmRejoin = () => {
     if (!resolved || !selectedTeam) return;
@@ -201,8 +196,51 @@ export default function JoinTournament() {
               {resolved.courseName && <p className="text-xs text-muted-foreground mt-0.5">{resolved.courseName}</p>}
             </div>
             {error && <ErrorNote text={error} />}
+
+            {/* Join an existing team — shown right here so players can see if
+                their team is already registered before deciding to register. */}
+            <div className="space-y-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
+                <Users className="w-3.5 h-3.5 text-primary" /> Join your team
+              </p>
+              {teams.length === 0 ? (
+                <p className="text-sm text-muted-foreground/70 py-3 text-center bg-card/40 border border-border/50 rounded-xl">
+                  {isFirebaseConfigured ? 'No teams registered yet — be the first below.' : 'No teams registered yet.'}
+                </p>
+              ) : (
+                teams.map(tm => (
+                  <div
+                    key={tm.id}
+                    className="w-full flex items-center justify-between gap-3 bg-card border border-border/70 rounded-xl px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Users className="w-4 h-4 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-bold text-foreground truncate">{tm.teamName}</p>
+                        {tm.players.length > 0 && (
+                          <p className="text-[11px] text-muted-foreground truncate">{formatPlayers(tm.players)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setSelectedTeam(tm); setError(''); setStep('rejoin'); }}
+                      data-testid={`button-team-${tm.id}`}
+                      className="shrink-0 h-9 px-4 rounded-full bg-primary text-primary-foreground font-condensed font-bold uppercase tracking-widest text-xs active:scale-95 transition-all"
+                    >
+                      Join
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 py-1">
+              <div className="h-px flex-1 bg-border/60" />
+              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Not listed?</span>
+              <div className="h-px flex-1 bg-border/60" />
+            </div>
+
             <ChoiceButton icon={UserPlus} title="Register new team" desc="Start a fresh team and get an invite link" onClick={() => enterToRegister(resolved)} testid="button-register" />
-            <ChoiceButton icon={Repeat} title="Rejoin my team" desc="Get back in on this device" onClick={openRejoin} testid="button-open-rejoin" />
             <ChoiceButton icon={Eye} title="Spectate" desc="Watch the leaderboard, read-only" onClick={() => enterToSpectate(resolved)} testid="button-spectate-choice" />
 
             {/* Subtle host recovery — only shown when tapped */}
