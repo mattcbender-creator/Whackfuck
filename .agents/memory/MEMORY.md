@@ -4,4 +4,5 @@
 - [Finalized lock points](finalized-lock-points.md) — when status==='final', ALL score/net paths (setScore, wheel effects, steppers, spin buttons) must guard AND show feedback; silent no-op = "nothing works".
 - [jsdom Radix Dialog UI tests](jsdom-radix-dialog-tests.md) — drive shadcn/Radix dialogs with fireEvent (userEvent dismisses them under jsdom); jsdom env via docblock + polyfills + location stub.
 - [Duplicate final-submit paths](final-submit-paths.md) — wfc-app has TWO final-round submit flows (HoleView + Scorecard handleSubmitFinal); any submit-time gate must be added to BOTH or it's bypassable.
+- [Whacky chat channels](whacky-chat-channels.md) — Whacky is DM-only (channel dmChannelId('__whacky__', teamId)), never lobby; he posts from BOTH Chat.tsx postWhacky and Admin demo sim — change both together.
 - [Async sim tick cancellation](async-tick-cancellation.md) — interval-driven async ticks that write need a runningRef checked before every await; clearInterval can't unwind an in-flight tick.

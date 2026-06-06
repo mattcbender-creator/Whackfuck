@@ -24,6 +24,16 @@ const FACE_IMAGES: Record<string, string> = {
   smug:    '/whacky-smug.jpg',
 };
 
+// Whacky is a DM contact, not a lobby poster — he slides into your DMs.
+const WHACKY_ID = '__whacky__';
+const WHACKY_CONTACT: TeamSnapshot = {
+  id: WHACKY_ID,
+  teamName: 'Whacky',
+  players: ['Your personal tormentor'],
+  netScore: 0,
+  holesPlayed: 0,
+};
+
 function tsMillis(m: ChatMsg): number {
   return m.ts?.toMillis?.() ?? 0;
 }
@@ -211,13 +221,14 @@ export default function Chat() {
     ? allMsgs.filter(m => m.channel === dmChannelId(teamId, selectedTeam.id))
     : [];
 
-  // ── Whacky auto-post to lobby ──────────────────────────────────────────────
+  // ── Whacky slides into your DMs (never the lobby) ───────────────────────────
   const postWhacky = useCallback(async () => {
     if (!db || !teamInfo || !isFirebaseConfigured) return;
-    // Skip if Whacky posted in lobby within the last 2 minutes (another device)
+    const ch = dmChannelId(WHACKY_ID, teamId);
+    // Skip if Whacky DM'd this team within the last 2 minutes (another device)
     const now = Date.now();
     const recentWhacky = allMsgsRef.current.find(
-      m => m.channel === 'general' && m.isWhacky && (m.ts?.toMillis?.() ?? 0) > now - 120_000,
+      m => m.channel === ch && m.isWhacky && (m.ts?.toMillis?.() ?? 0) > now - 120_000,
     );
     if (recentWhacky) return;
     const roast = pickRoast({
@@ -231,16 +242,16 @@ export default function Chat() {
       msgIndex: whackyMsgIdx.current++,
     });
     await addDoc(chatCol(db), {
-      fromTeamId: '__whacky__',
+      fromTeamId: WHACKY_ID,
       fromTeamName: 'Whacky',
-      toTeamId: null,
+      toTeamId: teamId,
       text: roast.text,
       face: roast.face,
       ts: serverTimestamp(),
       isWhacky: true,
-      channel: 'general',
+      channel: ch,
     });
-  }, [teamInfo]);
+  }, [teamInfo, teamId]);
 
   useEffect(() => {
     if (!isFirebaseConfigured) return;
@@ -263,10 +274,6 @@ export default function Chat() {
       isWhacky: false,
       channel: 'general',
     });
-    // 15% chance Whacky chirps back after a short delay
-    if (Math.random() < 0.15) {
-      window.setTimeout(postWhacky, 2_500 + Math.random() * 3_000);
-    }
   };
 
   const sendDm = async (text: string) => {
@@ -281,6 +288,10 @@ export default function Chat() {
       isWhacky: false,
       channel: ch,
     });
+    // DM Whacky and he fires back a roast shortly after.
+    if (selectedTeam.id === WHACKY_ID) {
+      window.setTimeout(postWhacky, 2_000 + Math.random() * 2_500);
+    }
   };
 
   // ── No Firebase ───────────────────────────────────────────────────────────
@@ -363,50 +374,60 @@ export default function Chat() {
         </>
       )}
 
-      {/* Teams (DM list) */}
+      {/* Teams (DM list) — Whacky is always pinned at the top */}
       {tab === 'teams' && (
         <div className="flex-1 overflow-y-auto pb-[68px]">
-          {teams.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8">
-              <Users className="w-10 h-10 text-muted-foreground/40" />
-              <p className="text-muted-foreground text-sm">
-                No other teams yet. Once more teams join you can send them direct messages.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {teams.map(team => {
-                const dmChannel = dmChannelId(teamId, team.id);
-                const unread = allMsgs.filter(
-                  m => m.channel === dmChannel && m.toTeamId === teamId && m.fromTeamId !== teamId,
-                ).length;
-                return (
-                  <button
-                    key={team.id}
-                    onClick={() => setSelectedTeam(team)}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-zinc-900 transition-colors"
-                  >
+          <div className="divide-y divide-border">
+            {[WHACKY_CONTACT, ...teams].map(team => {
+              const isWhackyContact = team.id === WHACKY_ID;
+              const dmChannel = dmChannelId(teamId, team.id);
+              const unread = allMsgs.filter(
+                m => m.channel === dmChannel && m.toTeamId === teamId && m.fromTeamId !== teamId,
+              ).length;
+              return (
+                <button
+                  key={team.id}
+                  onClick={() => setSelectedTeam(team)}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-zinc-900 transition-colors"
+                >
+                  {isWhackyContact ? (
+                    <img
+                      src="/whacky-smug.jpg"
+                      alt="Whacky"
+                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-primary/40"
+                    />
+                  ) : (
                     <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
                       <span className="text-[14px] font-black text-primary">
                         {team.teamName.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-bold text-foreground truncate">{team.teamName}</p>
-                      {team.players.filter(Boolean).length > 0 && (
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {team.players.filter(Boolean).join(', ')}
-                        </p>
-                      )}
-                    </div>
-                    {unread > 0 && (
-                      <span className="shrink-0 min-w-[20px] h-5 rounded-full bg-primary text-black text-[10px] font-black flex items-center justify-center px-1.5">
-                        {unread}
-                      </span>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[14px] font-bold truncate ${isWhackyContact ? 'text-primary' : 'text-foreground'}`}>
+                      {team.teamName}
+                    </p>
+                    {team.players.filter(Boolean).length > 0 && (
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {team.players.filter(Boolean).join(', ')}
+                      </p>
                     )}
-                  </button>
-                );
-              })}
+                  </div>
+                  {unread > 0 && (
+                    <span className="shrink-0 min-w-[20px] h-5 rounded-full bg-primary text-black text-[10px] font-black flex items-center justify-center px-1.5">
+                      {unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {teams.length === 0 && (
+            <div className="flex flex-col items-center gap-2 text-center px-8 py-8">
+              <Users className="w-8 h-8 text-muted-foreground/40" />
+              <p className="text-muted-foreground text-[13px]">
+                No other teams yet. Once more teams join you can DM them too.
+              </p>
             </div>
           )}
         </div>
