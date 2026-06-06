@@ -407,7 +407,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const teeMountRef = useRef(false);
   useEffect(() => {
-    if (!autoTeeRule) return;
+    if (autoTeeRule !== true) return;
     if (!hydratedRef.current) return;
     if (!teeMountRef.current) {
       teeMountRef.current = true;

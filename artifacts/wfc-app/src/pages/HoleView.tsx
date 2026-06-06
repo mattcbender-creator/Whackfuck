@@ -370,8 +370,9 @@ export default function HoleView() {
         </div>
 
         {/* Rule Card — reads the resolved tournament rule for this hole. A wheel
-            rule gets the Item Box treatment (sparkles + accent). 'none' hides it. */}
-        {rule && rule.type !== 'none' && (
+            rule gets the Item Box treatment (sparkles + accent). 'none' shows a
+            subtle Standard Play placeholder so the space never looks broken. */}
+        {rule && rule.type !== 'none' ? (
         <div className={`bg-card border rounded-2xl p-4 relative overflow-hidden ${isWheelHole ? 'border-primary/60' : 'border-primary/30'}`}>
           <div className="flex items-center gap-2 mb-1.5">
             {isWheelHole ? <Sparkles className="w-3 h-3 text-primary" /> : <Flag className="w-3 h-3 text-primary" />}
@@ -385,6 +386,10 @@ export default function HoleView() {
           <p className="text-[13px] text-foreground/75 leading-snug">
             {rule.ruleText}
           </p>
+        </div>
+        ) : (
+        <div className="bg-card/30 border border-border/30 rounded-2xl px-4 py-3 flex items-center justify-center">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/40">Standard Play</span>
         </div>
         )}
 
@@ -406,17 +411,33 @@ export default function HoleView() {
               {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Minus className="w-6 h-6 text-foreground" />}
             </button>
 
-            <div className="flex flex-col items-center w-24">
-              <span
-                data-testid={`score-value-hole-${hole.hole}`}
-                className={`font-condensed text-6xl font-black leading-none transition-colors ${scoreColor(diff)}`}
-              >
-                {score === null ? '—' : score}
-              </span>
+            <button
+              className="flex flex-col items-center w-24 active:scale-95 transition-transform disabled:active:scale-100"
+              onClick={() => {
+                if (!holeLocked && !isFinal && score === null) setScore(holeIdx + 1, hole.par);
+              }}
+              disabled={holeLocked || isFinal || score !== null}
+              aria-label={score === null ? `Set score to par ${hole.par}` : `Score: ${score}`}
+            >
+              {score === null ? (
+                <span
+                  data-testid={`score-value-hole-${hole.hole}`}
+                  className="font-condensed text-2xl font-bold text-white/50 leading-tight text-center uppercase tracking-wide"
+                >
+                  Tap<br/>for par
+                </span>
+              ) : (
+                <span
+                  data-testid={`score-value-hole-${hole.hole}`}
+                  className={`font-condensed text-5xl font-bold leading-none transition-colors ${scoreColor(diff)}`}
+                >
+                  {score}
+                </span>
+              )}
               <span className={`text-[10px] font-black uppercase tracking-widest mt-1.5 transition-colors ${sLabelColor}`}>
                 {sLabel}
               </span>
-            </div>
+            </button>
 
             <button
               data-testid={`score-increase-hole-${hole.hole}`}

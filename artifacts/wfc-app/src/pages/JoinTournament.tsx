@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { Input } from '@/components/ui/input';
 import { useTournament, fetchTeamsForTournament, type TeamLookup } from '@/lib/tournamentContext';
-import { isFirebaseConfigured } from '@/lib/firebase';
+import { db, isFirebaseConfigured } from '@/lib/firebase';
+import { onSnapshot, collection } from 'firebase/firestore';
 import {
   type TournamentConfig, formatPlayers,
   teamIdKey, joinedAtKey, storeKey, hostKeyKey,
@@ -101,16 +102,38 @@ export default function JoinTournament() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openRejoin = async () => {
+  // Real-time team list while the rejoin step is active.
+  useEffect(() => {
+    if (step !== 'rejoin' || !resolved || !isFirebaseConfigured || !db) return;
+    const col = collection(db, 'tournaments', resolved.id, 'teams');
+    const unsub = onSnapshot(col, snap => {
+      const entries = snap.docs.map(d => {
+        const data = d.data();
+        const players = Array.isArray(data.players)
+          ? (data.players as unknown[]).filter((p): p is string => typeof p === 'string')
+          : ([data.player1, data.player2] as unknown[]).filter((p): p is string => typeof p === 'string' && !!p);
+        const lu = data.lastUpdated;
+        const ts: number = lu && typeof lu.toMillis === 'function'
+          ? (lu.toMillis() as number)
+          : typeof lu === 'number' ? lu : 0;
+        return {
+          id: d.id,
+          teamName: typeof data.teamName === 'string' ? data.teamName : 'Team',
+          players,
+          teamCode: typeof data.teamCode === 'string' ? data.teamCode : '',
+          ts,
+        };
+      });
+      entries.sort((a, b) => b.ts - a.ts);
+      setTeams(entries.map(e => ({ id: e.id, teamName: e.teamName, players: e.players, teamCode: e.teamCode })));
+    }, () => { /* ignore snapshot errors */ });
+    return () => unsub();
+  }, [step, resolved?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openRejoin = () => {
     if (!resolved) return;
-    setBusy(true);
-    try {
-      const list = await fetchTeamsForTournament(resolved.id);
-      setTeams(list);
-      setStep('rejoin');
-    } finally {
-      setBusy(false);
-    }
+    setTeams([]);
+    setStep('rejoin');
   };
 
   const confirmRejoin = () => {
@@ -240,22 +263,33 @@ export default function JoinTournament() {
               <>
                 <p className="text-sm text-muted-foreground">Pick your team:</p>
                 {teams.length === 0 && (
-                  <p className="text-sm text-muted-foreground/70 py-4 text-center">No teams registered yet.</p>
+                  <p className="text-sm text-muted-foreground/70 py-4 text-center">
+                    {isFirebaseConfigured ? 'Loading teams…' : 'No teams registered yet.'}
+                  </p>
                 )}
                 <div className="space-y-2">
                   {teams.map(tm => (
-                    <button
+                    <div
                       key={tm.id}
-                      onClick={() => { setSelectedTeam(tm); setError(''); }}
-                      data-testid={`button-team-${tm.id}`}
-                      className="w-full flex items-center gap-3 bg-card border border-border/70 rounded-xl px-4 py-3 text-left hover:border-primary/50 transition-colors"
+                      className="w-full flex items-center justify-between gap-3 bg-card border border-border/70 rounded-xl px-4 py-3"
                     >
-                      <Users className="w-4 h-4 text-primary shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-bold text-foreground truncate">{tm.teamName}</p>
-                        {tm.players.length > 0 && <p className="text-[11px] text-muted-foreground truncate">{formatPlayers(tm.players)}</p>}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Users className="w-4 h-4 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-bold text-foreground truncate">{tm.teamName}</p>
+                          {tm.players.length > 0 && (
+                            <p className="text-[11px] text-muted-foreground truncate">{formatPlayers(tm.players)}</p>
+                          )}
+                        </div>
                       </div>
-                    </button>
+                      <button
+                        onClick={() => { setSelectedTeam(tm); setError(''); }}
+                        data-testid={`button-team-${tm.id}`}
+                        className="shrink-0 h-9 px-4 rounded-full bg-primary text-primary-foreground font-condensed font-bold uppercase tracking-widest text-xs active:scale-95 transition-all"
+                      >
+                        Join
+                      </button>
+                    </div>
                   ))}
                 </div>
               </>
