@@ -7,6 +7,7 @@ import { FinalizedBanner } from '@/components/FinalizedBanner';
 import { teamDoc, scoresToMap, getActiveTournamentId } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { getWheelItem } from '@/lib/wheel';
+import { pickRoast } from '@/lib/roasts';
 import { db } from '@/lib/firebase';
 import { setDoc, serverTimestamp } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
@@ -405,6 +406,18 @@ export default function HoleView() {
             {rule.ruleText}
           </p>
         </div>
+        ) : teamInfo ? (
+        <p className="text-[11px] text-muted-foreground/40 italic text-center px-3 leading-snug select-none">
+          {pickRoast({
+            teamName: teamInfo.teamName,
+            players: teamInfo.players,
+            netScore,
+            holesPlayed,
+            holeNum: hole.hole,
+            score: score ?? null,
+            par: hole.par,
+          })}
+        </p>
         ) : null}
 
         {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown

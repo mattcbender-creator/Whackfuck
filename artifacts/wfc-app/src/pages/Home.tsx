@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { useWFC } from '@/lib/store';
+import { useWFC, type TeamSnapshot } from '@/lib/store';
 import { useTournament } from '@/lib/tournamentContext';
 import { WFC_2026_ID, formatPlayers } from '@/lib/tournament';
 import { Input } from '@/components/ui/input';
@@ -149,7 +149,7 @@ function TeamInvite({ joinCode, teamCode }: { joinCode: string; teamCode: string
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { setTeamInfo, teamInfo, teamCode, hasSubmitted, serverTeamMissing, resetDevice, listTeamsOnce } = useWFC();
+  const { setTeamInfo, teamInfo, teamCode, hasSubmitted, serverTeamMissing, resetDevice, listTeamsOnce, adoptTeam } = useWFC();
   const { tournament, activeId, autoTeeRule, leaveTournament } = useTournament();
   const isLocked = hasSubmitted || tournament?.status === 'final';
 
@@ -162,6 +162,8 @@ export default function Home() {
   const [animate, setAnimate] = useState(false);
   const [editing, setEditing] = useState(false);
   const [nameTaken, setNameTaken] = useState(false);
+  const [existingTeams, setExistingTeams] = useState<TeamSnapshot[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setAnimate(true), 80);
@@ -181,6 +183,18 @@ export default function Home() {
       setPlayers(p.slice(0, Math.max(teamSize, teamInfo.players.length)));
     }
   }, [teamInfo, teamSize]);
+
+  // Fetch existing teams when someone hasn't registered yet, so they can join
+  // a teammate instead of accidentally creating a duplicate team.
+  useEffect(() => {
+    if (teamInfo || hasSubmitted) return;
+    setTeamsLoading(true);
+    listTeamsOnce()
+      .then(teams => setExistingTeams(teams))
+      .catch(() => setExistingTeams([]))
+      .finally(() => setTeamsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!teamInfo, hasSubmitted]);
 
   useEffect(() => {
     const name = teamName.trim();
@@ -373,6 +387,46 @@ export default function Home() {
               >
                 Start Fresh on This Device
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Existing teams to join — shown to unregistered devices so teammates
+            don't accidentally create duplicate teams ── */}
+        {!teamInfo && !hasSubmitted && !editing && existingTeams.length > 0 && (
+          <div className={`w-full transition-all duration-700 delay-150 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+            <div className="space-y-2">
+              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <Users className="w-3 h-3" />
+                {teamsLoading ? 'Loading teams…' : 'Join a team already in the tournament'}
+              </p>
+              {existingTeams.map(t => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 bg-card border border-border/60 rounded-2xl px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="font-condensed font-black uppercase tracking-tight text-base text-foreground leading-tight truncate">
+                      {t.teamName}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {formatPlayers(t.players)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => adoptTeam(t.id)}
+                    className="shrink-0 px-4 py-2 rounded-full bg-primary text-black font-condensed font-black uppercase tracking-widest text-xs hover:opacity-90 transition-opacity"
+                  >
+                    Join
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center gap-3 py-1">
+                <div className="h-px flex-1 bg-border/40" />
+                <span className="text-[10px] text-muted-foreground uppercase tracking-widest">or create a new team</span>
+                <div className="h-px flex-1 bg-border/40" />
+              </div>
             </div>
           </div>
         )}
