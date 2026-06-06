@@ -232,7 +232,7 @@ export default function HoleView() {
 
   return (
     <div
-      className="min-h-[100dvh] bg-background flex flex-col pb-20 select-none"
+      className="h-[100dvh] bg-background flex flex-col select-none overflow-hidden"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -243,24 +243,18 @@ export default function HoleView() {
             <p className="font-condensed text-lg font-bold uppercase tracking-wider text-foreground leading-none truncate">
               {teamInfo?.teamName || 'YOUR TEAM'}
             </p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
-              Thru {holesPlayed}{autoTeeRule ? ` · ${currentTee === 'tips' ? 'Tips' : "Women's"} tees` : ''}
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-0.5 leading-snug">
+              Thru {holesPlayed}
+              {autoTeeRule ? ` · ${currentTee === 'tips' ? 'Tips' : "Women's"}` : ''}
+              {autoTeeRule && (
+                <span className="normal-case tracking-normal">
+                  {' · Raw '}
+                  <span className={`font-black uppercase tracking-widest ${rawNet < 0 ? 'text-primary' : 'text-foreground/80'}`}>
+                    {rawNet === 0 ? 'E' : rawNet > 0 ? `+${rawNet}` : rawNet}
+                  </span>
+                </span>
+              )}
             </p>
-            {/* Raw-vs-par chip: shows the value that actually drives the tee
-                assignment, so a player who sees TOTAL +2 / TIPS isn't
-                confused. Updates live as scores are entered. Only shown when the
-                tournament uses the WFC auto-tee rule. */}
-            {autoTeeRule && (
-            <p className="text-[10px] uppercase tracking-widest mt-1">
-              <span className="text-muted-foreground/70 font-bold">Raw vs Par&nbsp;</span>
-              <span className={`font-black ${rawNet < 0 ? 'text-primary' : 'text-foreground/80'}`}>
-                {rawNet === 0 ? 'E' : rawNet > 0 ? `+${rawNet}` : rawNet}
-              </span>
-              <span className="text-muted-foreground/50 normal-case tracking-normal ml-1">
-                — drives your tee
-              </span>
-            </p>
-            )}
           </div>
           <div className="text-right">
             <div className={`font-condensed text-3xl font-black leading-none ${netScore < 0 ? 'text-primary' : 'text-foreground'}`}>
@@ -275,7 +269,7 @@ export default function HoleView() {
           <button
             onClick={goPrev}
             disabled={orderPos === 0}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
+            className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
             data-testid="button-prev-hole"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -315,7 +309,7 @@ export default function HoleView() {
           <button
             onClick={goNext}
             disabled={orderPos === 17}
-            className="w-10 h-10 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
+            className="w-14 h-14 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
             data-testid="button-next-hole"
             aria-label="Next hole"
           >
@@ -326,12 +320,12 @@ export default function HoleView() {
 
       {/* Main Content — tightened spacing so everything important fits without
           scrolling on a typical phone (par/yds, rule, score stepper). */}
-      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-4">
+      <div className="flex-1 overflow-y-auto flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 pb-20">
         <FinalizedBanner />
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
             single row beside it instead of below, saving a full row of height. */}
-        <div className="bg-card border border-border rounded-2xl px-5 py-7 relative overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl px-5 py-5 relative overflow-hidden">
           {/* Background hole number */}
           <div
             className="absolute -top-6 -right-2 font-condensed font-black text-primary/[0.07] pointer-events-none select-none leading-none"
@@ -343,7 +337,7 @@ export default function HoleView() {
           <div className="relative flex items-center gap-4">
             {/* Par hero */}
             <div className="flex items-end gap-3 shrink-0">
-              <span className="font-condensed text-[80px] font-black leading-[0.85] text-foreground">
+              <span className="font-condensed text-[64px] font-black leading-[0.85] text-foreground">
                 {hole.par}
               </span>
               <div className="pb-2">
@@ -395,7 +389,7 @@ export default function HoleView() {
             rule gets the Item Box treatment (sparkles + accent). 'none' shows a
             subtle Standard Play placeholder so the space never looks broken. */}
         {rule && rule.type !== 'none' ? (
-        <div className={`bg-card border rounded-2xl p-4 relative overflow-hidden ${isWheelHole ? 'border-primary/60' : 'border-primary/30'}`}>
+        <div className={`bg-card border rounded-2xl px-4 py-3 relative overflow-hidden ${isWheelHole ? 'border-primary/60' : 'border-primary/30'}`}>
           <div className="flex items-center gap-2 mb-1.5">
             {isWheelHole ? <Sparkles className="w-3 h-3 text-primary" /> : <Flag className="w-3 h-3 text-primary" />}
             <p className="text-[9px] font-black text-primary uppercase tracking-widest">
@@ -413,7 +407,7 @@ export default function HoleView() {
 
         {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown
             above) so the stepper fits without scrolling on most phones. */}
-        <div className={`bg-card border rounded-2xl p-4 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
+        <div className={`bg-card border rounded-2xl px-4 py-3 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
           <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-3 flex items-center justify-center gap-1.5">
             {holeLocked && <Lock className="w-3 h-3 text-primary" />}
             {hasSubmitted ? 'Round Submitted' : 'Enter Score'}
