@@ -379,6 +379,12 @@ export function configDoc(db: Firestore): DocumentReference {
 export function drivesCol(db: Firestore): CollectionReference {
   return collection(db, 'tournaments', activeOrSentinel(), 'longestDrives');
 }
+export function chatCol(db: Firestore): CollectionReference {
+  return collection(db, 'tournaments', activeOrSentinel(), 'chat');
+}
+export function dmChannelId(teamIdA: string, teamIdB: string): string {
+  return `dm:${[teamIdA, teamIdB].sort().join(':')}`;
+}
 export function tournamentDoc(db: Firestore, tId: string): DocumentReference {
   return doc(db, 'tournaments', tId);
 }

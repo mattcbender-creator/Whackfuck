@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'wouter';
-import { Home, ClipboardList, Trophy, Flag, BookOpen, Award } from 'lucide-react';
+import { Home, ClipboardList, Trophy, Flag, BookOpen, Award, MessageCircle } from 'lucide-react';
 import { useTournament } from '@/lib/tournamentContext';
+import { useChatNotif } from '@/lib/chatContext';
 
 const SCORING_TABS = new Set(['/hole', '/scorecard']);
 
@@ -10,22 +11,26 @@ const HIDE_PREFIXES = ['/create', '/join', '/watch'];
 export function BottomNav() {
   const [location] = useLocation();
   const { activeId, isSpectator, isHost, tournament } = useTournament();
+  const { hasUnread } = useChatNotif();
   const isFinal = tournament?.status === 'final';
 
+  const chatTab = { href: '/chat', icon: MessageCircle, label: 'Chat', testid: 'tab-chat', badge: hasUnread };
+
   const allTabs = [
-    { href: '/home',        icon: Home,          label: 'Home',      testid: 'tab-home' },
-    { href: '/hole',        icon: Flag,          label: 'Hole',      testid: 'tab-hole' },
-    { href: '/scorecard',   icon: ClipboardList, label: 'Scorecard', testid: 'tab-scorecard' },
-    { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard' },
-    { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
+    { href: '/home',        icon: Home,          label: 'Home',      testid: 'tab-home',        badge: false },
+    { href: '/hole',        icon: Flag,          label: 'Hole',      testid: 'tab-hole',        badge: false },
+    { href: '/scorecard',   icon: ClipboardList, label: 'Scorecard', testid: 'tab-scorecard',   badge: false },
+    { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard', badge: false },
+    { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules',       badge: false },
+    chatTab,
   ];
 
   const finalTabs = [
-    // Hosts keep a Home tab after finalization — it's the only entry point to Admin.
-    ...(isHost ? [{ href: '/home', icon: Home, label: 'Home', testid: 'tab-home' }] : []),
-    { href: '/results',     icon: Award,         label: 'Results',   testid: 'tab-results' },
-    { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard' },
-    { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules' },
+    ...(isHost ? [{ href: '/home', icon: Home, label: 'Home', testid: 'tab-home', badge: false }] : []),
+    { href: '/results',     icon: Award,         label: 'Results',   testid: 'tab-results',     badge: false },
+    { href: '/leaderboard', icon: Trophy,        label: 'Live',      testid: 'tab-leaderboard', badge: false },
+    { href: '/rules',       icon: BookOpen,      label: 'Rules',     testid: 'tab-rules',       badge: false },
+    chatTab,
   ];
 
   const spectatorTabs = allTabs
@@ -63,6 +68,9 @@ export function BottomNav() {
                 <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.8} />
                 {isActive && (
                   <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+                )}
+                {tab.badge && !isActive && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" />
                 )}
               </div>
               <span className={`text-[9px] font-bold tracking-widest uppercase font-condensed leading-none mt-0.5 ${

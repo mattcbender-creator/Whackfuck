@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { StoreProvider } from "@/lib/store";
 import { TournamentProvider, useTournament } from "@/lib/tournamentContext";
+import { ChatNotifProvider } from "@/lib/chatContext";
 import { useEffect, type ReactNode } from "react";
 
 import Landing from "@/pages/Landing";
@@ -17,9 +18,11 @@ import Rules from "@/pages/Rules";
 import Stats from "@/pages/Stats";
 import Admin from "@/pages/Admin";
 import Results from "@/pages/Results";
+import Chat from "@/pages/Chat";
 import NotFound from "@/pages/not-found";
 import { BottomNav } from "@/components/BottomNav";
 import { LiveTicker } from "@/components/LiveTicker";
+import { DmBanner } from "@/components/DmBanner";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +42,7 @@ function Router() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
       <LiveTicker />
+      <DmBanner />
       <Switch>
         <Route path="/" component={Landing} />
         <Route path="/create" component={CreateTournament} />
@@ -71,6 +75,9 @@ function Router() {
         <Route path="/admin">
           <Guard allowSpectator><Admin /></Guard>
         </Route>
+        <Route path="/chat">
+          <Guard allowSpectator><Chat /></Guard>
+        </Route>
         <Route component={NotFound} />
       </Switch>
       <BottomNav />
@@ -82,10 +89,12 @@ function AppInner() {
   const { activeId } = useTournament();
   return (
     <StoreProvider key={activeId ?? "__none__"}>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-        <Router />
-      </WouterRouter>
-      <Toaster />
+      <ChatNotifProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <Router />
+        </WouterRouter>
+        <Toaster />
+      </ChatNotifProvider>
     </StoreProvider>
   );
 }

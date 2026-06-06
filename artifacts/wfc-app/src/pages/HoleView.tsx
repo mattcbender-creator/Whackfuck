@@ -8,7 +8,7 @@ import { FinalizedBanner } from '@/components/FinalizedBanner';
 import { teamDoc, scoresToMap, getActiveTournamentId } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { getWheelItem } from '@/lib/wheel';
-import { pickRoast } from '@/lib/roasts';
+import { pickRoast, type FaceType } from '@/lib/roasts';
 import { db } from '@/lib/firebase';
 import { setDoc, serverTimestamp } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
@@ -157,7 +157,7 @@ export default function HoleView() {
   // Occasionally two arrive in quick succession (double-chirp).
   // The async loop keeps firing while the team is registered; cancelled on unmount.
 
-  interface WhackyMsg { id: number; text: string; face: import('@/lib/roasts').FaceType }
+  interface WhackyMsg { id: number; text: string; face: FaceType }
   const [whackyMsgs, setWhackyMsgs] = useState<WhackyMsg[]>([]);
   const whackyTimers = useRef<number[]>([]);
   const whackyMsgIdx = useRef(0);
@@ -594,38 +594,60 @@ export default function HoleView() {
         )}
       </div>
 
-      {/* ── Whacky roast bubble — fixed above the nav bar, only when prev hole scored ── */}
-      <AnimatePresence mode="wait">
-        {roastText && !roastDismissed && (
-          <motion.div
-            key={roastText}
-            initial={{ y: 56, opacity: 0, scale: 0.95 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 24, opacity: 0, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 340, damping: 26 }}
-            className="fixed bottom-[68px] left-0 right-0 z-30 px-4 pb-1"
-          >
-            <div className="flex items-end gap-2.5 max-w-md mx-auto">
-              <img
-                src="/whacky-face.jpg"
-                alt="Whacky"
-                className="w-11 h-11 rounded-full object-cover shrink-0 border border-primary/30"
-              />
-              <div className="flex-1 relative bg-zinc-900/95 backdrop-blur-sm border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 pr-8 shadow-2xl">
-                <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mb-0.5">Whacky</p>
-                <p className="text-[12px] text-muted-foreground leading-snug">{roastText}</p>
-                <button
-                  onClick={() => setRoastDismissed(true)}
-                  className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
-                  aria-label="Dismiss"
-                >
-                  <X className="w-3 h-3 text-muted-foreground" />
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Whacky message stack — up to 2 bubbles above the nav bar ── */}
+      {whackyMsgs.length > 0 && (() => {
+        const FACES: Record<FaceType, string> = {
+          angry:   '/whacky-angry.jpg',
+          laugh:   '/whacky-laugh.jpg',
+          shocked: '/whacky-shocked.jpg',
+          fire:    '/whacky-fire.jpg',
+          sad:     '/whacky-sad.jpg',
+          smug:    '/whacky-smug.jpg',
+        };
+        return (
+          <div className="fixed bottom-[68px] left-0 right-0 z-30 px-4 pb-1 flex flex-col gap-1.5 max-w-md mx-auto pointer-events-none">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {whackyMsgs.map((msg, i) => {
+                const isLast = i === whackyMsgs.length - 1;
+                return (
+                  <motion.div
+                    key={msg.id}
+                    layout
+                    initial={{ y: 40, opacity: 0, scale: 0.96 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.2 } }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                    className="flex items-end gap-2.5 pointer-events-auto"
+                  >
+                    {isLast ? (
+                      <img
+                        src={FACES[msg.face]}
+                        alt="Whacky"
+                        className="w-11 h-11 rounded-full object-cover shrink-0 border border-primary/30"
+                      />
+                    ) : (
+                      <div className="w-11 shrink-0" />
+                    )}
+                    <div className="flex-1 relative bg-zinc-900/95 backdrop-blur-sm border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 pr-8 shadow-2xl">
+                      {isLast && (
+                        <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mb-0.5">Whacky</p>
+                      )}
+                      <p className="text-[12px] text-muted-foreground leading-snug">{msg.text}</p>
+                      <button
+                        onClick={() => setWhackyMsgs(prev => prev.filter(m => m.id !== msg.id))}
+                        className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
+                        aria-label="Dismiss"
+                      >
+                        <X className="w-3 h-3 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        );
+      })()}
 
       <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} hole={wheelHole} />
 
