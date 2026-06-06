@@ -152,32 +152,79 @@ export default function HoleView() {
   // spinning the wheel is gone — the wheel is now a per-hole rule.
   const holeLocked = hasSubmitted;
 
-  // Whacky roast — computed once when you NAVIGATE to a hole (orderPos changes).
-  // Does NOT update while you enter/change the score on the current hole.
-  // Roasts about the PREVIOUS hole's score, not the current one.
-  const [roastText, setRoastText] = useState<string | null>(null);
-  const [roastDismissed, setRoastDismissed] = useState(false);
+  // ── Whacky message queue ────────────────────────────────────────────────
+  // Behaves like an iMessage thread: messages appear, linger, then disappear.
+  // Occasionally two arrive in quick succession (double-chirp).
+  // The async loop keeps firing while the team is registered; cancelled on unmount.
 
+  interface WhackyMsg { id: number; text: string; face: import('@/lib/roasts').FaceType }
+  const [whackyMsgs, setWhackyMsgs] = useState<WhackyMsg[]>([]);
+  const whackyTimers = useRef<number[]>([]);
+  const whackyMsgIdx = useRef(0);
+
+  // Ref always holds the latest params for use inside the async loop closure.
+  const roastParamsRef = useRef({
+    teamName: teamInfo?.teamName ?? '',
+    players: teamInfo?.players ?? [],
+    netScore,
+    holesPlayed,
+    holeNum: hole.hole,
+    score: score ?? null,
+    par: hole.par,
+  });
   useEffect(() => {
-    setRoastDismissed(false);
-    if (!teamInfo || orderPos === 0) { setRoastText(null); return; }
-    const prevHoleNum = holeOrder[orderPos - 1];
-    if (prevHoleNum == null) { setRoastText(null); return; }
-    const prevHoleIdx = prevHoleNum - 1;
-    const prevScore = scores[prevHoleIdx];
-    if (prevScore == null) { setRoastText(null); return; }
-    const prevPar = HOLES[prevHoleIdx]?.par ?? 4;
-    setRoastText(pickRoast({
-      teamName: teamInfo.teamName,
-      players: teamInfo.players,
+    roastParamsRef.current = {
+      teamName: teamInfo?.teamName ?? '',
+      players: teamInfo?.players ?? [],
       netScore,
       holesPlayed,
       holeNum: hole.hole,
-      score: prevScore,
-      par: prevPar,
-    }));
+      score: score ?? null,
+      par: hole.par,
+    };
+  }, [teamInfo, netScore, holesPlayed, hole.hole, score, hole.par]);
+
+  useEffect(() => {
+    if (!teamInfo) return;
+    whackyTimers.current = [];
+    let cancelled = false;
+
+    const addTimer = (fn: () => void, ms: number) => {
+      const t = window.setTimeout(() => { if (!cancelled) fn(); }, ms);
+      whackyTimers.current.push(t);
+    };
+
+    const pushMsg = () => {
+      const idx = whackyMsgIdx.current++;
+      const roast = pickRoast({ ...roastParamsRef.current, msgIndex: idx });
+      const id = Date.now() + idx;
+      setWhackyMsgs(prev => [...prev.slice(-1), { id, text: roast.text, face: roast.face }]);
+      // Auto-expire after 7-10 s
+      addTimer(() => setWhackyMsgs(prev => prev.filter(m => m.id !== id)), 7000 + Math.random() * 3000);
+    };
+
+    const schedule = (initialDelay: number) => {
+      addTimer(() => {
+        pushMsg();
+        // 30% chance of a double-chirp
+        if (Math.random() < 0.30) {
+          addTimer(pushMsg, 1200 + Math.random() * 1200);
+        }
+        // Schedule next burst: 12–22 s gap
+        schedule(12000 + Math.random() * 10000);
+      }, initialDelay);
+    };
+
+    // First message after 4–8 s
+    schedule(4000 + Math.random() * 4000);
+
+    return () => {
+      cancelled = true;
+      whackyTimers.current.forEach(t => window.clearTimeout(t));
+      whackyTimers.current = [];
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderPos]); // intentionally only recalculates on hole navigation
+  }, [!!teamInfo]);
 
   // Free navigation: players may move to any hole and score holes in any order.
   // Works on play-order positions (0–17), not raw hole indices.
