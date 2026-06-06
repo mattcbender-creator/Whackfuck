@@ -405,17 +405,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Tee-change notification (only when the auto-tee rule is on) ──
   const { toast } = useToast();
-  const teeMountRef = useRef(false);
+  // Baseline of the last-known tee. Starts null and is recorded silently the
+  // first time hydration AND the Firestore lock are fully settled, so a page
+  // refresh that simply restores an under-par (Tips) state never fires a toast.
+  // We gate on lockResolved because the hydrated scores and lockResolved flip
+  // in the same render, so currentTee is final when we capture the baseline —
+  // a plain "skip the first run" guard gets consumed on the stale pre-hydration
+  // render and then fires on the real value.
+  const prevTeeRef = useRef<'tips' | 'womens' | null>(null);
   useEffect(() => {
     if (autoTeeRule !== true) return;
-    if (!hydratedRef.current) return;
+    if (!hydratedRef.current || !lockResolved) return;
     // Never fire tee toasts for finalized/submitted rounds — hydration changes
     // to currentTee when joining an already-finished tournament must be silent.
     if (hasSubmitted || tournament?.status === 'final') return;
-    if (!teeMountRef.current) {
-      teeMountRef.current = true;
+    // First settled observation: record the baseline silently, no toast.
+    if (prevTeeRef.current === null) {
+      prevTeeRef.current = currentTee;
       return;
     }
+    if (prevTeeRef.current === currentTee) return;
+    prevTeeRef.current = currentTee;
     const teeToastClass =
       'border-primary/60 bg-primary/15 text-foreground backdrop-blur ' +
       '[&>div>div:first-child]:text-primary [&>div>div:first-child]:font-condensed ' +
@@ -433,7 +443,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         className: teeToastClass,
       });
     }
-  }, [currentTee, toast, autoTeeRule, hasSubmitted, tournament?.status]);
+  }, [currentTee, toast, autoTeeRule, hasSubmitted, tournament?.status, lockResolved]);
 
   // ── Push own (non-score) changes to Firestore ──
   // Per-hole scores are written by setScore via field-level merges so two
