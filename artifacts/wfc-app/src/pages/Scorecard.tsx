@@ -371,16 +371,16 @@ export default function Scorecard() {
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
-    // If hole 18 is an Item Box hole that hasn't been spun yet, force the spin
-    // before the round can be submitted.
-    const finalRule = holeRules[17];
-    if (finalRule?.type === 'wheel' && !wheelSpins[18]) {
-      setWheelHole(18);
+    // Block submission until every scored wheel hole has been spun.
+    const unspunHole = holeRules.reduce<number | null>((found, r, idx) => {
+      if (found !== null) return found;
+      if (r?.type === 'wheel' && scores[idx] !== null && !wheelSpins[idx + 1]) return idx + 1;
+      return null;
+    }, null);
+    if (unspunHole !== null) {
+      setWheelHole(unspunHole);
       setWheelOpen(true);
-      toast({
-        title: 'Spin the Item Box',
-        description: 'Hole 18 is an Item Box hole — spin it before you submit.',
-      });
+      toast({ title: 'Spin the Item Box', description: `Hole ${unspunHole} is an Item Box hole — spin it before you submit.` });
       return;
     }
     setFinishLoading(true);

@@ -49,7 +49,6 @@ export default function WheelModal({ open, onClose, hole }: Props) {
   const [landed, setLanded] = useState<WheelItem | null>(null);
   const [teams, setTeams] = useState<TeamSnapshot[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false); // Two-tap confirm before spin
   const spinTimer = useRef<number | null>(null);
   const spinLockRef = useRef(false); // Guards against rapid double-taps of spin
 
@@ -75,7 +74,6 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         setLanded(null);
       }
       setError(null);
-      setConfirming(false);
       spinLockRef.current = false;
     }
     return () => {
@@ -276,15 +274,12 @@ export default function WheelModal({ open, onClose, hole }: Props) {
             Mario Kart Turn
           </span>
         </div>
-        {/* The intro phase is a mandatory spin — once a score is entered on a
-            wheel hole the spin cannot be skipped, so no close affordance is
-            shown until the spin is recorded (phase 'applied'). */}
-        {phase === 'applied' && (
+        {(phase === 'intro' || phase === 'applied') && (
           <button
             onClick={onClose}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
             data-testid="button-wheel-close"
-            aria-label="Close"
+            aria-label="Back"
           >
             <X className="w-5 h-5 text-white" />
           </button>
@@ -324,7 +319,7 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         )}
 
         {/* INTRO */}
-        {phase === 'intro' && !confirming && (
+        {phase === 'intro' && (
           <div className="max-w-sm w-full text-center">
             <h2 className="font-condensed text-3xl font-black text-white uppercase tracking-wider mb-2">
               {hole != null ? `Item Box — Hole ${hole}` : 'Item Box'}
@@ -335,7 +330,7 @@ export default function WheelModal({ open, onClose, hole }: Props) {
               <span className="text-white/50 text-xs">Wheel effects change scores only — they never move your tee block.</span>
             </p>
             <button
-              onClick={() => setConfirming(true)}
+              onClick={handleSpin}
               data-testid="button-wheel-spin"
               className="w-full h-16 rounded-full bg-primary text-primary-foreground font-condensed font-black text-xl uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-primary/40 flex items-center justify-center gap-2"
             >
@@ -345,39 +340,6 @@ export default function WheelModal({ open, onClose, hole }: Props) {
             <p className="mt-3 text-white/40 text-[11px] font-bold uppercase tracking-widest py-2">
               You scored this hole — the Item Box must be spun
             </p>
-          </div>
-        )}
-
-        {/* INTRO → CONFIRM (final chance to back out before locking) */}
-        {phase === 'intro' && confirming && (
-          <div className="max-w-sm w-full text-center">
-            <div className="rounded-2xl border-2 border-red-500/60 bg-red-950/30 px-5 py-5 mb-5">
-              <h2 className="font-condensed text-2xl font-black text-white uppercase tracking-wider mb-2">
-                Spin the Item Box?
-              </h2>
-              <p className="text-sm text-white/85 leading-relaxed">
-                Tapping <span className="font-black text-primary">SPIN NOW</span> triggers the wheel for{' '}
-                {hole != null ? `hole ${hole}` : 'this hole'}. Whatever you land on applies immediately.
-              </p>
-              <p className="text-xs text-white/60 mt-3">
-                You only spin this Item Box once. There is no undo.
-              </p>
-            </div>
-            <button
-              onClick={handleSpin}
-              data-testid="button-wheel-spin-confirm"
-              className="w-full h-16 rounded-full bg-primary text-primary-foreground font-condensed font-black text-xl uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-primary/40 flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-6 h-6" />
-              Spin Now — Lock In
-            </button>
-            <button
-              onClick={() => setConfirming(false)}
-              data-testid="button-wheel-cancel-confirm"
-              className="mt-3 text-white/70 text-sm font-bold uppercase tracking-widest hover:text-white transition-colors py-2"
-            >
-              Back — recheck scores
-            </button>
           </div>
         )}
 

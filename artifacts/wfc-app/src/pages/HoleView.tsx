@@ -82,16 +82,13 @@ export default function HoleView() {
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
-    // If hole 18 is an Item Box hole that hasn't been spun yet, force the spin
-    // before the round can be submitted.
-    const finalRule = holeRules[17];
-    if (finalRule?.type === 'wheel' && !wheelSpins[18]) {
-      setWheelHole(18);
-      setWheelOpen(true);
-      toast({
-        title: 'Spin the Item Box',
-        description: 'Hole 18 is an Item Box hole — spin it before you submit.',
-      });
+    // Block submission until every wheel hole with a score has been spun.
+    const unspunHole = findUnspunWheelHole();
+    if (unspunHole !== null) {
+      const unspunPos = holeOrder.findIndex(h => h === unspunHole);
+      if (unspunPos !== -1) { userNavigatedRef.current = true; setOrderPos(unspunPos); }
+      setTimeout(() => { setWheelHole(unspunHole); setWheelOpen(true); }, 150);
+      toast({ title: 'Spin the Item Box', description: `Hole ${unspunHole} is an Item Box hole — spin it before submitting.` });
       return;
     }
     setFinishLoading(true);
@@ -161,6 +158,18 @@ export default function HoleView() {
     return true;
   };
 
+  // Returns the 1-based hole number of the first scored-but-unspun wheel hole,
+  // or null if none. Used to block scoring/submitting until the spin is done.
+  const findUnspunWheelHole = (): number | null => {
+    for (const holeNum of holeOrder) {
+      const idx = holeNum - 1;
+      if (holeRules[idx]?.type === 'wheel' && scores[idx] !== null && !wheelSpins[holeNum]) {
+        return holeNum;
+      }
+    }
+    return null;
+  };
+
   const handleScore = (delta: number) => {
     if (isFinal) {
       toast({
@@ -174,6 +183,19 @@ export default function HoleView() {
     }
     if (hasSubmitted) {
       toast({ title: 'Score locked', description: 'You already submitted your final score.' });
+      return;
+    }
+    // Block scoring on any other hole while an Item Box is waiting to be spun.
+    const unspunHole = findUnspunWheelHole();
+    if (unspunHole !== null && unspunHole !== holeIdx + 1) {
+      toast({
+        title: 'Spin required first',
+        description: `Spin the Item Box on hole ${unspunHole} before scoring other holes.`,
+        variant: 'destructive',
+      });
+      const unspunPos = holeOrder.findIndex(h => h === unspunHole);
+      if (unspunPos !== -1) { userNavigatedRef.current = true; setOrderPos(unspunPos); }
+      setTimeout(() => { setWheelHole(unspunHole); setWheelOpen(true); }, 150);
       return;
     }
     const current = scores[holeIdx];
@@ -273,7 +295,7 @@ export default function HoleView() {
                 let dotColor = 'bg-secondary';
                 if (isScored && d !== null) {
                   if (d <= -1) dotColor = 'bg-primary';
-                  else if (d === 0) dotColor = 'bg-foreground/40';
+                  else if (d === 0) dotColor = 'bg-white/70';
                   else dotColor = 'bg-orange-500/60';
                 }
                 return (
@@ -304,29 +326,29 @@ export default function HoleView() {
 
       {/* Main Content — tightened spacing so everything important fits without
           scrolling on a typical phone (par/yds, rule, score stepper). */}
-      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 justify-between">
+      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-4">
         <FinalizedBanner />
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
             single row beside it instead of below, saving a full row of height. */}
-        <div className="bg-card border border-border rounded-2xl p-4 relative overflow-hidden">
+        <div className="flex-1 bg-card border border-border rounded-2xl p-5 relative overflow-hidden flex flex-col justify-center min-h-[160px]">
           {/* Background hole number */}
           <div
-            className="absolute -top-4 -right-2 font-condensed font-black text-primary/[0.06] pointer-events-none select-none leading-none"
-            style={{ fontSize: '140px' }}
+            className="absolute -top-6 -right-2 font-condensed font-black text-primary/[0.07] pointer-events-none select-none leading-none"
+            style={{ fontSize: '180px' }}
           >
             {hole.hole.toString().padStart(2, '0')}
           </div>
 
-          <div className="relative flex items-center gap-3">
+          <div className="relative flex items-center gap-4">
             {/* Par hero */}
-            <div className="flex items-end gap-2 shrink-0">
-              <span className="font-condensed text-[60px] font-black leading-[0.85] text-foreground">
+            <div className="flex items-end gap-3 shrink-0">
+              <span className="font-condensed text-[80px] font-black leading-[0.85] text-foreground">
                 {hole.par}
               </span>
-              <div className="pb-1">
-                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Par</p>
-                <p className="text-[10px] font-bold text-foreground/80 uppercase tracking-widest">Hdcp {hole.hdcp}</p>
+              <div className="pb-2">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Par</p>
+                <p className="text-[11px] font-bold text-foreground/80 uppercase tracking-widest">Hdcp {hole.hdcp}</p>
               </div>
             </div>
 
@@ -402,7 +424,7 @@ export default function HoleView() {
               data-testid={`score-decrease-hole-${hole.hole}`}
               onClick={() => handleScore(-1)}
               disabled={holeLocked}
-              className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
             >
               {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Minus className="w-6 h-6 text-foreground" />}
             </button>
@@ -418,14 +440,14 @@ export default function HoleView() {
               {score === null ? (
                 <span
                   data-testid={`score-value-hole-${hole.hole}`}
-                  className="font-condensed text-5xl font-bold leading-none text-foreground/20"
+                  className="font-condensed text-6xl font-bold leading-none text-foreground/20"
                 >
                   —
                 </span>
               ) : (
                 <span
                   data-testid={`score-value-hole-${hole.hole}`}
-                  className={`font-condensed text-5xl font-bold leading-none transition-colors ${scoreColor(diff)}`}
+                  className={`font-condensed text-6xl font-bold leading-none transition-colors ${scoreColor(diff)}`}
                 >
                   {score}
                 </span>
@@ -439,7 +461,7 @@ export default function HoleView() {
               data-testid={`score-increase-hole-${hole.hole}`}
               onClick={() => handleScore(1)}
               disabled={holeLocked}
-              className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
             >
               {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Plus className="w-6 h-6 text-foreground" />}
             </button>

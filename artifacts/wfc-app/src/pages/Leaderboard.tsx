@@ -539,7 +539,7 @@ export default function Leaderboard() {
                 <motion.div
                   key={team.id}
                   layout
-                  transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+                  transition={{ type: 'spring', stiffness: 90, damping: 14 }}
                 >
                   <button
                     type="button"
@@ -554,7 +554,7 @@ export default function Leaderboard() {
                         <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
                       )}
                       {posChanges[team.id] !== undefined && posChanges[team.id] !== 0 && (
-                        <span className={`text-[8px] font-black leading-none ${posChanges[team.id] > 0 ? 'text-primary' : 'text-red-400'}`}>
+                        <span className={`text-[11px] font-black leading-none tracking-tighter ${posChanges[team.id] > 0 ? 'text-primary drop-shadow-[0_0_4px_#39FF14]' : 'text-red-400 drop-shadow-[0_0_4px_#f87171]'}`}>
                           {posChanges[team.id] > 0 ? `▲${posChanges[team.id]}` : `▼${Math.abs(posChanges[team.id])}`}
                         </span>
                       )}
