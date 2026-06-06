@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock, Trophy, X } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useWFC } from '@/lib/store';
@@ -151,6 +152,27 @@ export default function HoleView() {
   // spinning the wheel is gone — the wheel is now a per-hole rule.
   const holeLocked = hasSubmitted;
 
+  // Whacky roast — only shown when the previous hole in play order has been scored.
+  // Seed includes holesPlayed so the chirp updates as more holes are completed.
+  const prevHoleScored = useMemo(() => {
+    if (orderPos === 0) return false;
+    const prevHoleNum = holeOrder[orderPos - 1];
+    return prevHoleNum != null && scores[prevHoleNum - 1] != null;
+  }, [orderPos, holeOrder, scores]);
+
+  const roastText = useMemo(() => {
+    if (!teamInfo || !prevHoleScored) return null;
+    return pickRoast({
+      teamName: teamInfo.teamName,
+      players: teamInfo.players,
+      netScore,
+      holesPlayed,
+      holeNum: hole.hole,
+      score: score ?? null,
+      par: hole.par,
+    });
+  }, [teamInfo, prevHoleScored, netScore, holesPlayed, hole.hole, score, hole.par]);
+
   // Free navigation: players may move to any hole and score holes in any order.
   // Works on play-order positions (0–17), not raw hole indices.
   const tryGoToPos = (targetPos: number): boolean => {
@@ -272,10 +294,10 @@ export default function HoleView() {
           <button
             onClick={() => { hapticLight(); goPrev(); }}
             disabled={orderPos === 0}
-            className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
+            className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
             data-testid="button-prev-hole"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ChevronLeft className="w-6 h-6" />
           </button>
 
           <div className="flex flex-col items-center">
@@ -312,18 +334,18 @@ export default function HoleView() {
           <button
             onClick={() => { hapticLight(); goNext(); }}
             disabled={orderPos === 17}
-            className="w-14 h-14 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
+            className="w-16 h-16 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
             data-testid="button-next-hole"
             aria-label="Next hole"
           >
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight className="w-6 h-6" />
           </button>
         </div>
       </div>
 
       {/* Main Content — tightened spacing so everything important fits without
           scrolling on a typical phone (par/yds, rule, score stepper). */}
-      <div className="flex-1 overflow-y-auto flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 pb-20">
+      <div className="flex-1 overflow-y-auto flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 pb-36">
         <FinalizedBanner />
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
@@ -406,18 +428,6 @@ export default function HoleView() {
             {rule.ruleText}
           </p>
         </div>
-        ) : teamInfo ? (
-        <p className="text-[11px] text-muted-foreground/40 italic text-center px-3 leading-snug select-none">
-          {pickRoast({
-            teamName: teamInfo.teamName,
-            players: teamInfo.players,
-            netScore,
-            holesPlayed,
-            holeNum: hole.hole,
-            score: score ?? null,
-            par: hole.par,
-          })}
-        </p>
         ) : null}
 
         {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown
@@ -433,9 +443,9 @@ export default function HoleView() {
               data-testid={`score-decrease-hole-${hole.hole}`}
               onClick={() => handleScore(-1)}
               disabled={holeLocked}
-              className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-20 h-20 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Minus className="w-6 h-6 text-foreground" />}
+              {holeLocked ? <Lock className="w-6 h-6 text-foreground/60" /> : <Minus className="w-7 h-7 text-foreground" />}
             </button>
 
             <button
@@ -470,9 +480,9 @@ export default function HoleView() {
               data-testid={`score-increase-hole-${hole.hole}`}
               onClick={() => handleScore(1)}
               disabled={holeLocked}
-              className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-20 h-20 flex items-center justify-center rounded-full bg-secondary border border-border/60 active:scale-90 active:bg-secondary/60 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              {holeLocked ? <Lock className="w-5 h-5 text-foreground/60" /> : <Plus className="w-6 h-6 text-foreground" />}
+              {holeLocked ? <Lock className="w-6 h-6 text-foreground/60" /> : <Plus className="w-7 h-7 text-foreground" />}
             </button>
           </div>
 
@@ -530,6 +540,33 @@ export default function HoleView() {
           </div>
         )}
       </div>
+
+      {/* ── Whacky roast bubble — fixed above the nav bar, only when prev hole scored ── */}
+      <AnimatePresence mode="wait">
+        {roastText && (
+          <motion.div
+            key={roastText}
+            initial={{ y: 56, opacity: 0, scale: 0.95 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 24, opacity: 0, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 26 }}
+            className="fixed bottom-[68px] left-0 right-0 z-30 px-4 pb-1 pointer-events-none"
+          >
+            <div className="flex items-end gap-2.5 max-w-md mx-auto">
+              <img
+                src="/whacky.jpg"
+                alt="Whacky"
+                className="w-11 h-11 rounded-full object-cover shrink-0 border border-primary/30"
+                style={{ objectPosition: '35% 5%' }}
+              />
+              <div className="flex-1 bg-zinc-900/95 backdrop-blur-sm border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 shadow-2xl">
+                <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mb-0.5">Whacky</p>
+                <p className="text-[12px] text-muted-foreground leading-snug">{roastText}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <WheelModal open={wheelOpen} onClose={() => setWheelOpen(false)} hole={wheelHole} />
 

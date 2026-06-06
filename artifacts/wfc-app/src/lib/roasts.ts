@@ -1,138 +1,175 @@
-// Brutal WFC roast engine — no limits, no mercy.
-// Roasts are picked deterministically per (holeNum, teamName) so they stay
-// stable while you're on a hole and change when you move to the next one.
+// Whacky's WFC roast engine — no filter, no mercy.
+// Roasts are picked deterministically but change as holes are scored
+// (seed includes holesPlayed so each new hole scored picks a fresh chirp).
+// Templates use {player}, {team}, {hole} which are interpolated at call time.
 
 const GENERIC: string[] = [
-  "The groundskeeping staff found one of your divots and reported it to the EPA.",
-  "You swing like you're trying to high-five someone behind you.",
-  "Golf courses have a dress code to keep out people who look like they play like you.",
-  "Your caddie quit. He left a note: 'I have dignity.'",
-  "Somewhere out there, a driving range is wondering where their worst customer went.",
-  "The ball has been in play for 3 minutes. The ball is also embarrassed.",
-  "Par is a suggestion. You've taken it as a personal threat.",
-  "You're the reason golfers drink.",
+  "Your swing is the biological proof that dad was right to be disappointed.",
+  "The groundskeeping crew filed a trauma report after watching you take that divot.",
+  "You play golf like it's your first time holding something long and hard.",
+  "Every ball you hit is a hate crime against physics and the sport of golf.",
+  "Par is just a polite suggestion. You've taken it as a personal threat.",
+  "Your caddie retired after hole 3. You were the reason.",
+  "The cart girl drove past without stopping. She's seen your scorecard.",
+  "You couldn't hit a fairway if it was the size of your ego.",
+  "Your backswing looks like you're trying to wave down a fucking helicopter.",
+  "There is nothing good happening here and you know it.",
+  "The golf ball didn't go out of bounds. It was fleeing.",
+  "Somewhere on this course, a goose watched that shot and shook its head.",
+  "Your follow-through is genuinely one of the ugliest things I've ever seen.",
   "Titleist is considering a restraining order.",
-  "The cart path has more fairway time than your ball does.",
-  "Your grip is so wrong the club is filing a complaint with HR.",
-  "You've convinced yourself the slice is 'your shot shape.' It's not.",
-  "The course ranger is watching you. He's crying.",
-  "You shoot like you owe par money.",
-  "Your pre-shot routine takes longer than the average human pregnancy.",
-  "There's a lost and found at the pro shop. It's full of your dignity.",
-  "You're playing this hole like it owes you money. It doesn't.",
-  "A 9-year-old at a birthday golf party just outdrew you. Twice.",
-  "The GPS on the cart keeps rerouting because it gave up trying to predict where you're going.",
-  "You're the reason people put 'golf' in air quotes.",
-  "Every ball you hit is a hate crime against physics.",
-  "Your follow-through looks like you're flagging down an Uber.",
-  "Scientists studying your swing have a new name for it: a controlled disaster.",
-  "You're an inspiration. Proof that confidence and competence don't always travel together.",
-  "Water hazards see you coming and get excited.",
-  "Three-putting is a choice. A bad one. But yours.",
-  "The hole is 4 inches wide. You've managed to miss it from 2 feet. Incredible.",
-  "Your putt read the green, saw the line, and still went somewhere else out of spite.",
-  "You're playing scramble rules in your head even when you're not.",
-  "The flag is waving. It's waving goodbye to your ball.",
-  "You'd play better blindfolded. Worth trying.",
-  "This hole has a handicap. It's you.",
-  "Your iron play has all the consistency of a drunk uncle at Christmas.",
-  "Bogey is just par with extra steps, right? That's what you're going with?",
-  "A sand trap is not a suggestion. You treat it like a second home.",
-  "That wasn't a shank. That was a shank. Don't lie to yourself.",
-  "The bunker raked itself after you left. Out of respect for what it survived.",
-  "You told your playing partners you'd been working on your short game. They believed you. They won't again.",
-  "Your scorecard should come with a trigger warning.",
-  "The 19th hole is calling. It's saying get there faster.",
-  "You're playing like someone who discovered golf this morning. Respect for the enthusiasm.",
-  "Your takeaway is perfect. The rest of it is a crime scene.",
-  "Even the seagulls are judging you and they eat garbage for a living.",
-  "Par-3 holes are supposed to be relaxing. You've made this one traumatic.",
-  "You've managed to make a 300-yard hole feel like a personal quest.",
-  "You play golf like it's a team sport and your team let you down.",
-  "Nobody has ever complimented your course management. Nobody ever will.",
+  "You've played 18 holes and haven't found the fairway once. Impressive.",
+  "You swing like someone who learned golf from a YouTube video at 2am.",
+  "That club has done nothing to deserve what you're doing to it.",
+  "This is what happens when too much confidence meets too little talent.",
+  "The course ranger is watching you through binoculars. He's crying.",
+  "Your pre-shot routine takes longer than most people's sex lives.",
+  "You read that green like a dyslexic reading a map in the dark.",
+  "The sand trap collects people like you as trophies.",
+  "Even the crows are judging you and they literally eat roadkill.",
+  "Nobody has complimented your course management. Nobody ever will.",
+  "You've done more damage to this course than the frost last winter.",
+  "That's the kind of shot that makes other golfers check their own balls.",
+  "You swing hard. The ball has decided not to cooperate, indefinitely.",
+  "Your scorecard is going to need its own support group.",
+  "Watching you play is like watching a slow-motion car crash. Mesmerizing in the worst way.",
+  "You're out here turning a sport into a hate act.",
 ];
 
 const OVER_PAR: string[] = [
-  "Over par already? Genuinely impressive dedication to failure.",
-  "You're not having a bad round — you're crafting an origin story.",
-  "Those extra strokes aren't mistakes. They're character development.",
-  "You're in positive territory. Unfortunately in golf that's bad.",
-  "The leaderboard isn't laughing at you. But we are.",
-  "This is what they mean when they say 'the course won today.'",
-  "You could blame equipment. Go ahead. We'll wait.",
-  "Your net score is positive and so is the chance you finish last.",
-  "At least you're consistent. Consistently over par, but still.",
-  "This round is going to haunt you. Good. It should.",
+  "Over par already. If disappointment were a sport you'd be fucking champion.",
+  "You're bleeding strokes like you've got a quota to fill.",
+  "Those extra shots aren't mistakes — they're character assassination.",
+  "You're positive on the scorecard. Unfortunately in golf that means you're losing, you dumb prick.",
+  "Every hole you play sets a new personal benchmark for failure.",
+  "You're over par on this course the same way you're over your head in life.",
+  "The leaderboard has a section for teams like yours. It's called the bottom.",
+  "Keep this up and you'll need a fucking calculator just to count your strokes.",
+  "You're over par and under-performing. Simultaneously, somehow.",
+  "You play this badly for free. Imagine if someone paid you to suck.",
 ];
 
 const UNDER_PAR: string[] = [
-  "Under par and still insufferable. Impressive.",
-  "Oh great, you're actually good. Worst kind of golf partner.",
-  "You're under par. Don't you dare celebrate yet.",
-  "Enjoy the lead. The back nine is waiting.",
-  "Low net score — your teammates are carrying you emotionally even if not on the scorecard.",
-  "Somehow you're under par. Carry that guilt with you to the next tee.",
-  "You're winning and you're still annoying about it.",
-  "Under par. Fine. But your outfit is still inexcusable.",
+  "Under par. Great. Now everyone has to pretend to like you.",
+  "You're under par and still the most annoying person on this course.",
+  "Oh good, you're winning. Worst thing to happen to your personality today.",
+  "Under par means nothing when your vibe is catastrophically off.",
+  "Enjoy the lead. The back nine knows your secrets.",
+  "You're under par and acting like you qualified for the fucking Masters.",
+  "Low net. Still a mediocre human being. Nothing changes.",
+  "You're under par. Your teammates are still embarrassed by association.",
 ];
 
 const EVEN: string[] = [
-  "Even par. The most mediocre achievement in golf. Congratulations.",
-  "E. As in 'Exactly what nobody brags about at the bar.'",
-  "Even par is just failure with extra steps to get there.",
-  "Perfectly average. The Switzerland of golf scores.",
-  "Even par is the golf equivalent of 'not bad, not good, just... there.'",
+  "Even par. The beige wallpaper of golf scores.",
+  "E. As in 'Exactly what nobody gets excited about at the bar.'",
+  "Even par is golf's way of saying 'you tried and it didn't matter.'",
+  "Even. You exist. Congratulations on the bare minimum.",
+  "You're even par. You've managed to be aggressively mediocre.",
 ];
 
-const PLAYER_TEMPLATES: Array<(name: string) => string> = [
-  n => `${n} is out here playing like the fairway personally offended them.`,
-  n => `${n}'s pre-shot routine is longer than most people's commutes.`,
-  n => `${n} hits it like they're settling a grudge with the grass.`,
-  n => `${n} asked the caddie for advice and then ignored it. Classic ${n}.`,
-  n => `${n} has played this hole before. You'd never know it.`,
-  n => `${n} is what happens when confidence outpaces talent by a significant margin.`,
-  n => `${n} read the green like they were deciphering a foreign language.`,
-  n => `${n} swings hard. The ball has decided not to cooperate.`,
-  n => `Tell ${n} the cup is on this side of the course. They'll aim the other way.`,
-  n => `${n} is playing like someone bet against them. Maybe they did.`,
-  n => `${n} plays like they've seen golf on TV and thinks that's enough.`,
-  n => `${n} putting is performance art. Terrible performance art.`,
+const PLAYER_TEMPLATES: Array<(p: string) => string> = [
+  p => `${p}, that was the worst fucking swing I've seen since the conception that produced you.`,
+  p => `${p} is out here playing like the fairway personally owes them money.`,
+  p => `${p} has the course management of a golden retriever chasing a tennis ball.`,
+  p => `${p}'s pre-shot routine is longer than most people's longest relationships.`,
+  p => `${p} hits it like they're settling a beef with the grass personally.`,
+  p => `${p} asked the cart girl for help reading the green. She laughed and drove away.`,
+  p => `${p} plays this hole every time like it's a new traumatic experience.`,
+  p => `${p} took that divot so fat it's now classified as a soil disturbance.`,
+  p => `Someone tell ${p} the cup is on THIS side of the course.`,
+  p => `${p} putts like a man who's never seen a slope before in his life.`,
+  p => `${p} is why people say golf is a mental game. There's nothing mental going on here.`,
+  p => `${p} swings that club like they fucking hate it. The club hates them back.`,
+  p => `${p}'s game has all the consistency of a drunk uncle at Christmas.`,
+  p => `${p} just out-sliced a banana. On a par 3.`,
+  p => `${p} is what happens when confidence doesn't come with receipts.`,
+  p => `${p} hit that so fat the divot is pregnant now.`,
+  p => `${p} has more excuses than strokes. That's saying something.`,
+  p => `${p} needs a GPS to find the fairway and they still end up in the trees.`,
+  p => `Nice whiff ${p}. The ball stood there and watched you miss it.`,
+  p => `${p} just made a sound with that club that shouldn't be possible in nature.`,
+  p => `${p}'s pullout game is better than their iron game. Still not good.`,
+  p => `${p} is out here making the cart path look like a viable line.`,
+  p => `${p} that putt was gayer than your browser history and missed just as hard.`,
+  p => `${p} missed a two-footer. That's closer to the hole than your dad was to being there for you.`,
+  p => `${p} lined up that putt, looked confident, and then fucked it completely. Classic ${p}.`,
+  p => `${p} topped it so bad your dick is jealous of the contact.`,
 ];
 
-const TEAM_TEMPLATES: Array<(name: string) => string> = [
-  n => `The ${n} team: brave enough to show up, not good enough to back it up.`,
-  n => `${n} has a great name. That's the only great thing about ${n}.`,
-  n => `${n} is out here making it look hard. It shouldn't be this hard.`,
-  n => `${n} is proving today that there's no correlation between attitude and ability.`,
-  n => `The legacy of ${n}: a scorecard that will never see the light of day.`,
-  n => `${n} is playing with heart. Heart doesn't fix a shank.`,
-  n => `${n} — a team name, a dream, and a collective 47 over par.`,
-  n => `${n}: talked a big game in the parking lot, different story out here.`,
+const TEAM_TEMPLATES: Array<(t: string) => string> = [
+  t => `${t} is out here playing like they collectively failed kindergarten.`,
+  t => `${t} has a great team name. That's genuinely the only great thing about ${t}.`,
+  t => `${t} is proof that four people can be wrong at the exact same time.`,
+  t => `The legacy of ${t} on this course: a scorecard that will never see daylight.`,
+  t => `${t} came to play golf. Golf did not consent.`,
+  t => `Whack Fuck Cup regrets inviting ${t}. You are all fucking useless.`,
+  t => `${t} swings like a team that practiced once and forgot what they practiced.`,
+  t => `${t}: talked absolute shit in the parking lot, completely different story out here.`,
+  t => `${t} is collectively making everyone around them reconsider their friendship.`,
+  t => `The whole ${t} squad just embarrassed themselves and they did it together. Teamwork.`,
+  t => `${t} is playing so bad the course has applied for hazard pay.`,
+];
+
+const HIGH_SCORE_TEMPLATES: Array<(p: string, par: number, score: number) => string> = [
+  (p, _par, s) => `${s} on this hole ${p}? That's not golf, that's assisted suicide.`,
+  (p, _par, s) => `${p} posted a ${s}. That number should require a permit.`,
+  (p, par, s) => `${s - par} over par on one hole, ${p}. One. Hole.`,
+  (p) => `${p}, that snowman is the most activity you'll get this year with a ball.`,
+  (p) => `${p} is building a family of snowmen on this course. And they're all named Failure.`,
+  (p) => `You scored higher on that hole than you did on any exam you've ever taken, ${p}.`,
+  (p) => `${p} treating every hole like a fucking math problem they can't solve.`,
+  (p, _par, s) => `A ${s}. The course has seen worse. The course is lying.`,
+  (p) => `${p} that score is going to need its own section on the scorecard.`,
+  (p, _par, s) => `${s} strokes on one hole ${p}. The hole is 150 yards. Do the math.`,
 ];
 
 const HOLE_SPECIFIC: Record<number, string> = {
-  1:  "First hole jitters are normal. This? This is not normal.",
-  2:  "Two holes in and already looking for someone to blame.",
-  3:  "Three holes down. Fifteen more chances to keep embarrassing yourself.",
-  4:  "Hole 4. Statistically this is when most golfers consider therapy.",
-  5:  "Quarter way done. Whatever you were planning to do differently hasn't kicked in yet.",
-  6:  "Hole 6 is forgiving. It won't forgive this.",
-  7:  "Lucky 7. Doesn't feel that lucky, does it.",
-  8:  "Hole 8. One away from the turn. Try not to implode before then.",
-  9:  "This is the last hole before anyone has to say the words 'nine-hole score.'",
-  10: "Back nine. Fresh start. Same problems.",
-  11: "Hole 11 is when people pretend the front nine didn't happen.",
-  12: "Halfway through the back nine. The bar can almost be smelled from here.",
-  13: "Hole 13. Unlucky for some. Lucky for none of you specifically.",
-  14: "Four holes from home. Pick it up or pick a different sport.",
-  15: "Hole 15 and still trying to figure out what's going wrong. Everything. Everything is going wrong.",
-  16: "Two away from the clubhouse. Don't think about it.",
-  17: "Second to last. The cruelest hole in golf — just enough time to blow it.",
-  18: "Last hole. Whatever score you post here, you earned it. God help you.",
+  1:  "First hole and already looking like that. Not a great omen.",
+  2:  "Two holes in. Two holes of evidence that this round is going to be rough.",
+  3:  "Three holes and still searching for one decent shot. Inspiring persistence.",
+  4:  "Hole 4 is when most golfers start lying to themselves. How's that going?",
+  5:  "Five holes in. Still no sign of improvement. Still zero sign of shame.",
+  6:  "Hole 6 is forgiving. What just happened was not forgivable.",
+  7:  "Seventh hole. Lucky number for everyone except the people watching this.",
+  8:  "One away from the turn. Try not to completely implode before you get there.",
+  9:  "Last hole before the turn. Whatever's on that scorecard, own it, you coward.",
+  10: "Back nine. Fresh start. Same fucking problems.",
+  11: "Hole 11 is when people pretend the front nine didn't happen. It happened.",
+  12: "Halfway through the back nine. The bar is getting louder in your head.",
+  13: "Hole 13. Unlucky for some. Statistically unavoidable for you.",
+  14: "Four from home. Pick it up or pick a new hobby.",
+  15: "Still trying to figure out what's going wrong? Everything. Everything is going wrong.",
+  16: "Two holes from the clubhouse. The beer is almost worth surviving this.",
+  17: "Second to last. Just enough time to make it worse. And you might.",
+  18: "Final hole. Whatever you post here is your legacy today. God help you.",
 };
 
+const SCORE_CONTEXT: string[] = [
+  "Your game is like your pullout game — nonexistent and disappointing everyone.",
+  "You play golf like it's a form of self-harm and you're committed to the bit.",
+  "Your round so far is a hate letter to the sport of golf.",
+  "The Whack Fuck Cup has seen some bad golf. This is remarkable even by those standards.",
+  "You hit that like you owe the course money and you're paying in misery.",
+  "Whacky has watched a lot of golf. This is genuinely the most unhinged round yet.",
+  "Your iron game is so bad the irons have filed a complaint.",
+  "You've somehow made bogey look like a personal achievement. Which I guess it is.",
+  "Somewhere your old golf coach is having a drink and not thinking about you. Good for him.",
+  "Whatever you practiced in the off-season, it wasn't this. Definitely wasn't this.",
+  "If bad golf was a currency you'd be fucking rich right now.",
+  "You're on pace for a score that'll be talked about. Not positively.",
+  "Your game today is making the Whack Fuck Cup look competitive by comparison. Barely.",
+];
+
+function interpolate(template: string, vars: { player?: string; team?: string; hole?: number }): string {
+  return template
+    .replace(/\{player\}/g, vars.player ?? 'you')
+    .replace(/\{team\}/g, vars.team ?? 'your team')
+    .replace(/\{hole\}/g, vars.hole != null ? String(vars.hole) : 'this hole');
+}
+
 function seededPick<T>(arr: T[], seed: number): T {
-  return arr[Math.abs(seed) % arr.length];
+  return arr[((seed % arr.length) + arr.length) % arr.length];
 }
 
 export interface RoastParams {
@@ -146,43 +183,62 @@ export interface RoastParams {
 }
 
 export function pickRoast(params: RoastParams): string {
-  const { teamName, players, netScore, holesPlayed, holeNum, score } = params;
+  const { teamName, players, netScore, holesPlayed, holeNum, score, par } = params;
 
-  // Build a deterministic seed from the hole + team name so it's stable on this hole.
+  // Seed mixes team identity + current position in round so roast changes as holes are scored.
   const nameSeed = teamName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const seed = holeNum * 31 + nameSeed;
+  const seed = holeNum * 31 + holesPlayed * 17 + nameSeed;
 
-  // Decide which category to pull from using the seed.
-  const category = seed % 10;
+  // High-score roast (double bogey+) — context-aware, highest priority
+  if (score !== null && score - par >= 2) {
+    const primaryPlayer = players.find(p => p.trim()) ?? 'you';
+    const fn = seededPick(HIGH_SCORE_TEMPLATES, seed + 3);
+    return fn(primaryPlayer.trim().split(' ')[0], par, score);
+  }
+
+  // Pick a category via seed
+  const category = ((seed * 7 + holesPlayed * 3) % 12);
 
   if (category === 0 && HOLE_SPECIFIC[holeNum]) {
     return HOLE_SPECIFIC[holeNum];
   }
 
-  if (category === 1 && players.length > 0) {
-    const player = players[seed % players.length];
-    if (player && player.trim()) {
-      return seededPick(PLAYER_TEMPLATES, seed + 7)(player.trim().split(' ')[0]);
-    }
-  }
-
-  if (category === 2) {
-    return seededPick(TEAM_TEMPLATES, seed + 3)(teamName);
-  }
-
-  if (category <= 4) {
-    if (holesPlayed > 0) {
-      if (netScore > 3) return seededPick(OVER_PAR, seed + 11);
+  if (category === 1) {
+    // Net score-based
+    if (holesPlayed > 2) {
+      if (netScore > 4) return seededPick(OVER_PAR, seed + 11);
       if (netScore < -2) return seededPick(UNDER_PAR, seed + 5);
       if (netScore === 0) return seededPick(EVEN, seed + 9);
     }
   }
 
-  // Score on current hole if entered
-  if (score !== null) {
-    const diff = score - params.par;
-    if (diff >= 3) return "That's an obscene number of strokes on one hole. Take a moment.";
-    if (diff === 2) return "Double bogey. The golf equivalent of showing up late and also forgetting your pants.";
+  if (category === 2 || category === 8) {
+    const player = players.find(p => p.trim());
+    if (player) {
+      const fn = seededPick(PLAYER_TEMPLATES, seed + 7);
+      return fn(player.trim().split(' ')[0]);
+    }
+  }
+
+  if (category === 3 && players.length >= 2) {
+    // Roast the second player sometimes
+    const player = players[1]?.trim();
+    if (player) {
+      const fn = seededPick(PLAYER_TEMPLATES, seed + 19);
+      return fn(player.split(' ')[0]);
+    }
+  }
+
+  if (category === 4 || category === 9) {
+    return seededPick(TEAM_TEMPLATES, seed + 3)(teamName);
+  }
+
+  if (category === 5) {
+    return seededPick(SCORE_CONTEXT, seed + 13);
+  }
+
+  if (category === 10 && HOLE_SPECIFIC[holeNum]) {
+    return HOLE_SPECIFIC[holeNum];
   }
 
   return seededPick(GENERIC, seed + 17);
