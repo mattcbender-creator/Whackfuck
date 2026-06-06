@@ -37,6 +37,7 @@ const LAST_OPENED_KEY = 'wfc-chat-opened';
 export function ChatNotifProvider({ children }: { children: ReactNode }) {
   const { teamId } = useWFC();
   const [latestDm, setLatestDm] = useState<ChatMsg | null>(null);
+  const [hasUnread, setHasUnread] = useState(false);
   const lastOpenedRef = useRef<number>(
     parseInt(localStorage.getItem(LAST_OPENED_KEY) ?? '0', 10),
   );
@@ -45,15 +46,28 @@ export function ChatNotifProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured || !db || !teamId) return;
     const q = query(chatCol(db), orderBy('ts', 'desc'), limit(30));
     const unsub = onSnapshot(q, snap => {
-      const incoming = snap.docs
-        .map(d => ({ id: d.id, ...(d.data() as Omit<ChatMsg, 'id'>) }))
-        .find(
-          m =>
-            m.toTeamId === teamId &&
-            m.fromTeamId !== teamId &&
-            (m.ts?.toMillis?.() ?? 0) > lastOpenedRef.current,
-        );
-      setLatestDm(incoming ?? null);
+      const msgs = snap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as Omit<ChatMsg, 'id'>),
+      }));
+
+      // Badge: ANY new message from someone else — lobby (toTeamId null) OR a DM to me.
+      const unread = msgs.some(
+        m =>
+          m.fromTeamId !== teamId &&
+          (m.toTeamId === null || m.toTeamId === teamId) &&
+          (m.ts?.toMillis?.() ?? 0) > lastOpenedRef.current,
+      );
+      setHasUnread(unread);
+
+      // Pop-up banner: DMs only, to avoid spamming the screen with group chatter.
+      const dm = msgs.find(
+        m =>
+          m.toTeamId === teamId &&
+          m.fromTeamId !== teamId &&
+          (m.ts?.toMillis?.() ?? 0) > lastOpenedRef.current,
+      );
+      setLatestDm(dm ?? null);
     });
     return unsub;
   }, [teamId]);
@@ -63,12 +77,11 @@ export function ChatNotifProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LAST_OPENED_KEY, String(now));
     lastOpenedRef.current = now;
     setLatestDm(null);
+    setHasUnread(false);
   };
 
   return (
-    <ChatNotifContext.Provider
-      value={{ hasUnread: !!latestDm, latestDm, markOpened }}
-    >
+    <ChatNotifContext.Provider value={{ hasUnread, latestDm, markOpened }}>
       {children}
     </ChatNotifContext.Provider>
   );

@@ -632,7 +632,7 @@ export default function HoleView() {
                       {isLast && (
                         <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mb-0.5">Whacky</p>
                       )}
-                      <p className="text-[12px] text-muted-foreground leading-snug">{msg.text}</p>
+                      <p className="text-[12px] text-muted-foreground leading-snug line-clamp-3">{msg.text}</p>
                       <button
                         onClick={() => setWhackyMsgs(prev => prev.filter(m => m.id !== msg.id))}
                         className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
