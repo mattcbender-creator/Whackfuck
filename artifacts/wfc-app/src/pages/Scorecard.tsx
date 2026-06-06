@@ -708,40 +708,6 @@ export default function Scorecard() {
                 </td>
               </tr>
 
-              {/* WHEEL row — only shown when this tournament places the Item Box
-                  on at least one hole. A dot marks each wheel hole; once that
-                  hole is spun the dot takes the landed item's colour. */}
-              {anyWheelHole && (
-                <tr className="border-t border-primary/20">
-                  <td className={`${STICKY} text-primary/70`}>WHEEL</td>
-                  {halfHoles.map((h, i) => {
-                    const idx = halfIdxs[i];
-                    const isWheel = holeRules[idx]?.type === 'wheel';
-                    const spin = wheelSpins[idx + 1];
-                    const item = getWheelItem(spin?.item);
-                    return (
-                      <td
-                        key={h.hole}
-                        onClick={() => selectCell(idx)}
-                        className={`${CELL} py-1.5 ${selectedIdx === idx ? 'bg-primary/10' : 'hover:bg-white/3'}`}
-                      >
-                        {isWheel ? (
-                          <span
-                            className="inline-block w-2.5 h-2.5 rounded-full"
-                            style={item
-                              ? { background: item.color }
-                              : { border: '1.5px solid hsl(var(--primary))' }}
-                            title={item ? item.label : 'Item Box'}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground/20">·</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  <td className={`${CELL} py-1.5 border-l border-white/8`} />
-                </tr>
-              )}
 
             </tbody>
           </table>

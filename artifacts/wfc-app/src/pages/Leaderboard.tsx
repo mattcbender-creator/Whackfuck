@@ -137,7 +137,7 @@ function MiniScorecard({ scores, holes: HOLES, wheelAdjustment = 0 }: { scores: 
             <td className={`${totalCell} text-muted-foreground/60`}>{totPar}</td>
           </tr>
           {/* Score row */}
-          <tr className={wheelAdjustment !== 0 ? 'border-b border-white/10' : ''}>
+          <tr>
             <td className={`${labelCell} text-foreground/80 bg-[#0d0d0d]`}>Score</td>
             {HOLES.slice(0, 9).map((h, i) => {
               const s = scores[i] ?? null;
@@ -165,47 +165,6 @@ function MiniScorecard({ scores, holes: HOLES, wheelAdjustment = 0 }: { scores: 
               {anyScored ? totScore : ''}
             </td>
           </tr>
-          {/* Wheel row — only shown when a wheel adjustment exists */}
-          {wheelAdjustment !== 0 && (
-            <tr className="border-b border-white/10">
-              <td className={`${labelCell} bg-[#0d0d0d] font-black`} style={{ color: wheelAdjustment > 0 ? '#fb923c' : '#39FF14' }}>
-                Wheel
-              </td>
-              {/* 9 empty front-9 cells */}
-              {HOLES.slice(0, 9).map(h => (
-                <td key={h.hole} className="px-2 py-1.5 text-center text-muted-foreground/30 text-[10px]">—</td>
-              ))}
-              <td className={totalCell} />
-              {/* 9 empty back-9 cells */}
-              {HOLES.slice(9, 18).map(h => (
-                <td key={h.hole} className="px-2 py-1.5 text-center text-muted-foreground/30 text-[10px]">—</td>
-              ))}
-              <td className={totalCell} />
-              {/* Total wheel adjustment */}
-              <td className={`${totalCell} text-base font-black py-1.5`} style={{ color: wheelAdjustment > 0 ? '#fb923c' : '#39FF14' }}>
-                {wheelAdjustment > 0 ? `+${wheelAdjustment}` : wheelAdjustment}
-              </td>
-            </tr>
-          )}
-          {/* Net row — only shown when wheel is in play so the math is explicit */}
-          {wheelAdjustment !== 0 && anyScored && (
-            <tr>
-              <td className={`${labelCell} text-primary bg-[#0d0d0d] font-black`}>Net</td>
-              {HOLES.slice(0, 9).map(h => <td key={h.hole} className="px-2 py-1.5" />)}
-              <td className={totalCell} />
-              {HOLES.slice(9, 18).map(h => <td key={h.hole} className="px-2 py-1.5" />)}
-              <td className={totalCell} />
-              {(() => {
-                const net = totScore + wheelAdjustment - totPar;
-                const netLabel = net === 0 ? 'E' : net > 0 ? `+${net}` : `${net}`;
-                return (
-                  <td className={`${totalCell} text-base font-black py-1.5 ${net < 0 ? 'text-primary' : net > 0 ? 'text-orange-400' : 'text-foreground'}`}>
-                    {netLabel}
-                  </td>
-                );
-              })()}
-            </tr>
-          )}
         </tbody>
       </table>
     </div>

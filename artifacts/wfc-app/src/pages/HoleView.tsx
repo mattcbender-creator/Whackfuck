@@ -331,7 +331,7 @@ export default function HoleView() {
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
             single row beside it instead of below, saving a full row of height. */}
-        <div className="flex-1 bg-card border border-border rounded-2xl p-5 relative overflow-hidden flex flex-col justify-center min-h-[160px]">
+        <div className="bg-card border border-border rounded-2xl px-5 py-7 relative overflow-hidden">
           {/* Background hole number */}
           <div
             className="absolute -top-6 -right-2 font-condensed font-black text-primary/[0.07] pointer-events-none select-none leading-none"
