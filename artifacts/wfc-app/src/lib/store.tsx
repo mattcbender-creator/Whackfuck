@@ -444,27 +444,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured || !db || !tId) return;
     if (!teamInfo) return;
     if (!lockResolved) return;
-    if (hasSubmitted) return;
     const ref = teamDoc(db, teamId);
     // Per-hole wheel spins are written by recordWheelSpin via field-level merge;
     // this effect only pushes derived / identity fields.
+    //
+    // IMPORTANT: do NOT early-return when hasSubmitted — wheel effects (e.g.
+    // lightning from another team) can legitimately change netScore/wheelAdjustment
+    // even after a team has submitted. We must push those updates so the leaderboard
+    // reflects the adjusted final score.
     const payload: Record<string, unknown> = {
-      teamName: teamInfo.teamName,
-      players: teamInfo.players,
       netScore,
-      holesPlayed,
-      currentTee,
-      frontNineConfirmed,
       lastUpdated: serverTimestamp(),
     };
-    if (teamCode) payload.teamCode = teamCode;
     if (hasSubmitted) {
+      // Post-submission: only sync wheel-derived fields so lightning hits
+      // from other teams are reflected on the live leaderboard.
+      payload.wheelAdjustment = wheelAdjustment;
       payload.hasSubmitted = true;
       payload.submittedAt = submittedAt ?? Date.now();
+    } else {
+      // Active round: sync all identity and scoring fields.
+      payload.teamName = teamInfo.teamName;
+      payload.players = teamInfo.players;
+      payload.holesPlayed = holesPlayed;
+      payload.currentTee = currentTee;
+      payload.frontNineConfirmed = frontNineConfirmed;
     }
+    if (teamCode) payload.teamCode = teamCode;
     setDoc(ref, payload, { merge: true }).catch(err => console.error('Firestore sync failed', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId, teamInfo, teamCode, netScore, holesPlayed, currentTee, frontNineConfirmed, hasSubmitted, submittedAt, lockResolved, tId]);
+  }, [teamId, teamInfo, teamCode, netScore, wheelAdjustment, holesPlayed, currentTee, frontNineConfirmed, hasSubmitted, submittedAt, lockResolved, tId]);
 
   const updateTeamInfo = (info: TeamInfo) => {
     if (hasSubmitted) {

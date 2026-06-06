@@ -10,6 +10,7 @@ import { getWheelItem } from '@/lib/wheel';
 import { db } from '@/lib/firebase';
 import { setDoc, serverTimestamp } from 'firebase/firestore';
 import WheelModal from '@/components/WheelModal';
+import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { useToast } from '@/hooks/use-toast';
 import { pickChirp } from '@/lib/chirps';
 
@@ -202,6 +203,7 @@ export default function HoleView() {
     const prevDiff = current !== null ? current - hole.par : null;
     let next = current === null ? hole.par + delta : current + delta;
     if (next < 1) next = 1;
+    hapticLight();
     setScore(holeIdx + 1, next);
     const d = next - hole.par;
     if (d <= -2) fireEagleConfetti();
@@ -267,7 +269,7 @@ export default function HoleView() {
         {/* Hole pager */}
         <div className="flex items-center justify-between px-5 pb-3 max-w-md mx-auto">
           <button
-            onClick={goPrev}
+            onClick={() => { hapticLight(); goPrev(); }}
             disabled={orderPos === 0}
             className="w-14 h-14 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
             data-testid="button-prev-hole"
@@ -307,7 +309,7 @@ export default function HoleView() {
           </div>
 
           <button
-            onClick={goNext}
+            onClick={() => { hapticLight(); goNext(); }}
             disabled={orderPos === 17}
             className="w-14 h-14 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
             data-testid="button-next-hole"
@@ -472,7 +474,7 @@ export default function HoleView() {
             the auto-fire was dismissed). Hidden once the round is submitted. */}
         {isWheelHole && score !== null && !holeSpin && !hasSubmitted && !isFinal && (
           <button
-            onClick={() => { setWheelHole(holeIdx + 1); setWheelOpen(true); }}
+            onClick={() => { hapticMedium(); setWheelHole(holeIdx + 1); setWheelOpen(true); }}
             data-testid="button-open-item-box"
             className="w-full h-16 rounded-2xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-condensed font-black text-lg uppercase tracking-widest active:scale-[0.99] transition-transform flex items-center justify-center gap-2 shadow-lg shadow-primary/40 animate-pulse"
           >

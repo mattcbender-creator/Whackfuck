@@ -8,6 +8,7 @@ import {
 import { formatPlayers } from '@/lib/tournament';
 import { useTournament } from '@/lib/tournamentContext';
 import { fireBirdieConfetti, fireEagleConfetti } from '@/lib/confetti';
+import { hapticWheelSpin, hapticSuccess } from '@/lib/haptics';
 
 const wheelImg = `${import.meta.env.BASE_URL}wheel/mariokart-wheel.png`;
 
@@ -124,10 +125,12 @@ export default function WheelModal({ open, onClose, hole }: Props) {
     const finalAngle = targetAngleForIndex(idx, 6);
     setAngle(finalAngle);
     setPhase('spinning');
+    hapticWheelSpin();
 
     spinTimer.current = window.setTimeout(() => {
       spinTimer.current = null; // mark timer as consumed so cleanup is a no-op
       setLanded(item);
+      hapticSuccess();
       if (item.selection === 'none') {
         setPhase('resolving'); // show item immediately; effects apply in background
         applyAutoEffect(item, snap); // fire-and-forget; always ends with setPhase('applied')

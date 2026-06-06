@@ -208,9 +208,14 @@ export default function Home() {
     const name = teamName.trim();
     if (!name || cleaned.length === 0 || nameTaken) return;
 
+    const wasEditing = editing;
     setTeamInfo({ teamName: name, players: cleaned });
     setEditing(false);
-    setLocation('/hole');
+    if (!wasEditing) {
+      // First registration → go straight to hole view
+      setLocation('/hole');
+    }
+    // Edit → stay on home, form closes, team card refreshes
   };
 
   const showForm = !teamInfo || (editing && !hasSubmitted);
@@ -443,7 +448,7 @@ export default function Home() {
                 disabled={isLocked || nameTaken}
                 className="w-full h-14 font-condensed text-2xl font-black tracking-widest uppercase rounded-full neon-border disabled:opacity-50"
               >
-                Start Tournament
+                {editing ? 'Save Changes' : 'Start Tournament'}
               </Button>
 
               {editing && (

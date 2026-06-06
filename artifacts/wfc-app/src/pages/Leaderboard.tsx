@@ -238,6 +238,7 @@ export default function Leaderboard() {
   const [tickerIdx, setTickerIdx] = useState(0);
   const prevPositionsRef = useRef<Record<string, number>>({});
   const [posChanges, setPosChanges] = useState<Record<string, number>>({});
+  const [flashStates, setFlashStates] = useState<Record<string, 'up' | 'down'>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // ── Last-seen leaderboard animation ──
@@ -293,8 +294,17 @@ export default function Leaderboard() {
           newChanges[team.id] = prevPos - (idx + 1); // positive = moved up
         }
       });
-      // REPLACE (not merge): only show arrows for the most recent shift.
+      // REPLACE (not merge): only show flash for the most recent shift.
       setPosChanges(newChanges);
+      // Brief row-glow flash — auto-clears after 1.4 s.
+      const flashes: Record<string, 'up' | 'down'> = {};
+      Object.entries(newChanges).forEach(([id, d]) => {
+        if (d !== 0) flashes[id] = d > 0 ? 'up' : 'down';
+      });
+      if (Object.keys(flashes).length > 0) {
+        setFlashStates(flashes);
+        setTimeout(() => setFlashStates({}), 1400);
+      }
     }
     prevPositionsRef.current = newPositions;
   }, [teams]);
@@ -499,6 +509,7 @@ export default function Leaderboard() {
                   key={team.id}
                   layout
                   transition={{ type: 'spring', stiffness: 90, damping: 14 }}
+                  className={`rounded-lg transition-colors duration-700 ${flashStates[team.id] === 'up' ? 'bg-primary/10 ring-1 ring-inset ring-primary/30' : flashStates[team.id] === 'down' ? 'bg-red-500/10 ring-1 ring-inset ring-red-500/30' : ''}`}
                 >
                   <button
                     type="button"
@@ -512,10 +523,8 @@ export default function Leaderboard() {
                       ) : (
                         <span className="font-condensed font-bold text-muted-foreground">{idx + 1}</span>
                       )}
-                      {posChanges[team.id] !== undefined && posChanges[team.id] !== 0 && (
-                        <span className={`text-[11px] font-black leading-none tracking-tighter ${posChanges[team.id] > 0 ? 'text-primary drop-shadow-[0_0_4px_#39FF14]' : 'text-red-400 drop-shadow-[0_0_4px_#f87171]'}`}>
-                          {posChanges[team.id] > 0 ? `▲${posChanges[team.id]}` : `▼${Math.abs(posChanges[team.id])}`}
-                        </span>
+                      {flashStates[team.id] && (
+                        <span className={`w-1.5 h-1.5 rounded-full block transition-opacity duration-700 ${flashStates[team.id] === 'up' ? 'bg-primary shadow-[0_0_6px_2px_rgba(57,255,20,0.7)]' : 'bg-red-400 shadow-[0_0_6px_2px_rgba(248,113,113,0.7)]'}`} />
                       )}
                     </div>
                     <div className="col-span-7 flex flex-col gap-1 min-w-0">
