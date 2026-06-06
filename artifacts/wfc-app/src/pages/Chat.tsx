@@ -51,7 +51,7 @@ function Bubble({ msg, isMine }: { msg: ChatMsg; isMine: boolean }) {
             Whacky
           </p>
           <div className="bg-zinc-800 border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 shadow">
-            <p className="text-[13px] text-foreground/85 leading-snug">{msg.text}</p>
+            <p className="text-[13px] text-foreground/85 leading-snug break-words whitespace-pre-wrap">{msg.text}</p>
           </div>
           <p className="text-[9px] text-muted-foreground/50 mt-0.5 ml-1">{timeLabel(msg)}</p>
         </div>
@@ -64,7 +64,7 @@ function Bubble({ msg, isMine }: { msg: ChatMsg; isMine: boolean }) {
       <div className="flex justify-end max-w-[88%] self-end">
         <div>
           <div className="bg-primary/20 border border-primary/25 rounded-2xl rounded-br-sm px-3 py-2 shadow">
-            <p className="text-[13px] text-foreground leading-snug">{msg.text}</p>
+            <p className="text-[13px] text-foreground leading-snug break-words whitespace-pre-wrap">{msg.text}</p>
           </div>
           <p className="text-[9px] text-muted-foreground/50 mt-0.5 text-right">{timeLabel(msg)}</p>
         </div>
@@ -84,7 +84,7 @@ function Bubble({ msg, isMine }: { msg: ChatMsg; isMine: boolean }) {
           {msg.fromTeamName}
         </p>
         <div className="bg-zinc-900 border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 shadow">
-          <p className="text-[13px] text-foreground/85 leading-snug">{msg.text}</p>
+          <p className="text-[13px] text-foreground/85 leading-snug break-words whitespace-pre-wrap">{msg.text}</p>
         </div>
         <p className="text-[9px] text-muted-foreground/50 mt-0.5 ml-1">{timeLabel(msg)}</p>
       </div>

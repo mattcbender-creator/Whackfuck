@@ -15,15 +15,18 @@ import {
   teamsCol, eventsCol, drivesCol, teamDoc, configDoc, tournamentDoc,
   getActiveTournamentId, formatPlayers, normalizeScores, scoresToMap,
   resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
+  chatCol, dmChannelId,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
 import { diffCorrectionEdits, correctTeamScores, applyManualAdjustment, spinsFromData, type WheelSpinRecord } from '@/lib/scoreSync';
 import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
+import { useWFC } from '@/lib/store';
+import { pickRoast } from '@/lib/roasts';
 import {
   Sparkles, Trash2, Beaker, Megaphone, Lock, LockOpen, Users, Pencil, X,
   Plus, Minus, RefreshCw, ChevronDown, ChevronUp, Play, Pause,
   ShieldAlert, AlertTriangle, CheckCircle2, Flag, ClipboardList,
-  Share2, Copy, Check, KeyRound, Grid3x3, Trophy,
+  Share2, Copy, Check, KeyRound, Grid3x3, Trophy, Timer, MessageSquare,
 } from 'lucide-react';
 
 const DEMO_TEAM_NAMES = [
@@ -50,6 +53,58 @@ function randomHoleScore(par: number): number {
   if (r < 0.90) return par + 2;             // double
   return par + 3;                           // triple
 }
+
+// Wilder distribution used during LIVE simulation so the leaderboard swings
+// hard: occasional good ones, but plenty of triples, snowmen (8+), and whiffs.
+function demoHoleScore(par: number): number {
+  const r = Math.random();
+  if (par >= 4 && r < 0.04) return par - 2;            // eagle
+  if (r < 0.15) return par - 1;                        // birdie (occasional good ones)
+  if (r < 0.30) return par;                            // par
+  if (r < 0.48) return par + 1;                        // bogey
+  if (r < 0.66) return par + 2;                        // double
+  if (r < 0.82) return par + 3;                        // triple
+  if (r < 0.93) return Math.max(8, par + 4);           // snowman territory
+  return par + 5 + Math.floor(Math.random() * 2);      // total whiff blowup
+}
+
+// Trash-talk one-liners demo teams fire into the global Lounge.
+const DEMO_CHATTER = [
+  'who let the bogey boys out 😂 oh wait no emojis. who let the bogey boys out',
+  'just carded a snowman on a par 3, dont @ me',
+  'pour one out for my scorecard',
+  'we are LITERALLY the best team here and the leaderboard is lying',
+  'whoever raked the bunker on 7 you are a hero',
+  'my partner has not made contact with the ball since hole 4',
+  'tips tees were a mistake. a huge mistake.',
+  'someone explain how we are losing to the Sandbaggers',
+  'three putts. three of them. on one green.',
+  'lost two balls in the pond, found someone elses prius keys',
+  'the wheel of fortune just ruined my entire life',
+  'we came here to have fun and we are failing at that too',
+  'cart girl pls come back to hole 11 we need you',
+  'i have peaked. it was the first tee shot. all downhill from here',
+  'whacky is being mean again and honestly its deserved',
+  'currently negotiating a mulligan with my conscience',
+  'big swings energy, zero results',
+  'leaderboard check: still humbling',
+  'genuinely incredible how bad we are at a game we paid to play',
+  'shoutout to the foursome ahead playing at the speed of continental drift',
+];
+
+// What a rival team slides into your DMs with (these pop up as banners).
+const DEMO_DM_LINES = [
+  'we are coming for you. check the leaderboard.',
+  'no way you actually beat us on 9. no way.',
+  'wanna make this interesting? loser buys the round',
+  'your team name is mid and your scores are worse',
+  'heard you whiffed on the tee box. classic.',
+  'good luck on the back 9, youll need it',
+  'we saw that triple bogey. we all saw it.',
+  'tell your partner the bunkers are not lava, you can hit out of them',
+  'you up? (on the leaderboard? barely.)',
+  'respect the game, respect the grind, respect US specifically',
+];
 
 // Weighted distribution so demo teams feel mid-round:
 // ~8% very early (2-3), 15% front 9 (5-7), 22% at the turn (8-10),
@@ -220,6 +275,7 @@ function auditTeam(
 export default function Admin() {
   const { holes, autoTeeRule, holeRules } = useCourse();
   const { tournament } = useTournament();
+  const { teamId } = useWFC();
   const [, navigate] = useLocation();
   const [password, setPassword] = useState('');
   const [auth, setAuth] = useState(false);
@@ -229,6 +285,24 @@ export default function Admin() {
   const [simulating, setSimulating] = useState(false);
   const simTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
+
+  // ── Demo simulation safety + scheduling ──────────────────────────────────
+  const DEMO_MAX_SECONDS = 300; // hard 5-minute cap to protect Firebase limits
+  const SIM_TICK_MS = 2500;     // how often we check the per-team advance schedule
+  const [demoSecondsLeft, setDemoSecondsLeft] = useState(DEMO_MAX_SECONDS);
+  const demoStartRef = useRef<number | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Hard cancellation flag: an in-flight async tick checks this before every
+  // write so stopping/timing out can't leak writes after the sim is killed.
+  const runningRef = useRef(false);
+  // Per-team "next time this bot may complete a hole" (ms epoch) → 8-15s cadence.
+  const nextAdvanceRef = useRef<Record<string, number>>({});
+  const nextLobbyChatRef = useRef(0);
+  const nextDmChatRef = useRef(0);
+  const chatIdxRef = useRef(Math.floor(Math.random() * 100));
+  // Latest-callback refs so the interval never closes over stale functions.
+  const simTickRef = useRef<() => void>(() => {});
+  const timeoutDemoRef = useRef<() => void>(() => {});
 
   // Team management state
   const [teams, setTeams] = useState<LiveTeam[]>([]);
@@ -847,27 +921,40 @@ export default function Admin() {
   // arrows actually fire during a demo (otherwise demo teams are static and
   // no movement = no arrows).
   const simulationTick = useCallback(async () => {
-    if (!db || !getActiveTournamentId()) return;
+    if (!db || !getActiveTournamentId() || !runningRef.current) return;
+    const now = Date.now();
     try {
       const fdb = db;
       const snap = await getDocs(query(teamsCol(fdb), where('isDemo', '==', true)));
-      const candidates = snap.docs.filter(d => {
-        const hp = d.data().holesPlayed;
-        return typeof hp === 'number' && hp < 18;
-      });
-      if (candidates.length === 0) return;
-      // Advance 1-2 teams per tick for visible movement
-      const advanceCount = Math.min(candidates.length, Math.random() < 0.5 ? 2 : 1);
-      const picks = shuffle(candidates).slice(0, advanceCount);
+      const demoDocs = snap.docs;
+      if (demoDocs.length === 0) return;
 
-      for (const d of picks) {
+      // Seed any not-yet-scheduled bot with a staggered first-hole time (0-12s)
+      // so the simulation ramps up instead of dumping every team's write at once.
+      for (const d of demoDocs) {
+        if (nextAdvanceRef.current[d.id] === undefined) {
+          nextAdvanceRef.current[d.id] = now + Math.random() * 12000;
+        }
+      }
+
+      // ── Score progression: each bot completes a hole every 8-15s ──────────
+      const due = demoDocs.filter(d => {
+        const hp = d.data().holesPlayed;
+        if (typeof hp !== 'number' || hp >= 18) return false;
+        return now >= (nextAdvanceRef.current[d.id] ?? 0);
+      });
+
+      for (const d of due) {
+        if (!runningRef.current) return; // sim was stopped mid-flight
+        // Schedule this bot's next hole 8-15s out (staggered, realistic cadence).
+        nextAdvanceRef.current[d.id] = now + 8000 + Math.random() * 7000;
         const data = d.data();
         const scores = normalizeScores(data.scores);
         const hp: number = data.holesPlayed;
         const nextHole = hp; // 0-indexed
         if (nextHole >= 18) continue;
         const par = holes[nextHole].par;
-        const newScore = randomHoleScore(par);
+        const newScore = demoHoleScore(par);
         scores[nextHole] = newScore;
         const newHp = hp + 1;
         // Recompute netScore = strokes - par for all played holes, plus existing wheelAdjustment
@@ -908,43 +995,163 @@ export default function Admin() {
           });
         }
       }
+
+      // Helper: build roast params from a demo team doc.
+      const roastFor = (data: Record<string, unknown>) => pickRoast({
+        teamName: (data.teamName as string) ?? 'A team',
+        players: Array.isArray(data.players) ? (data.players as string[]) : [],
+        netScore: typeof data.netScore === 'number' ? data.netScore : 0,
+        holesPlayed: typeof data.holesPlayed === 'number' ? data.holesPlayed : 0,
+        holeNum: 1,
+        score: null,
+        par: 4,
+        msgIndex: chatIdxRef.current++,
+      });
+
+      // ── Lobby (Trash Talk Lounge) chatter every ~7-15s ────────────────────
+      if (runningRef.current && now >= nextLobbyChatRef.current) {
+        nextLobbyChatRef.current = now + 7000 + Math.random() * 8000;
+        const bot = pick(demoDocs);
+        const bd = bot.data();
+        const roll = Math.random();
+        let payload: Record<string, unknown>;
+        if (roll < 0.18) {
+          // Whacky himself jumps into the Lounge with a roast.
+          const roast = roastFor(bd);
+          payload = {
+            fromTeamId: '__whacky__', fromTeamName: 'Whacky',
+            text: roast.text, face: roast.face, isWhacky: true,
+          };
+        } else if (roll < 0.55) {
+          // A team fires a roast line.
+          payload = {
+            fromTeamId: bot.id, fromTeamName: (bd.teamName as string) ?? 'A team',
+            text: roastFor(bd).text, isWhacky: false,
+          };
+        } else {
+          // A team drops a funny one-liner.
+          payload = {
+            fromTeamId: bot.id, fromTeamName: (bd.teamName as string) ?? 'A team',
+            text: pick(DEMO_CHATTER), isWhacky: false,
+          };
+        }
+        await addDoc(chatCol(fdb), {
+          ...payload, toTeamId: null, channel: 'general',
+          ts: serverTimestamp(), isDemo: true,
+        });
+      }
+
+      // ── DM to the host every ~12-25s (these trigger pop-up banners) ───────
+      if (runningRef.current && teamId && now >= nextDmChatRef.current) {
+        nextDmChatRef.current = now + 12000 + Math.random() * 13000;
+        const bot = pick(demoDocs);
+        const bd = bot.data();
+        const ch = dmChannelId(bot.id, teamId);
+        const text = Math.random() < 0.5 ? pick(DEMO_DM_LINES) : roastFor(bd).text;
+        await addDoc(chatCol(fdb), {
+          fromTeamId: bot.id,
+          fromTeamName: (bd.teamName as string) ?? 'A team',
+          toTeamId: teamId,
+          text,
+          channel: ch,
+          ts: serverTimestamp(),
+          isWhacky: false,
+          isDemo: true,
+        });
+      }
     } catch (e) {
       console.error('sim tick failed', e);
     }
-  }, [holes]);
+  }, [holes, teamId]);
 
-  // Start/stop the simulation interval
+  // Delete every demo artifact: teams, ticker events, and chat messages.
+  const clearAllDemo = useCallback(async (): Promise<number> => {
+    if (!db) return 0;
+    const fdb = db;
+    const [teamsSnap, evSnap, chatSnap] = await Promise.all([
+      getDocs(query(teamsCol(fdb), where('isDemo', '==', true))),
+      getDocs(query(eventsCol(fdb), where('isDemo', '==', true))),
+      getDocs(query(chatCol(fdb), where('isDemo', '==', true))),
+    ]);
+    const allDocs = [...teamsSnap.docs, ...evSnap.docs, ...chatSnap.docs];
+    // Chunk into batches of 450 (Firestore caps batches at 500 ops).
+    for (let i = 0; i < allDocs.length; i += 450) {
+      const batch = writeBatch(fdb);
+      allDocs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    return teamsSnap.size;
+  }, []);
+
+  // Auto-timeout: stop the sim, wipe demo data, and warn the host.
+  const timeoutDemo = useCallback(async () => {
+    runningRef.current = false; // hard-stop any in-flight tick immediately
+    setSimulating(false);
+    try {
+      await clearAllDemo();
+    } catch (e) {
+      console.error('demo timeout cleanup failed', e);
+    }
+    toast({
+      title: 'Demo Mode has timed out for safety.',
+      description: 'Demo teams, scores, and messages were cleared automatically.',
+    });
+  }, [clearAllDemo, toast]);
+
+  // Keep callback refs current so the interval always calls the latest closures.
+  useEffect(() => { simTickRef.current = simulationTick; }, [simulationTick]);
+  useEffect(() => { timeoutDemoRef.current = timeoutDemo; }, [timeoutDemo]);
+
+  // Start/stop the simulation + 5-minute safety countdown.
   useEffect(() => {
     if (!simulating) {
+      runningRef.current = false;
       if (simTimer.current) { clearInterval(simTimer.current); simTimer.current = null; }
+      if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
       return;
     }
-    // Fire immediately, then every 8 seconds
-    simulationTick();
-    simTimer.current = setInterval(simulationTick, 8000);
+    // Fresh run: reset schedules and the 5-minute clock.
+    runningRef.current = true;
+    demoStartRef.current = Date.now();
+    nextAdvanceRef.current = {};
+    nextLobbyChatRef.current = Date.now() + 4000;   // first lounge post ~4s in
+    nextDmChatRef.current = Date.now() + 10000;      // first DM ~10s in
+    setDemoSecondsLeft(DEMO_MAX_SECONDS);
+
+    simTickRef.current();
+    simTimer.current = setInterval(() => simTickRef.current(), SIM_TICK_MS);
+    countdownRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - (demoStartRef.current ?? Date.now())) / 1000);
+      const left = Math.max(0, DEMO_MAX_SECONDS - elapsed);
+      setDemoSecondsLeft(left);
+      if (left <= 0) {
+        if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+        timeoutDemoRef.current();
+      }
+    }, 1000);
+
     return () => {
+      runningRef.current = false;
       if (simTimer.current) { clearInterval(simTimer.current); simTimer.current = null; }
+      if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     };
-  }, [simulating, simulationTick]);
+  }, [simulating]);
 
   // Stop simulation if we navigate away from admin
   useEffect(() => () => {
+    runningRef.current = false;
     if (simTimer.current) clearInterval(simTimer.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
   }, []);
 
   const handleClearDemo = async () => {
     if (!db || !getActiveTournamentId()) return;
     try {
-      const fdb = db;
-      const snap = await getDocs(query(teamsCol(fdb), where('isDemo', '==', true)));
-      if (snap.empty) {
-        toast({ title: 'No demo teams to clear' });
-        return;
-      }
-      const batch = writeBatch(fdb);
-      snap.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      toast({ title: `Cleared ${snap.size} demo teams` });
+      const cleared = await clearAllDemo();
+      toast({
+        title: cleared > 0 ? `Cleared ${cleared} demo teams` : 'No demo teams to clear',
+        description: cleared > 0 ? 'Demo scores, events, and messages also removed.' : undefined,
+      });
     } catch (e) {
       toast({ title: 'Clear failed', description: String(e), variant: 'destructive' });
     }
@@ -1423,7 +1630,7 @@ export default function Admin() {
             <h3 className="font-bold uppercase tracking-widest text-sm text-primary">Demo Mode</h3>
           </div>
           <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-            Seeds fake teams scattered randomly across the course. Teams past hole 9 will already have a random wheel result locked in. Use this to walk the group through the leaderboard, wheel effects, and live sync before tee-off.
+            Seeds fake teams scattered randomly across the course. Live Simulation makes them play like real users — firing off wild scores, trash-talking the Lounge, and sliding into your DMs. Use this to walk the group through the leaderboard, wheel effects, chat, and live sync before tee-off.
           </p>
 
           <div className="space-y-2">
@@ -1458,22 +1665,51 @@ export default function Admin() {
             {seeding ? 'Seeding…' : `Seed ${demoCount} Demo Teams`}
           </Button>
 
-          <Button
-            onClick={() => setSimulating(v => !v)}
-            variant="outline"
-            className={`w-full h-10 text-xs uppercase tracking-widest font-bold ${
-              simulating
-                ? 'border-red-500/50 text-red-400 hover:bg-red-500/10'
-                : 'border-primary/40 text-primary hover:bg-primary/10'
-            }`}
-            data-testid="button-simulate-live"
-          >
-            {simulating ? (
-              <><Pause className="w-3 h-3 mr-2" /> Stop Live Simulation</>
-            ) : (
-              <><Play className="w-3 h-3 mr-2" /> Simulate Live Play (8s ticks)</>
-            )}
-          </Button>
+          {simulating ? (
+            <div className="space-y-3" data-testid="demo-running-panel">
+              {/* Auto-stop warning banner */}
+              <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/40 rounded-lg p-3">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-yellow-200/90 leading-relaxed">
+                  Demo Mode active — will auto-stop in 5 minutes to protect Firebase limits.
+                </p>
+              </div>
+
+              {/* Live countdown timer */}
+              <div className="flex items-center justify-center gap-2 bg-black/40 border border-primary/30 rounded-lg py-3">
+                <Timer className="w-5 h-5 text-primary" />
+                <span
+                  className="font-condensed text-3xl font-black text-primary leading-none tabular-nums"
+                  data-testid="text-demo-countdown"
+                >
+                  {Math.floor(demoSecondsLeft / 60)}:{String(demoSecondsLeft % 60).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70">until auto-stop</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70 uppercase tracking-widest justify-center">
+                <MessageSquare className="w-3 h-3 text-primary/70" />
+                Bots scoring + chatting live
+              </div>
+
+              <Button
+                onClick={() => setSimulating(false)}
+                className="w-full h-12 bg-red-500 text-white font-condensed font-black uppercase tracking-widest hover:bg-red-600"
+                data-testid="button-stop-demo"
+              >
+                <Pause className="w-4 h-4 mr-2" /> Stop Demo Now
+              </Button>
+            </div>
+          ) : (
+            <Button
+              onClick={() => setSimulating(true)}
+              variant="outline"
+              className="w-full h-10 text-xs uppercase tracking-widest font-bold border-primary/40 text-primary hover:bg-primary/10"
+              data-testid="button-simulate-live"
+            >
+              <Play className="w-3 h-3 mr-2" /> Start Live Simulation
+            </Button>
+          )}
 
           <Button
             onClick={handleClearDemo}
@@ -1481,7 +1717,7 @@ export default function Admin() {
             className="w-full h-10 text-xs uppercase tracking-widest font-bold border-primary/30 text-primary/80 hover:bg-primary/10"
             data-testid="button-clear-demo"
           >
-            Clear Demo Teams Only
+            Clear All Demo Data
           </Button>
         </div>
 
