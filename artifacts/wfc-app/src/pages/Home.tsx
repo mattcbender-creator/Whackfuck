@@ -121,10 +121,11 @@ function TeamInvite({ joinCode, teamCode }: { joinCode: string; teamCode: string
   };
 
   return (
-    <div className="bg-card/40 border border-border/50 rounded-xl p-3 mb-3 text-left">
-      <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Team code · {teamCode}</p>
-      <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
-        Share so a teammate can score on their own phone, or rejoin if you switch devices.
+    <div className="bg-card/40 border border-primary/40 rounded-xl p-4 mb-3 text-left">
+      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Share this code with your team</p>
+      <p className="font-condensed text-5xl font-black text-primary tracking-[0.25em] mb-3 leading-none">{teamCode}</p>
+      <p className="text-[11px] text-muted-foreground mb-3 leading-snug">
+        Your teammates need this code to rejoin on their device.
       </p>
       <div className="grid grid-cols-2 gap-2">
         <button

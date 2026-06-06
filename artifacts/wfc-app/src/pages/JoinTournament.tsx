@@ -139,7 +139,7 @@ export default function JoinTournament() {
   const confirmRejoin = () => {
     if (!resolved || !selectedTeam) return;
     if (teamCodeInput.trim().toUpperCase() !== (selectedTeam.teamCode ?? '').toUpperCase()) {
-      setError('Team code doesn\u2019t match. Ask a teammate for the 4-character code.');
+      setError('Wrong code. Ask your team captain.');
       return;
     }
     enterAsTeam(resolved, selectedTeam.id);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
@@ -280,6 +281,12 @@ export default function Leaderboard() {
   const [posChanges, setPosChanges] = useState<Record<string, number>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // ── Last-seen leaderboard animation ──
+  const tId = getActiveTournamentId();
+  const lastSeenKey = tId ? `wfc-last-seen-rankings::${tId}` : null;
+  const firstSnapshotRef = useRef(true);
+  const [displayedTeams, setDisplayedTeams] = useState<TeamData[]>([]);
+
   // ── Single events listener: powers both broadcast banner and live ticker ──
   useEffect(() => {
     if (!isFirebaseConfigured || !db || !getActiveTournamentId()) return;
@@ -328,12 +335,58 @@ export default function Leaderboard() {
         }
       });
       // REPLACE (not merge): only show arrows for the most recent shift.
-      // Merging caused stale ▼ arrows to pile up from older shifts while
-      // newer ▲ moves overwrote each other — net effect was "down only".
       setPosChanges(newChanges);
     }
     prevPositionsRef.current = newPositions;
   }, [teams]);
+
+  // ── Last-seen layout animation: render in stored order, animate to current ──
+  useEffect(() => {
+    if (teams.length === 0) return;
+
+    if (!firstSnapshotRef.current) {
+      setDisplayedTeams(teams);
+      return;
+    }
+    firstSnapshotRef.current = false;
+
+    let lastSeenIds: string[] | null = null;
+    try {
+      const raw = lastSeenKey ? localStorage.getItem(lastSeenKey) : null;
+      lastSeenIds = raw ? (JSON.parse(raw) as string[]) : null;
+    } catch { /* ignore */ }
+
+    let cleanup: (() => void) | undefined;
+
+    if (lastSeenIds && lastSeenIds.length > 0) {
+      const lastSeenMap = new Map(lastSeenIds.map((id, i) => [id, i]));
+      const lastSeenSorted = [...teams].sort((a, b) => {
+        const ai = lastSeenMap.has(a.id) ? (lastSeenMap.get(a.id) as number) : 9999;
+        const bi = lastSeenMap.has(b.id) ? (lastSeenMap.get(b.id) as number) : 9999;
+        return ai - bi;
+      });
+      setDisplayedTeams(lastSeenSorted);
+      // Double rAF ensures the initial paint settles before triggering layout animation.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setDisplayedTeams(teams);
+        });
+      });
+      const t = setTimeout(() => {
+        try {
+          if (lastSeenKey) localStorage.setItem(lastSeenKey, JSON.stringify(teams.map(tm => tm.id)));
+        } catch { /* ignore */ }
+      }, 1500);
+      cleanup = () => clearTimeout(t);
+    } else {
+      setDisplayedTeams(teams);
+      try {
+        if (lastSeenKey) localStorage.setItem(lastSeenKey, JSON.stringify(teams.map(tm => tm.id)));
+      } catch { /* ignore */ }
+    }
+
+    return cleanup;
+  }, [teams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isFirebaseConfigured || !db) {
@@ -462,13 +515,14 @@ export default function Leaderboard() {
           </div>
 
           <div className="divide-y divide-border">
-            {teams.length === 0 && !loading && (
+            {displayedTeams.length === 0 && !loading && (
               <div className="p-8 text-center text-muted-foreground font-medium text-sm">
                 No teams on the course yet.
               </div>
             )}
 
-            {teams.map((team, idx) => {
+            <AnimatePresence initial={false}>
+            {displayedTeams.map((team, idx) => {
               const allHits = team.targetedBy ?? [];
               const aggregated = aggregateHits(allHits);
               const totalHits = allHits.length;
@@ -482,7 +536,11 @@ export default function Leaderboard() {
                 ? [['9', team.wheelSpin]]
                 : [];
               return (
-                <div key={team.id}>
+                <motion.div
+                  key={team.id}
+                  layout
+                  transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+                >
                   <button
                     type="button"
                     onClick={() => setExpandedId(prev => prev === team.id ? null : team.id)}
@@ -551,9 +609,10 @@ export default function Leaderboard() {
                       )}
                     </div>
                   )}
-                </div>
+                </motion.div>
               );
             })}
+            </AnimatePresence>
           </div>
         </div>
 
