@@ -304,7 +304,7 @@ export default function HoleView() {
 
       {/* Main Content — tightened spacing so everything important fits without
           scrolling on a typical phone (par/yds, rule, score stepper). */}
-      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3">
+      <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 justify-between">
         <FinalizedBanner />
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
@@ -387,11 +387,7 @@ export default function HoleView() {
             {rule.ruleText}
           </p>
         </div>
-        ) : (
-        <div className="bg-card/30 border border-border/30 rounded-2xl px-4 py-3 flex items-center justify-center">
-          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/40">Standard Play</span>
-        </div>
-        )}
+        ) : null}
 
         {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown
             above) so the stepper fits without scrolling on most phones. */}
@@ -412,7 +408,7 @@ export default function HoleView() {
             </button>
 
             <button
-              className="flex flex-col items-center w-24 active:scale-95 transition-transform disabled:active:scale-100"
+              className="flex flex-col items-center min-w-[60px] min-h-[60px] justify-center active:scale-95 transition-transform disabled:active:scale-100"
               onClick={() => {
                 if (!holeLocked && !isFinal && score === null) setScore(holeIdx + 1, hole.par);
               }}
@@ -422,9 +418,9 @@ export default function HoleView() {
               {score === null ? (
                 <span
                   data-testid={`score-value-hole-${hole.hole}`}
-                  className="font-condensed text-2xl font-bold text-white/50 leading-tight text-center uppercase tracking-wide"
+                  className="font-condensed text-5xl font-bold leading-none text-foreground/20"
                 >
-                  Tap<br/>for par
+                  —
                 </span>
               ) : (
                 <span

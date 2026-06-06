@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ResetControl } from '@/components/ResetControl';
 import { FinalizedBanner } from '@/components/FinalizedBanner';
-import { Users, ShieldAlert, Share2, Copy, Check, Plus, X, AlertTriangle } from 'lucide-react';
+import { Users, ShieldAlert, Share2, Copy, Check, Plus, X } from 'lucide-react';
 
 // June 27 2026, 7:00 AM Eastern (UTC-4 in summer / EDT)
 const EVENT_START = new Date('2026-06-27T07:00:00-04:00');
@@ -160,8 +160,7 @@ export default function Home() {
   const [players, setPlayers] = useState<string[]>(() => Array(teamSize).fill(''));
   const [animate, setAnimate] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState(false);
-  const [pendingSubmit, setPendingSubmit] = useState<{ teamName: string; players: string[] } | null>(null);
+  const [nameTaken, setNameTaken] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setAnimate(true), 80);
@@ -182,34 +181,34 @@ export default function Home() {
     }
   }, [teamInfo, teamSize]);
 
+  useEffect(() => {
+    const name = teamName.trim();
+    if (!name || isLocked) { setNameTaken(false); return; }
+    const t = setTimeout(async () => {
+      try {
+        const existing = await listTeamsOnce();
+        setNameTaken(existing.some(e => e.teamName.toLowerCase() === name.toLowerCase()));
+      } catch {
+        setNameTaken(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [teamName, isLocked]);
+
   const setPlayerAt = (i: number, val: string) => {
     setPlayers(prev => prev.map((p, idx) => (idx === i ? val : p)));
   };
   const addPlayer = () => setPlayers(prev => (prev.length < teamSize ? [...prev, ''] : prev));
   const removePlayer = (i: number) => setPlayers(prev => prev.filter((_, idx) => idx !== i));
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = players.map(p => p.trim()).filter(Boolean);
     const name = teamName.trim();
-    if (!name || cleaned.length === 0) return;
-
-    if (!duplicateWarning) {
-      try {
-        const existing = await listTeamsOnce();
-        const isDuplicate = existing.some(t => t.teamName.toLowerCase() === name.toLowerCase());
-        if (isDuplicate) {
-          setPendingSubmit({ teamName: name, players: cleaned });
-          setDuplicateWarning(true);
-          return;
-        }
-      } catch { /* non-fatal — proceed without check */ }
-    }
+    if (!name || cleaned.length === 0 || nameTaken) return;
 
     setTeamInfo({ teamName: name, players: cleaned });
     setEditing(false);
-    setDuplicateWarning(false);
-    setPendingSubmit(null);
     setLocation('/hole');
   };
 
@@ -382,7 +381,7 @@ export default function Home() {
                 <Input
                   data-testid="input-team-name"
                   value={teamName}
-                  onChange={e => { setTeamName(e.target.value); setDuplicateWarning(false); }}
+                  onChange={e => setTeamName(e.target.value)}
                   placeholder="e.g. The Mulligans"
                   className="h-12 bg-input/60 border-border/80 focus:border-primary text-base disabled:opacity-50"
                   disabled={isLocked}
@@ -431,45 +430,16 @@ export default function Home() {
                 )}
               </div>
 
-              {duplicateWarning && pendingSubmit && (
-                <div className="bg-destructive/10 border border-destructive/50 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                    <p className="text-sm font-bold text-destructive leading-snug">
-                      A team with this name already exists. Are you sure you want to create a duplicate?
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setDuplicateWarning(false); setPendingSubmit(null); }}
-                      className="flex-1 h-10 rounded-full border border-border/70 text-sm font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="button-create-anyway"
-                      onClick={() => {
-                        if (!pendingSubmit) return;
-                        setTeamInfo(pendingSubmit);
-                        setEditing(false);
-                        setDuplicateWarning(false);
-                        setPendingSubmit(null);
-                        setLocation('/hole');
-                      }}
-                      className="flex-1 h-10 rounded-full bg-destructive text-white text-sm font-black uppercase tracking-widest active:scale-95 transition-all"
-                    >
-                      Create Anyway
-                    </button>
-                  </div>
-                </div>
+              {nameTaken && (
+                <p className="text-xs font-bold text-destructive uppercase tracking-wide -mt-1">
+                  Name taken. Tap JOIN on the existing team above.
+                </p>
               )}
 
               <Button
                 data-testid="button-submit-team"
                 type="submit"
-                disabled={isLocked}
+                disabled={isLocked || nameTaken}
                 className="w-full h-14 font-condensed text-2xl font-black tracking-widest uppercase rounded-full neon-border disabled:opacity-50"
               >
                 Start Tournament
