@@ -472,6 +472,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       });
       return;
     }
+    // Detect whether this is a first-time registration or an edit of an
+    // existing team. We must NOT write scores/wheelSpins/etc on an edit — those
+    // fields only belong in the initial registration document.
+    const isFirstRegistration = !teamCode;
+
     // Generate a team code the first time a team registers (used for rejoin).
     let code = teamCode;
     if (!code) {
@@ -485,45 +490,57 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const fdb = db;
       const ref = teamDoc(fdb, teamId);
       const finalCode = code;
-      (async () => {
-        let initialWheelAdj = 0;
-        let initialTargetedBy: TargetedByEntry[] = [];
-        try {
-          const teamsSnap = await getDocs(teamsCol(fdb));
-          for (const d of teamsSnap.docs) {
-            if (d.id === teamId) continue;
-            const data = d.data();
-            for (const spin of Object.values(spinsFromData(data))) {
-              if (spin.item === 'lightning') {
-                initialTargetedBy.push({
-                  item: 'lightning',
-                  fromTeam: (data.teamName as string | undefined) ?? 'Unknown',
-                  at: spin.at ?? Date.now(),
-                });
+      if (isFirstRegistration) {
+        // Full initial registration — write all fields including empty scores.
+        (async () => {
+          let initialWheelAdj = 0;
+          let initialTargetedBy: TargetedByEntry[] = [];
+          try {
+            const teamsSnap = await getDocs(teamsCol(fdb));
+            for (const d of teamsSnap.docs) {
+              if (d.id === teamId) continue;
+              const data = d.data();
+              for (const spin of Object.values(spinsFromData(data))) {
+                if (spin.item === 'lightning') {
+                  initialTargetedBy.push({
+                    item: 'lightning',
+                    fromTeam: (data.teamName as string | undefined) ?? 'Unknown',
+                    at: spin.at ?? Date.now(),
+                  });
+                }
               }
             }
-          }
-          if (initialTargetedBy.length > 0) {
-            initialWheelAdj = initialTargetedBy.length;
-            setWheelAdjustment(initialWheelAdj);
-            setTargetedBy(initialTargetedBy);
-            saveToLocal({ wheelAdjustment: initialWheelAdj, targetedBy: initialTargetedBy });
-          }
-        } catch { /* non-fatal */ }
+            if (initialTargetedBy.length > 0) {
+              initialWheelAdj = initialTargetedBy.length;
+              setWheelAdjustment(initialWheelAdj);
+              setTargetedBy(initialTargetedBy);
+              saveToLocal({ wheelAdjustment: initialWheelAdj, targetedBy: initialTargetedBy });
+            }
+          } catch { /* non-fatal */ }
+          setDoc(ref, {
+            teamName: info.teamName,
+            players: info.players,
+            teamCode: finalCode,
+            scores: {},
+            netScore: initialWheelAdj,
+            holesPlayed: 0,
+            currentTee: 'womens',
+            frontNineConfirmed: false,
+            wheelSpins: {},
+            wheelAdjustment: initialWheelAdj,
+            targetedBy: initialTargetedBy,
+          }, { merge: true }).catch(() => {});
+        })();
+      } else {
+        // Edit of existing team — only update name and players.
+        // NEVER include scores, wheelSpins, or any gameplay field here;
+        // writing scores:{} with merge:true would replace the entire scores map.
         setDoc(ref, {
           teamName: info.teamName,
           players: info.players,
           teamCode: finalCode,
-          scores: {},
-          netScore: initialWheelAdj,
-          holesPlayed: 0,
-          currentTee: 'womens',
-          frontNineConfirmed: false,
-          wheelSpins: {},
-          wheelAdjustment: initialWheelAdj,
-          targetedBy: initialTargetedBy,
         }, { merge: true }).catch(() => {});
-      })();
+      }
     }
   };
 

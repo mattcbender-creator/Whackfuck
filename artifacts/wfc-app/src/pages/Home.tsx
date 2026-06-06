@@ -306,7 +306,7 @@ export default function Home() {
                   onClick={() => setEditing(true)}
                   className="w-full py-3 rounded-full bg-secondary text-secondary-foreground font-condensed font-bold uppercase tracking-widest text-sm hover:bg-secondary/80 transition-colors"
                 >
-                  Change Team
+                  Edit Team
                 </button>
               </div>
             ) : (
