@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Minus, Plus, Flag, Lock, Sparkles, Unlock, Trophy, X } from 'lucide-react';
 import { useLocation } from 'wouter';
@@ -152,26 +152,32 @@ export default function HoleView() {
   // spinning the wheel is gone — the wheel is now a per-hole rule.
   const holeLocked = hasSubmitted;
 
-  // Whacky roast — only shown when the previous hole in play order has been scored.
-  // Seed includes holesPlayed so the chirp updates as more holes are completed.
-  const prevHoleScored = useMemo(() => {
-    if (orderPos === 0) return false;
-    const prevHoleNum = holeOrder[orderPos - 1];
-    return prevHoleNum != null && scores[prevHoleNum - 1] != null;
-  }, [orderPos, holeOrder, scores]);
+  // Whacky roast — computed once when you NAVIGATE to a hole (orderPos changes).
+  // Does NOT update while you enter/change the score on the current hole.
+  // Roasts about the PREVIOUS hole's score, not the current one.
+  const [roastText, setRoastText] = useState<string | null>(null);
+  const [roastDismissed, setRoastDismissed] = useState(false);
 
-  const roastText = useMemo(() => {
-    if (!teamInfo || !prevHoleScored) return null;
-    return pickRoast({
+  useEffect(() => {
+    setRoastDismissed(false);
+    if (!teamInfo || orderPos === 0) { setRoastText(null); return; }
+    const prevHoleNum = holeOrder[orderPos - 1];
+    if (prevHoleNum == null) { setRoastText(null); return; }
+    const prevHoleIdx = prevHoleNum - 1;
+    const prevScore = scores[prevHoleIdx];
+    if (prevScore == null) { setRoastText(null); return; }
+    const prevPar = HOLES[prevHoleIdx]?.par ?? 4;
+    setRoastText(pickRoast({
       teamName: teamInfo.teamName,
       players: teamInfo.players,
       netScore,
       holesPlayed,
       holeNum: hole.hole,
-      score: score ?? null,
-      par: hole.par,
-    });
-  }, [teamInfo, prevHoleScored, netScore, holesPlayed, hole.hole, score, hole.par]);
+      score: prevScore,
+      par: prevPar,
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderPos]); // intentionally only recalculates on hole navigation
 
   // Free navigation: players may move to any hole and score holes in any order.
   // Works on play-order positions (0–17), not raw hole indices.
@@ -543,25 +549,31 @@ export default function HoleView() {
 
       {/* ── Whacky roast bubble — fixed above the nav bar, only when prev hole scored ── */}
       <AnimatePresence mode="wait">
-        {roastText && (
+        {roastText && !roastDismissed && (
           <motion.div
             key={roastText}
             initial={{ y: 56, opacity: 0, scale: 0.95 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 24, opacity: 0, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 340, damping: 26 }}
-            className="fixed bottom-[68px] left-0 right-0 z-30 px-4 pb-1 pointer-events-none"
+            className="fixed bottom-[68px] left-0 right-0 z-30 px-4 pb-1"
           >
             <div className="flex items-end gap-2.5 max-w-md mx-auto">
               <img
-                src="/whacky.jpg"
+                src="/whacky-face.jpg"
                 alt="Whacky"
                 className="w-11 h-11 rounded-full object-cover shrink-0 border border-primary/30"
-                style={{ objectPosition: '35% 5%' }}
               />
-              <div className="flex-1 bg-zinc-900/95 backdrop-blur-sm border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 shadow-2xl">
+              <div className="flex-1 relative bg-zinc-900/95 backdrop-blur-sm border border-white/8 rounded-2xl rounded-bl-sm px-3 py-2 pr-8 shadow-2xl">
                 <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mb-0.5">Whacky</p>
                 <p className="text-[12px] text-muted-foreground leading-snug">{roastText}</p>
+                <button
+                  onClick={() => setRoastDismissed(true)}
+                  className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-3 h-3 text-muted-foreground" />
+                </button>
               </div>
             </div>
           </motion.div>

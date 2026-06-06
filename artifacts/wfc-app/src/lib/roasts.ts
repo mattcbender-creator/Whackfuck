@@ -97,18 +97,30 @@ const PLAYER_TEMPLATES: Array<(p: string) => string> = [
   p => `${p} topped it so bad your dick is jealous of the contact.`,
 ];
 
-const TEAM_TEMPLATES: Array<(t: string) => string> = [
-  t => `${t} is out here playing like they collectively failed kindergarten.`,
-  t => `${t} has a great team name. That's genuinely the only great thing about ${t}.`,
-  t => `${t} is proof that four people can be wrong at the exact same time.`,
-  t => `The legacy of ${t} on this course: a scorecard that will never see daylight.`,
-  t => `${t} came to play golf. Golf did not consent.`,
-  t => `Whack Fuck Cup regrets inviting ${t}. You are all fucking useless.`,
-  t => `${t} swings like a team that practiced once and forgot what they practiced.`,
-  t => `${t}: talked absolute shit in the parking lot, completely different story out here.`,
-  t => `${t} is collectively making everyone around them reconsider their friendship.`,
-  t => `The whole ${t} squad just embarrassed themselves and they did it together. Teamwork.`,
-  t => `${t} is playing so bad the course has applied for hazard pay.`,
+const TEAM_TEMPLATES: Array<(t: string, count: number) => string> = [
+  (t) => `${t} is out here playing like they collectively failed kindergarten.`,
+  (t) => `${t} has a great team name. That's genuinely the only great thing about ${t}.`,
+  (t) => `${t} is proof that multiple people can be catastrophically wrong at the exact same time.`,
+  (t) => `The legacy of ${t} on this course: a scorecard that will never see daylight.`,
+  (t) => `${t} came to play golf. Golf did not consent.`,
+  (t) => `Whack Fuck Cup regrets inviting ${t}. You are all fucking useless.`,
+  (t) => `${t} swings like a team that practiced once and forgot what they practiced.`,
+  (t) => `${t}: talked absolute shit in the parking lot, completely different story out here.`,
+  (t, n) => n > 1
+    ? `Look at these faggots from ${t} acting like they can golf.`
+    : `${t} is collectively making everyone around them reconsider their friendship.`,
+  (t) => `The whole ${t} squad just embarrassed themselves in unison. Teamwork.`,
+  (t) => `${t} is playing so bad the course has applied for hazard pay.`,
+  (t, n) => n > 1
+    ? `${t} sent ${n} faggots out here and somehow none of them can hit a straight ball.`
+    : `${t} — one player, zero excuses, infinite disappointment.`,
+  (t, n) => n > 1
+    ? `The ${t} boys are out here looking like they've never seen grass before.`
+    : `${t} is a solo act and it's a tragedy.`,
+  (t) => `${t} as a unit produces less golf than a blind dog with one leg.`,
+  (t, n) => n > 1
+    ? `${n} grown adults from ${t} and not one of you can find a fucking fairway.`
+    : `${t} walking around like they belong out here. They do not.`,
 ];
 
 const HIGH_SCORE_TEMPLATES: Array<(p: string, par: number, score: number) => string> = [
