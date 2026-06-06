@@ -143,3 +143,9 @@ id = "s5P8akuxKjv26onLCPeob"
 uri = "file://attached_assets/wfc-product-brief.pdf"
 type = "pdf"
 title = "WFC — Product Brief & Monetization Analysis"
+
+[[outputs]]
+id = "l_1GtdXBe6F_Bm7CqzvRt"
+uri = "file://wfc-preflight-blueprint.md"
+type = "text"
+title = "WFC Pre-Flight System Blueprint"
