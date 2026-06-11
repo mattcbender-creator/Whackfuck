@@ -101,7 +101,7 @@ function Countdown() {
 
 const wfcLogo = `${import.meta.env.BASE_URL}wfc-logo.png`;
 
-function TeamInvite({ joinCode, teamCode }: { joinCode: string; teamCode: string }) {
+function TeamInvite({ joinCode, teamCode, requireCode }: { joinCode: string; teamCode: string; requireCode: boolean }) {
   const [copied, setCopied] = useState(false);
   const link = `${window.location.origin}${import.meta.env.BASE_URL}join/${joinCode}/${teamCode}`;
 
@@ -122,10 +122,16 @@ function TeamInvite({ joinCode, teamCode }: { joinCode: string; teamCode: string
 
   return (
     <div className="bg-card/40 border border-primary/40 rounded-xl p-4 mb-3 text-left">
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Share this code with your team</p>
-      <p className="font-condensed text-5xl font-black text-primary tracking-[0.25em] mb-3 leading-none">{teamCode}</p>
+      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+        {requireCode ? 'Share this code with your team' : 'Invite your team'}
+      </p>
+      {requireCode && (
+        <p className="font-condensed text-5xl font-black text-primary tracking-[0.25em] mb-3 leading-none">{teamCode}</p>
+      )}
       <p className="text-[11px] text-muted-foreground mb-3 leading-snug">
-        Your teammates need this code to rejoin on their device.
+        {requireCode
+          ? 'Your teammates need this code to rejoin on their device.'
+          : 'Send your teammates this link — they tap your team to join, no code needed.'}
       </p>
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -219,8 +225,11 @@ export default function Home() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = players.map(p => p.trim()).filter(Boolean);
-    const name = teamName.trim();
-    if (!name || cleaned.length === 0 || nameTaken) return;
+    const typedName = teamName.trim();
+    // Team name is optional — fall back to the player list (or a generic label)
+    // so the stored team always has a non-blank display name.
+    const name = typedName || formatPlayers(cleaned) || 'Team';
+    if (cleaned.length === 0 || nameTaken) return;
 
     const wasEditing = editing;
     setTeamInfo({ teamName: name, players: cleaned });
@@ -308,7 +317,7 @@ export default function Home() {
             </div>
 
             {joinCode && teamCode && !hasSubmitted && (
-              <TeamInvite joinCode={joinCode} teamCode={teamCode} />
+              <TeamInvite joinCode={joinCode} teamCode={teamCode} requireCode={tournament?.requireTeamCode !== false} />
             )}
 
             <button
@@ -437,7 +446,7 @@ export default function Home() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5 text-left">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Team Name</label>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Team Name (optional)</label>
                 <Input
                   data-testid="input-team-name"
                   value={teamName}
@@ -445,7 +454,6 @@ export default function Home() {
                   placeholder="e.g. The Mulligans"
                   className="h-12 bg-input/60 border-border/80 focus:border-primary text-base disabled:opacity-50"
                   disabled={isLocked}
-                  required
                 />
               </div>
 

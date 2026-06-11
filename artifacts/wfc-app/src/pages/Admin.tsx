@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { db } from '@/lib/firebase';
 import {
   addDoc, setDoc, getDocs, writeBatch, serverTimestamp,
@@ -619,6 +620,25 @@ export default function Admin() {
       try { localStorage.setItem(hostKeyKey(tId), key); } catch { /* ignore */ }
       setNewHostKey(key);
       toast({ title: 'Host key rotated', description: 'Screenshot the new key now.' });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  const handleToggleRequireTeamCode = async (next: boolean) => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    setCodeBusy(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { requireTeamCode: next }, { merge: true });
+      toast({
+        title: next ? 'Team code required' : 'Team code not required',
+        description: next
+          ? 'Players need the 4-character code to rejoin a team.'
+          : 'Players can rejoin any team by tapping it.',
+      });
     } catch (e) {
       toast({ title: 'Failed', description: String(e), variant: 'destructive' });
     } finally {
@@ -1739,6 +1759,23 @@ export default function Admin() {
                   <KeyRound className="w-3.5 h-3.5 mr-2" /> Regenerate admin code
                 </Button>
               </div>
+
+              <label className="flex items-center justify-between gap-3 pt-1 border-t border-border/50 cursor-pointer">
+                <div className="pr-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Require team code to join</p>
+                  <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
+                    {(tournament?.requireTeamCode ?? true)
+                      ? 'Players need the 4-character team code to rejoin an existing team.'
+                      : 'Players can rejoin any team by tapping it — no code needed.'}
+                  </p>
+                </div>
+                <Switch
+                  checked={tournament?.requireTeamCode ?? true}
+                  onCheckedChange={handleToggleRequireTeamCode}
+                  disabled={codeBusy}
+                  data-testid="switch-admin-require-team-code"
+                />
+              </label>
 
               <div className="space-y-2 pt-1 border-t border-border/50">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">Host key</p>

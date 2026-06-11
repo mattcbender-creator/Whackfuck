@@ -32,6 +32,7 @@ export default function CreateTournament() {
   const [startType, setStartType] = useState<'normal' | 'shotgun'>('normal');
   const [adminCode, setAdminCode] = useState('');
   const [autoTeeRule, setAutoTeeRule] = useState(false);
+  const [requireTeamCode, setRequireTeamCode] = useState(true);
   const [wfcPreset, setWfcPreset] = useState(false);
 
   const [holes, setHoles] = useState<CourseHole[]>(() => blankCourse());
@@ -66,6 +67,7 @@ export default function CreateTournament() {
       setTeamSize(c.teamSize);
       setStartType(c.startType);
       setAutoTeeRule(c.autoTeeRule);
+      setRequireTeamCode(c.requireTeamCode);
       setHoles(c.holes);
       setHoleRules(c.holeRules);
       // The preset only pre-fills plain rules derived from the course. The host
@@ -83,6 +85,7 @@ export default function CreateTournament() {
       setTeamSize(blank.teamSize);
       setStartType(blank.startType);
       setAutoTeeRule(blank.autoTeeRule);
+      setRequireTeamCode(blank.requireTeamCode);
       setHoles(blank.holes);
       setRulesDirty(false);
       setHoleRules(blank.holeRules);
@@ -117,6 +120,7 @@ export default function CreateTournament() {
         teamSize,
         startType,
         autoTeeRule,
+        requireTeamCode,
         adminCode: adminCode.trim(),
         hostKey: generateHostKey(),
         joinCode: generateJoinCode(),
@@ -247,6 +251,18 @@ export default function CreateTournament() {
               <p className="text-[11px] text-muted-foreground">WFC mechanic: under par switches you to the Tips tees. Yardages optional.</p>
             </div>
             <Switch checked={autoTeeRule} onCheckedChange={setAutoTeeRule} data-testid="switch-auto-tee" />
+          </label>
+
+          <label className="flex items-center justify-between bg-card/50 border border-border/60 rounded-xl px-4 py-3 cursor-pointer">
+            <div className="pr-4">
+              <p className="text-sm font-bold text-foreground">Require team code to join</p>
+              <p className="text-[11px] text-muted-foreground">
+                {requireTeamCode
+                  ? 'Players need the 4-character team code to rejoin an existing team.'
+                  : 'Players can rejoin any team by tapping it — no code needed.'}
+              </p>
+            </div>
+            <Switch checked={requireTeamCode} onCheckedChange={setRequireTeamCode} data-testid="switch-require-team-code" />
           </label>
 
           <div className="space-y-3">

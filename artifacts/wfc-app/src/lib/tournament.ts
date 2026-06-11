@@ -107,6 +107,10 @@ export interface TournamentConfig {
   teamSize: number; // 1–4 name fields per team
   startType: StartType;
   autoTeeRule: boolean; // WFC under-par → Tips mechanic
+  // When false, players rejoin an existing team by simply tapping it — no
+  // 4-character team code required. Defaults to true (code required) when the
+  // field is absent so legacy tournament docs keep their current behavior.
+  requireTeamCode: boolean;
   adminCode: string;
   hostKey: string;
   joinCode: string;
@@ -202,6 +206,7 @@ export interface TournamentSetupDefaults {
   teamSize: number;
   startType: StartType;
   autoTeeRule: boolean;
+  requireTeamCode: boolean;
   adminCode: string;
   holes: CourseHole[];
   holeRules: HoleRule[];
@@ -216,6 +221,7 @@ export function blankTournamentSetup(): TournamentSetupDefaults {
     teamSize: 2,
     startType: 'normal',
     autoTeeRule: false,
+    requireTeamCode: true,
     adminCode: '',
     holes,
     holeRules: holeRulesFromCourse(holes),
@@ -258,6 +264,7 @@ export function buildWfc2026Config(): TournamentConfig {
     teamSize: 2,
     startType: 'normal',
     autoTeeRule: true,
+    requireTeamCode: true,
     adminCode: 'dundee2025',
     hostKey: WFC_2026_HOST_KEY,
     joinCode: WFC_2026_JOIN_CODE,

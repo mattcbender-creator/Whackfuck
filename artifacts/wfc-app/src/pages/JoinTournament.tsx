@@ -131,9 +131,25 @@ export default function JoinTournament() {
     return () => unsub();
   }, [step, resolved?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When the host has turned off the team-code requirement, tapping a team
+  // adopts it directly with no code prompt. Absent field → treated as required.
+  const codeRequired = (t: TournamentConfig) => t.requireTeamCode !== false;
+
+  const pickTeam = (tm: TeamLookup) => {
+    if (!resolved) return;
+    setError('');
+    if (!codeRequired(resolved)) {
+      enterAsTeam(resolved, tm.id);
+      return;
+    }
+    setSelectedTeam(tm);
+    setStep('rejoin');
+  };
+
   const confirmRejoin = () => {
     if (!resolved || !selectedTeam) return;
-    if (teamCodeInput.trim().toUpperCase() !== (selectedTeam.teamCode ?? '').toUpperCase()) {
+    if (codeRequired(resolved) &&
+        teamCodeInput.trim().toUpperCase() !== (selectedTeam.teamCode ?? '').toUpperCase()) {
       setError('Wrong code. Ask your team captain.');
       return;
     }
@@ -223,7 +239,7 @@ export default function JoinTournament() {
                       </div>
                     </div>
                     <button
-                      onClick={() => { setSelectedTeam(tm); setError(''); setStep('rejoin'); }}
+                      onClick={() => pickTeam(tm)}
                       data-testid={`button-team-${tm.id}`}
                       className="shrink-0 h-9 px-4 rounded-full bg-primary text-primary-foreground font-condensed font-bold uppercase tracking-widest text-xs active:scale-95 transition-all"
                     >
@@ -321,7 +337,7 @@ export default function JoinTournament() {
                         </div>
                       </div>
                       <button
-                        onClick={() => { setSelectedTeam(tm); setError(''); }}
+                        onClick={() => pickTeam(tm)}
                         data-testid={`button-team-${tm.id}`}
                         className="shrink-0 h-9 px-4 rounded-full bg-primary text-primary-foreground font-condensed font-bold uppercase tracking-widest text-xs active:scale-95 transition-all"
                       >
