@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useWFC, type TeamSnapshot } from '@/lib/store';
 import { useTournament } from '@/lib/tournamentContext';
-import { WFC_2026_ID, formatPlayers } from '@/lib/tournament';
+import { WFC_2026_ID, formatPlayers, teamSubtitle } from '@/lib/tournament';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ResetControl } from '@/components/ResetControl';
@@ -162,6 +162,8 @@ export default function Home() {
   const teamSize = Math.max(1, Math.min(4, tournament?.teamSize ?? 2));
   const joinCode = tournament?.joinCode ?? '';
   const isWfc2026 = activeId === WFC_2026_ID;
+  // Host setting: when off, teams don't name themselves — player names are used.
+  const useTeamNames = tournament?.useTeamNames !== false;
 
   const [teamName, setTeamName] = useState('');
   const [players, setPlayers] = useState<string[]>(() => Array(teamSize).fill(''));
@@ -204,7 +206,7 @@ export default function Home() {
 
   useEffect(() => {
     const name = teamName.trim();
-    if (!name || isLocked) { setNameTaken(false); return; }
+    if (!name || isLocked || !useTeamNames) { setNameTaken(false); return; }
     const t = setTimeout(async () => {
       try {
         const existing = await listTeamsOnce();
@@ -214,7 +216,7 @@ export default function Home() {
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [teamName, isLocked]);
+  }, [teamName, isLocked, useTeamNames]);
 
   const setPlayerAt = (i: number, val: string) => {
     setPlayers(prev => prev.map((p, idx) => (idx === i ? val : p)));
@@ -226,9 +228,12 @@ export default function Home() {
     e.preventDefault();
     const cleaned = players.map(p => p.trim()).filter(Boolean);
     const typedName = teamName.trim();
-    // Team name is optional — fall back to the player list (or a generic label)
-    // so the stored team always has a non-blank display name.
-    const name = typedName || formatPlayers(cleaned) || 'Team';
+    // When the host disabled team names, the players' names ARE the team name.
+    // Otherwise use the typed name, falling back to the player list (or a
+    // generic label) so the stored team always has a non-blank display name.
+    const name = useTeamNames
+      ? (typedName || formatPlayers(cleaned) || 'Team')
+      : (formatPlayers(cleaned) || 'Team');
     if (cleaned.length === 0 || nameTaken) return;
 
     const wasEditing = editing;
@@ -311,9 +316,11 @@ export default function Home() {
               <p className="font-condensed text-2xl font-black text-foreground uppercase tracking-wide leading-tight">
                 {teamInfo.teamName}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {formatPlayers(teamInfo.players)}
-              </p>
+              {teamSubtitle(teamInfo.teamName, teamInfo.players) && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  {teamSubtitle(teamInfo.teamName, teamInfo.players)}
+                </p>
+              )}
             </div>
 
             {joinCode && teamCode && !hasSubmitted && (
@@ -418,9 +425,11 @@ export default function Home() {
                     <p className="font-condensed font-black uppercase tracking-tight text-base text-foreground leading-tight truncate">
                       {t.teamName}
                     </p>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      {formatPlayers(t.players)}
-                    </p>
+                    {teamSubtitle(t.teamName, t.players) && (
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {teamSubtitle(t.teamName, t.players)}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -445,17 +454,19 @@ export default function Home() {
           <div className={`w-full transition-all duration-700 delay-200 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5 text-left">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Team Name (optional)</label>
-                <Input
-                  data-testid="input-team-name"
-                  value={teamName}
-                  onChange={e => setTeamName(e.target.value)}
-                  placeholder="e.g. The Mulligans"
-                  className="h-12 bg-input/60 border-border/80 focus:border-primary text-base disabled:opacity-50"
-                  disabled={isLocked}
-                />
-              </div>
+              {useTeamNames && (
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Team Name</label>
+                  <Input
+                    data-testid="input-team-name"
+                    value={teamName}
+                    onChange={e => setTeamName(e.target.value)}
+                    placeholder="e.g. The Mulligans"
+                    className="h-12 bg-input/60 border-border/80 focus:border-primary text-base disabled:opacity-50"
+                    disabled={isLocked}
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 {players.map((p, i) => (

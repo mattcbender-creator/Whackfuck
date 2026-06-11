@@ -5,7 +5,7 @@ import {
   WHEEL_ITEMS, WheelItem, WheelItemId,
   targetAngleForIndex, pickRandomIndex, getWheelItem,
 } from '@/lib/wheel';
-import { formatPlayers } from '@/lib/tournament';
+import { teamSubtitle } from '@/lib/tournament';
 import { useTournament } from '@/lib/tournamentContext';
 import { fireBirdieConfetti, fireEagleConfetti } from '@/lib/confetti';
 import { hapticWheelSpin, hapticSuccess } from '@/lib/haptics';
@@ -417,9 +417,11 @@ export default function WheelModal({ open, onClose, hole }: Props) {
                   >
                     <div className="text-left min-w-0">
                       <p className="font-bold text-sm text-white truncate">{t.teamName}</p>
-                      <p className="text-[11px] text-white/50 truncate">
-                        {formatPlayers(t.players)}
-                      </p>
+                      {teamSubtitle(t.teamName, t.players) && (
+                        <p className="text-[11px] text-white/50 truncate">
+                          {teamSubtitle(t.teamName, t.players)}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <ChevronRight className="w-4 h-4 text-white/40" />

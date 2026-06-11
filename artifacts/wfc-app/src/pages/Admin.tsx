@@ -14,7 +14,7 @@ import { useCourse, useTournament } from '@/lib/tournamentContext';
 import { RuleBuilder } from '@/components/RuleBuilder';
 import {
   teamsCol, eventsCol, drivesCol, teamDoc, configDoc, tournamentDoc,
-  getActiveTournamentId, formatPlayers, normalizeScores, scoresToMap,
+  getActiveTournamentId, formatPlayers, teamSubtitle, normalizeScores, scoresToMap,
   resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
   chatCol, dmChannelId,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
@@ -638,6 +638,25 @@ export default function Admin() {
         description: next
           ? 'Players need the 4-character code to rejoin a team.'
           : 'Players can rejoin any team by tapping it.',
+      });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  const handleToggleUseTeamNames = async (next: boolean) => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    setCodeBusy(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { useTeamNames: next }, { merge: true });
+      toast({
+        title: next ? 'Team names on' : 'Team names off',
+        description: next
+          ? 'Teams enter their own name when registering.'
+          : "Player names are used as the team name.",
       });
     } catch (e) {
       toast({ title: 'Failed', description: String(e), variant: 'destructive' });
@@ -1777,6 +1796,23 @@ export default function Admin() {
                 />
               </label>
 
+              <label className="flex items-center justify-between gap-3 pt-1 border-t border-border/50 cursor-pointer">
+                <div className="pr-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Use team names</p>
+                  <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
+                    {(tournament?.useTeamNames ?? true)
+                      ? 'Each team enters its own name when registering.'
+                      : "No team names — the players' names are used as the team name."}
+                  </p>
+                </div>
+                <Switch
+                  checked={tournament?.useTeamNames ?? true}
+                  onCheckedChange={handleToggleUseTeamNames}
+                  disabled={codeBusy}
+                  data-testid="switch-admin-use-team-names"
+                />
+              </label>
+
               <div className="space-y-2 pt-1 border-t border-border/50">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">Host key</p>
                 <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
@@ -2122,7 +2158,7 @@ function TeamRow({ team, deleting, onDelete, onEdit, onAdjust, onCorrect, onUnlo
       <div className="flex-1 min-w-0">
         <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
         <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-          {formatPlayers(team.players)} · {team.holesPlayed}/18
+          {[teamSubtitle(team.teamName, team.players), `${team.holesPlayed}/18`].filter(Boolean).join(' · ')}
           {team.teeOverride ? ` · ${team.teeOverride === 'tips' ? 'Tips' : "Women's"} (set)` : ''}
         </p>
       </div>

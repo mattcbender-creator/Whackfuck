@@ -4,7 +4,7 @@ import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
-import { teamsCol, eventsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
+import { teamsCol, eventsCol, getActiveTournamentId, teamSubtitle, normalizeScores, type CourseHole } from '@/lib/tournament';
 import { Crown, X, Flame, Target, Sparkles, Megaphone, Star, Zap, Flag, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getWheelItem, type WheelItemId } from '@/lib/wheel';
@@ -532,7 +532,9 @@ export default function Leaderboard() {
                         {team.teamName}
                         <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                       </span>
-                      <span className="text-[10px] text-muted-foreground truncate">{formatPlayers(team.players)}</span>
+                      {teamSubtitle(team.teamName, team.players) && (
+                        <span className="text-[10px] text-muted-foreground truncate">{teamSubtitle(team.teamName, team.players)}</span>
+                      )}
                     </div>
                     <div className="col-span-1 text-center font-condensed font-bold text-muted-foreground">
                       {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}

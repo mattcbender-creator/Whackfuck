@@ -5,7 +5,7 @@ import { useTournament, fetchTeamsForTournament, type TeamLookup } from '@/lib/t
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { onSnapshot, collection } from 'firebase/firestore';
 import {
-  type TournamentConfig, formatPlayers,
+  type TournamentConfig, teamSubtitle,
   teamIdKey, joinedAtKey, storeKey, hostKeyKey,
 } from '@/lib/tournament';
 import {
@@ -233,8 +233,8 @@ export default function JoinTournament() {
                       <Users className="w-4 h-4 text-primary shrink-0" />
                       <div className="min-w-0">
                         <p className="font-bold text-foreground truncate">{tm.teamName}</p>
-                        {tm.players.length > 0 && (
-                          <p className="text-[11px] text-muted-foreground truncate">{formatPlayers(tm.players)}</p>
+                        {teamSubtitle(tm.teamName, tm.players) && (
+                          <p className="text-[11px] text-muted-foreground truncate">{teamSubtitle(tm.teamName, tm.players)}</p>
                         )}
                       </div>
                     </div>
@@ -331,8 +331,8 @@ export default function JoinTournament() {
                         <Users className="w-4 h-4 text-primary shrink-0" />
                         <div className="min-w-0">
                           <p className="font-bold text-foreground truncate">{tm.teamName}</p>
-                          {tm.players.length > 0 && (
-                            <p className="text-[11px] text-muted-foreground truncate">{formatPlayers(tm.players)}</p>
+                          {teamSubtitle(tm.teamName, tm.players) && (
+                            <p className="text-[11px] text-muted-foreground truncate">{teamSubtitle(tm.teamName, tm.players)}</p>
                           )}
                         </div>
                       </div>

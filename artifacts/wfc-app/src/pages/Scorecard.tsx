@@ -4,7 +4,7 @@ import { useWFC } from '@/lib/store';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
 import { FinalizedBanner } from '@/components/FinalizedBanner';
 import type { CourseHole } from '@/lib/tournament';
-import { teamDoc, scoresToMap, getActiveTournamentId, formatPlayers } from '@/lib/tournament';
+import { teamDoc, scoresToMap, getActiveTournamentId, teamSubtitle } from '@/lib/tournament';
 import { fireEagleConfetti, fireBirdieConfetti } from '@/lib/confetti';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Minus, Plus, RefreshCw, Info, ChevronLeft, ChevronRight, Sparkles, Lock, Trophy, X, Check } from 'lucide-react';
@@ -458,7 +458,7 @@ export default function Scorecard() {
                 {teamInfo?.teamName || 'Your Team'}
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {teamInfo ? formatPlayers(teamInfo.players) : 'Register on the Home screen'}
+                {teamInfo ? teamSubtitle(teamInfo.teamName, teamInfo.players) : 'Register on the Home screen'}
               </p>
             </div>
 

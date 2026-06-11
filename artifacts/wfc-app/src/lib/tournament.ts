@@ -111,6 +111,10 @@ export interface TournamentConfig {
   // 4-character team code required. Defaults to true (code required) when the
   // field is absent so legacy tournament docs keep their current behavior.
   requireTeamCode: boolean;
+  // Host decision made at setup: when false, teams don't enter a team name —
+  // the players' names become the team's display name instead. Defaults to true
+  // (teams name themselves) when the field is absent so legacy docs are unchanged.
+  useTeamNames: boolean;
   adminCode: string;
   hostKey: string;
   joinCode: string;
@@ -207,6 +211,7 @@ export interface TournamentSetupDefaults {
   startType: StartType;
   autoTeeRule: boolean;
   requireTeamCode: boolean;
+  useTeamNames: boolean;
   adminCode: string;
   holes: CourseHole[];
   holeRules: HoleRule[];
@@ -222,6 +227,7 @@ export function blankTournamentSetup(): TournamentSetupDefaults {
     startType: 'normal',
     autoTeeRule: false,
     requireTeamCode: true,
+    useTeamNames: true,
     adminCode: '',
     holes,
     holeRules: holeRulesFromCourse(holes),
@@ -265,6 +271,7 @@ export function buildWfc2026Config(): TournamentConfig {
     startType: 'normal',
     autoTeeRule: true,
     requireTeamCode: true,
+    useTeamNames: true,
     adminCode: 'dundee2025',
     hostKey: WFC_2026_HOST_KEY,
     joinCode: WFC_2026_JOIN_CODE,
@@ -282,6 +289,15 @@ export function formatPlayers(players: string[] | undefined | null): string {
   if (list.length === 1) return list[0];
   if (list.length === 2) return `${list[0]} & ${list[1]}`;
   return `${list.slice(0, -1).join(', ')} & ${list[list.length - 1]}`;
+}
+
+// Subtitle line of players to show beneath a team's name. Returns '' when the
+// players string would just repeat the team name (i.e. when the host disabled
+// team names so the name IS the player list) — avoids showing names twice.
+export function teamSubtitle(teamName: string, players: string[] | undefined | null): string {
+  const formatted = formatPlayers(players);
+  if (!formatted) return '';
+  return formatted.trim().toLowerCase() === (teamName ?? '').trim().toLowerCase() ? '' : formatted;
 }
 
 // ── Score map <-> array ─────────────────────────────────────────────────────

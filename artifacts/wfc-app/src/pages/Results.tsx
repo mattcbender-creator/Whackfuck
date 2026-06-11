@@ -4,7 +4,7 @@ import { db, isFirebaseConfigured } from '@/lib/firebase';
 import { onSnapshot, query, orderBy } from 'firebase/firestore';
 import { useWFC } from '@/lib/store';
 import { useCourse, useTournament } from '@/lib/tournamentContext';
-import { teamsCol, getActiveTournamentId, formatPlayers, normalizeScores, type CourseHole } from '@/lib/tournament';
+import { teamsCol, getActiveTournamentId, teamSubtitle, normalizeScores, type CourseHole } from '@/lib/tournament';
 import { Trophy, Crown, Medal, Flame, Target, Star, Flag, Share2, Check, ChevronDown, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fireEagleConfetti } from '@/lib/confetti';
@@ -299,7 +299,9 @@ export default function Results() {
                   <h2 className="font-condensed text-5xl font-black uppercase tracking-wide leading-none text-foreground mb-1">
                     {champion.teamName}
                   </h2>
-                  <p className="text-xs text-muted-foreground mb-4">{formatPlayers(champion.players)}</p>
+                  {teamSubtitle(champion.teamName, champion.players) && (
+                    <p className="text-xs text-muted-foreground mb-4">{teamSubtitle(champion.teamName, champion.players)}</p>
+                  )}
                   <div className="inline-flex flex-col items-center">
                     <span className="font-condensed text-7xl font-black leading-none text-primary" style={{ textShadow: '0 0 32px rgba(57,255,20,0.6)' }}>
                       {netLabel(champion.netScore)}
@@ -388,7 +390,7 @@ export default function Results() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className={`font-bold text-sm truncate leading-tight ${isTop3 ? 'text-foreground' : 'text-foreground/80'}`}>{t.teamName}</p>
-                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{formatPlayers(t.players)} · {t.holesPlayed}/18</p>
+                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{[teamSubtitle(t.teamName, t.players), `${t.holesPlayed}/18`].filter(Boolean).join(' · ')}</p>
                         </div>
                         <span className={`font-condensed text-xl font-black leading-none shrink-0 ${t.netScore < 0 ? 'text-primary' : t.netScore > 0 ? 'text-orange-400' : 'text-muted-foreground'}`}>
                           {netLabel(t.netScore)}
