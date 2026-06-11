@@ -1,27 +1,28 @@
 ---
-name: WFC team name + players display
-description: How team name and player list render together, and the host-level useTeamNames setting.
+name: WFC team identity settings
+description: Two host-level team toggles (useTeamNames, requireTeamCode) and the rules every UI surface must follow.
 ---
 
-# WFC team name / players display
+# WFC team identity settings
 
-Team name and player list are shown together in ~9 surfaces (Home card + join
-list, JoinTournament join lists, Leaderboard, WheelModal target picker, Results
-champion + standings, Admin team row, Scorecard header).
+Two tournament-config flags are decided by the host, default-on, and must be read
+backward-compatibly (`tournament?.flag !== false` / `?? true`) because published
+docs predate them.
 
-**Rule:** any surface that shows a team name with a player subtitle must render
-the subtitle via `teamSubtitle(teamName, players)` from `lib/tournament.ts`, NOT
-`formatPlayers(players)` directly. `teamSubtitle` returns '' when the players
-string equals the team name (case-insensitive), so the subtitle disappears
-instead of duplicating the name. Combined rows like `players · holes/18` build
-the string with `[teamSubtitle(...), `${holes}/18`].filter(Boolean).join(' · ')`
-to avoid a dangling separator when the subtitle is empty.
+## useTeamNames
+When off, the team name IS the player list, so showing both duplicates the names.
+Any surface that renders a team name with a player subtitle must build the
+subtitle through `teamSubtitle()` (returns '' when it would just repeat the name),
+never `formatPlayers()` directly. Name-entry inputs (Home registration, Admin team
+edit) must hide the name field and derive the name from players when off.
 
-**Why:** the host setting `useTeamNames` (on TournamentConfig, default true) lets
-the tournament creator decide whether teams name themselves. When off, the team
-name IS the player list, so showing both would print the names twice. Legacy /
-published docs (e.g. `wfc-2026`) lack the field — read it as on via
-`tournament?.useTeamNames ?? true` / `!== false`.
+## requireTeamCode
+Every path that lets a device claim/join an existing team must require the team's
+4-char code when this is on. There are multiple such paths (JoinTournament team
+picker AND the Home "existing teams" list) — gating only one leaves a bypass.
 
-**How to apply:** when adding any new place that displays a team, use
-`teamSubtitle`; when reading the setting, always default-on for backward compat.
+**Why:** a fresh code review flagged the Home list as a hard authorization bypass
+because it claimed teams directly while JoinTournament correctly gated on the code.
+**How to apply:** when adding any new join/claim entry point, gate it on
+`requireTeamCode`; when adding any team-display surface, use `teamSubtitle` and the
+default-on reads above.

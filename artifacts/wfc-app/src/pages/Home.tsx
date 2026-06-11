@@ -172,6 +172,25 @@ export default function Home() {
   const [nameTaken, setNameTaken] = useState(false);
   const [existingTeams, setExistingTeams] = useState<TeamSnapshot[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const requireTeamCode = tournament?.requireTeamCode !== false;
+  const [joinTeamId, setJoinTeamId] = useState<string | null>(null);
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [joinCodeError, setJoinCodeError] = useState(false);
+
+  const startJoinExisting = (t: TeamSnapshot) => {
+    if (!requireTeamCode) { adoptTeam(t.id); return; }
+    setJoinCodeError(false);
+    setJoinCodeInput('');
+    setJoinTeamId(prev => (prev === t.id ? null : t.id));
+  };
+
+  const confirmJoinExisting = (t: TeamSnapshot) => {
+    if (joinCodeInput.trim().toUpperCase() !== (t.teamCode ?? '').toUpperCase()) {
+      setJoinCodeError(true);
+      return;
+    }
+    adoptTeam(t.id);
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setAnimate(true), 80);
@@ -419,25 +438,59 @@ export default function Home() {
               {existingTeams.map(t => (
                 <div
                   key={t.id}
-                  className="flex items-center justify-between gap-3 bg-card border border-border/60 rounded-2xl px-4 py-3"
+                  className="bg-card border border-border/60 rounded-2xl px-4 py-3"
                 >
-                  <div className="min-w-0">
-                    <p className="font-condensed font-black uppercase tracking-tight text-base text-foreground leading-tight truncate">
-                      {t.teamName}
-                    </p>
-                    {teamSubtitle(t.teamName, t.players) && (
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {teamSubtitle(t.teamName, t.players)}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-condensed font-black uppercase tracking-tight text-base text-foreground leading-tight truncate">
+                        {t.teamName}
                       </p>
-                    )}
+                      {teamSubtitle(t.teamName, t.players) && (
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {teamSubtitle(t.teamName, t.players)}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startJoinExisting(t)}
+                      data-testid={`button-join-team-${t.id}`}
+                      className="shrink-0 px-4 py-2 rounded-full bg-primary text-black font-condensed font-black uppercase tracking-widest text-xs hover:opacity-90 transition-opacity"
+                    >
+                      Join
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => adoptTeam(t.id)}
-                    className="shrink-0 px-4 py-2 rounded-full bg-primary text-black font-condensed font-black uppercase tracking-widest text-xs hover:opacity-90 transition-opacity"
-                  >
-                    Join
-                  </button>
+                  {requireTeamCode && joinTeamId === t.id && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                        Enter this team's 4-character code
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={joinCodeInput}
+                          onChange={e => { setJoinCodeInput(e.target.value.toUpperCase()); setJoinCodeError(false); }}
+                          onKeyDown={e => { if (e.key === 'Enter') confirmJoinExisting(t); }}
+                          maxLength={4}
+                          autoFocus
+                          data-testid={`input-team-code-${t.id}`}
+                          className="flex-1 min-w-0 bg-input border border-border/60 rounded-xl px-3 py-2 font-condensed font-black uppercase tracking-[0.3em] text-foreground text-center focus:outline-none focus:border-primary"
+                          placeholder="••••"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => confirmJoinExisting(t)}
+                          data-testid={`button-confirm-join-${t.id}`}
+                          className="shrink-0 px-4 py-2 rounded-full bg-primary text-black font-condensed font-black uppercase tracking-widest text-xs hover:opacity-90 transition-opacity"
+                        >
+                          Go
+                        </button>
+                      </div>
+                      {joinCodeError && (
+                        <p className="text-[11px] text-destructive">Wrong code. Ask your team captain.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
               <div className="flex items-center gap-3 py-1">

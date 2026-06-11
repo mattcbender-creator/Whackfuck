@@ -7,4 +7,4 @@
 - [Whacky chat channels](whacky-chat-channels.md) — Whacky is DM-only (channel dmChannelId('__whacky__', teamId)), never lobby; he posts from BOTH Chat.tsx postWhacky and Admin demo sim — change both together.
 - [WFC full-height pushdown](wfc-layout-fullheight-pushdown.md) — in-flow LiveTicker above h-[100dvh] pages overflows viewport; bottom-anchored UI (chat input) needs position:fixed, not flex-column bottom.
 - [Async sim tick cancellation](async-tick-cancellation.md) — interval-driven async ticks that write need a runningRef checked before every await; clearInterval can't unwind an in-flight tick.
-- [WFC team display dedup](wfc-team-display-dedup.md) — show team name + players via `teamSubtitle()` (not `formatPlayers`) everywhere so player line hides when host's `useTeamNames` is off; read setting default-on.
+- [WFC team identity settings](wfc-team-display-dedup.md) — host flags useTeamNames + requireTeamCode (default-on); dedup displays via teamSubtitle, and gate EVERY join/claim path (Home list + JoinTournament) on the code.

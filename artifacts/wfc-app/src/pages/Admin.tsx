@@ -516,12 +516,19 @@ export default function Admin() {
 
   const handleSaveEdit = async () => {
     if (!db || !editingTeam || !getActiveTournamentId()) return;
-    if (!editName.trim()) { toast({ title: 'Team name required', variant: 'destructive' }); return; }
+    const useTeamNames = tournament?.useTeamNames ?? true;
     const players = editPlayers.map(p => p.trim()).filter(p => p !== '');
+    const teamName = useTeamNames
+      ? editName.trim()
+      : (formatPlayers(players) || 'Team');
+    if (useTeamNames && !editName.trim()) {
+      toast({ title: 'Team name required', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
     try {
       await updateDoc(teamDoc(db, editingTeam.id), {
-        teamName: editName.trim(),
+        teamName,
         players,
       });
       toast({ title: 'Team updated' });
@@ -1921,10 +1928,12 @@ export default function Admin() {
             </div>
 
             <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Team Name</label>
-                <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 bg-input" />
-              </div>
+              {(tournament?.useTeamNames ?? true) && (
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Team Name</label>
+                  <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 bg-input" />
+                </div>
+              )}
               {editPlayers.map((p, i) => (
                 <div key={i}>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player {i + 1}</label>
