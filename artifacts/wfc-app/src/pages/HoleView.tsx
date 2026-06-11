@@ -207,13 +207,13 @@ export default function HoleView() {
     const schedule = (initialDelay: number) => {
       addTimer(() => {
         pushMsg();
-        // Schedule next burst: 12–22 s gap
-        schedule(12000 + Math.random() * 10000);
+        // Schedule next burst: 60–120 s gap (Whacky appears far less often now)
+        schedule(60000 + Math.random() * 60000);
       }, initialDelay);
     };
 
-    // First message after 4–8 s
-    schedule(4000 + Math.random() * 4000);
+    // First message after 20–40 s
+    schedule(20000 + Math.random() * 20000);
 
     return () => {
       cancelled = true;
@@ -594,12 +594,10 @@ export default function HoleView() {
       {/* ── Whacky message stack — up to 2 bubbles above the nav bar ── */}
       {whackyMsgs.length > 0 && (() => {
         const FACES: Record<FaceType, string> = {
-          angry:   '/whacky-angry.jpg',
-          laugh:   '/whacky-laugh.jpg',
-          shocked: '/whacky-shocked.jpg',
-          fire:    '/whacky-fire.jpg',
-          sad:     '/whacky-sad.jpg',
-          smug:    '/whacky-smug.jpg',
+          angry: '/whacky-angry.jpg',
+          laugh: '/whacky-laugh.jpg',
+          fire:  '/whacky-fire.jpg',
+          smug:  '/whacky-smug.jpg',
         };
         return (
           <div className="fixed bottom-[68px] left-0 right-0 z-30 px-4 pb-1 flex flex-col gap-1.5 max-w-md mx-auto pointer-events-none">

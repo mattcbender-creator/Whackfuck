@@ -1,5 +1,5 @@
 import {
-  useCallback, useEffect, useRef, useState,
+  useEffect, useRef, useState,
 } from 'react';
 import {
   addDoc, onSnapshot, orderBy, query,
@@ -13,25 +13,12 @@ import { useWFC } from '@/lib/store';
 import type { TeamSnapshot } from '@/lib/store';
 import { useChatNotif } from '@/lib/chatContext';
 import type { ChatMsg } from '@/lib/chatContext';
-import { pickRoast } from '@/lib/roasts';
 
 const FACE_IMAGES: Record<string, string> = {
-  angry:   '/whacky-angry.jpg',
-  laugh:   '/whacky-laugh.jpg',
-  shocked: '/whacky-shocked.jpg',
-  fire:    '/whacky-fire.jpg',
-  sad:     '/whacky-sad.jpg',
-  smug:    '/whacky-smug.jpg',
-};
-
-// Whacky is a DM contact, not a lobby poster — he slides into your DMs.
-const WHACKY_ID = '__whacky__';
-const WHACKY_CONTACT: TeamSnapshot = {
-  id: WHACKY_ID,
-  teamName: 'Whacky',
-  players: ['Your personal tormentor'],
-  netScore: 0,
-  holesPlayed: 0,
+  angry: '/whacky-angry.jpg',
+  laugh: '/whacky-laugh.jpg',
+  fire:  '/whacky-fire.jpg',
+  smug:  '/whacky-smug.jpg',
 };
 
 function tsMillis(m: ChatMsg): number {
@@ -201,7 +188,6 @@ export default function Chat() {
   const [allMsgs, setAllMsgs] = useState<ChatMsg[]>([]);
   const [teams, setTeams] = useState<TeamSnapshot[]>([]);
   const allMsgsRef = useRef<ChatMsg[]>([]);
-  const whackyMsgIdx = useRef(Math.floor(Math.random() * 100));
 
   // Mark chat as opened — clears the unread badge for THIS device. Re-run
   // whenever a new message arrives while the chat is open so the badge stays
@@ -238,47 +224,6 @@ export default function Chat() {
     ? allMsgs.filter(m => m.channel === dmChannelId(teamId, selectedTeam.id))
     : [];
 
-  // ── Whacky slides into your DMs (never the lobby) ───────────────────────────
-  const postWhacky = useCallback(async () => {
-    if (!db || !teamInfo || !isFirebaseConfigured) return;
-    const ch = dmChannelId(WHACKY_ID, teamId);
-    // Skip if Whacky DM'd this team within the last 2 minutes (another device)
-    const now = Date.now();
-    const recentWhacky = allMsgsRef.current.find(
-      m => m.channel === ch && m.isWhacky && (m.ts?.toMillis?.() ?? 0) > now - 120_000,
-    );
-    if (recentWhacky) return;
-    const roast = pickRoast({
-      teamName: teamInfo.teamName,
-      players: teamInfo.players,
-      netScore: 0,
-      holesPlayed: 0,
-      holeNum: 1,
-      score: null,
-      par: 4,
-      msgIndex: whackyMsgIdx.current++,
-    });
-    await addDoc(chatCol(db), {
-      fromTeamId: WHACKY_ID,
-      fromTeamName: 'Whacky',
-      toTeamId: teamId,
-      text: roast.text,
-      face: roast.face,
-      ts: serverTimestamp(),
-      isWhacky: true,
-      channel: ch,
-    });
-  }, [teamInfo, teamId]);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-    // Initial post: wait 15-45 s after first open
-    const t1 = window.setTimeout(postWhacky, 15_000 + Math.random() * 30_000);
-    // Recurring every 5-8 minutes
-    const t2 = window.setInterval(postWhacky, 300_000 + Math.random() * 180_000);
-    return () => { window.clearTimeout(t1); window.clearInterval(t2); };
-  }, [postWhacky]);
-
   // ── Send helpers ─────────────────────────────────────────────────────────
   const sendToLobby = async (text: string) => {
     if (!db || !teamInfo) return;
@@ -305,10 +250,6 @@ export default function Chat() {
       isWhacky: false,
       channel: ch,
     });
-    // DM Whacky and he fires back a roast shortly after.
-    if (selectedTeam.id === WHACKY_ID) {
-      window.setTimeout(postWhacky, 2_000 + Math.random() * 2_500);
-    }
   };
 
   // ── No Firebase ───────────────────────────────────────────────────────────
@@ -386,12 +327,11 @@ export default function Chat() {
         </>
       )}
 
-      {/* Teams (DM list) — Whacky is always pinned at the top */}
+      {/* Teams (DM list) */}
       {tab === 'teams' && (
         <div className="flex-1 overflow-y-auto pb-[68px]">
           <div className="divide-y divide-border">
-            {[WHACKY_CONTACT, ...teams].map(team => {
-              const isWhackyContact = team.id === WHACKY_ID;
+            {teams.map(team => {
               const dmChannel = dmChannelId(teamId, team.id);
               const unread = allMsgs.filter(
                 m => m.channel === dmChannel && m.toTeamId === teamId && m.fromTeamId !== teamId,
@@ -402,21 +342,13 @@ export default function Chat() {
                   onClick={() => setSelectedTeam(team)}
                   className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-zinc-900 transition-colors"
                 >
-                  {isWhackyContact ? (
-                    <img
-                      src="/whacky-smug.jpg"
-                      alt="Whacky"
-                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-primary/40"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
-                      <span className="text-[14px] font-black text-primary">
-                        {team.teamName.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                  )}
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
+                    <span className="text-[14px] font-black text-primary">
+                      {team.teamName.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-[14px] font-bold truncate ${isWhackyContact ? 'text-primary' : 'text-foreground'}`}>
+                    <p className="text-[14px] font-bold truncate text-foreground">
                       {team.teamName}
                     </p>
                     {team.players.filter(Boolean).length > 0 && (

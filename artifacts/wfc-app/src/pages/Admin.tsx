@@ -1028,38 +1028,22 @@ export default function Admin() {
       }
 
       // ── DM to the host every ~12-25s (these trigger pop-up banners) ───────
-      // ~35% come from Whacky himself (his channel), the rest from rival teams.
+      // All DMs come from rival teams — Whacky never DMs anyone.
       if (runningRef.current && teamId && now >= nextDmChatRef.current) {
         nextDmChatRef.current = now + 12000 + Math.random() * 13000;
-        if (Math.random() < 0.35) {
-          const victim = pick(demoDocs).data();
-          const roast = roastFor(victim);
-          await addDoc(chatCol(fdb), {
-            fromTeamId: '__whacky__',
-            fromTeamName: 'Whacky',
-            toTeamId: teamId,
-            text: roast.text,
-            face: roast.face,
-            channel: dmChannelId('__whacky__', teamId),
-            ts: serverTimestamp(),
-            isWhacky: true,
-            isDemo: true,
-          });
-        } else {
-          const bot = pick(demoDocs);
-          const bd = bot.data();
-          const text = Math.random() < 0.5 ? pick(DEMO_DM_LINES) : roastFor(bd).text;
-          await addDoc(chatCol(fdb), {
-            fromTeamId: bot.id,
-            fromTeamName: (bd.teamName as string) ?? 'A team',
-            toTeamId: teamId,
-            text,
-            channel: dmChannelId(bot.id, teamId),
-            ts: serverTimestamp(),
-            isWhacky: false,
-            isDemo: true,
-          });
-        }
+        const bot = pick(demoDocs);
+        const bd = bot.data();
+        const text = Math.random() < 0.5 ? pick(DEMO_DM_LINES) : roastFor(bd).text;
+        await addDoc(chatCol(fdb), {
+          fromTeamId: bot.id,
+          fromTeamName: (bd.teamName as string) ?? 'A team',
+          toTeamId: teamId,
+          text,
+          channel: dmChannelId(bot.id, teamId),
+          ts: serverTimestamp(),
+          isWhacky: false,
+          isDemo: true,
+        });
       }
     } catch (e) {
       console.error('sim tick failed', e);
