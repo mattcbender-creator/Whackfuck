@@ -1,10 +1,11 @@
-import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { StoreProvider } from "@/lib/store";
 import { TournamentProvider, useTournament } from "@/lib/tournamentContext";
 import { ChatNotifProvider } from "@/lib/chatContext";
+import { resetConfetti } from "@/lib/confetti";
 import { useEffect, type ReactNode } from "react";
 
 import Landing from "@/pages/Landing";
@@ -39,6 +40,13 @@ function Guard({ children, allowSpectator = false, blockOnFinal = false }: { chi
 }
 
 function Router() {
+  const [location] = useLocation();
+  // Clear any in-flight or orphaned confetti whenever the route changes so a
+  // settling burst can't leave a tap-blocking canvas on the next screen.
+  useEffect(() => {
+    resetConfetti();
+  }, [location]);
+
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
       <LiveTicker />
