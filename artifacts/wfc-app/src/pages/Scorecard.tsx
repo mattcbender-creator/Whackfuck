@@ -215,6 +215,7 @@ export default function Scorecard() {
   const { holes: HOLES, holeRules, trackYardages, autoTeeRule } = useCourse();
   const { tournament, isHost } = useTournament();
   const isFinal = tournament?.status === 'final';
+  const scoringLocked = tournament?.scoringLocked === true && !isFinal;
   const {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, wheelAdjustment, holesPlayed, setScore,
     wheelSpins, targetedBy, listTeamsOnce, logEvent,
@@ -322,6 +323,16 @@ export default function Scorecard() {
       });
       return;
     }
+    if (scoringLocked) {
+      toast({
+        title: 'Scoring locked',
+        description: isHost
+          ? 'You locked scoring in the admin panel. Unlock it to let teams enter scores.'
+          : "The host hasn't opened scoring yet. Hang tight — it'll unlock when play begins.",
+        variant: 'destructive',
+      });
+      return;
+    }
     if (hasSubmitted) {
       toast({
         title: 'Round locked',
@@ -352,6 +363,16 @@ export default function Scorecard() {
 
   const handleSync = async () => {
     if (!db || !teamInfo) return;
+    if (scoringLocked) {
+      toast({
+        title: 'Scoring locked',
+        description: isHost
+          ? 'You locked scoring in the admin panel. Unlock it to push score changes.'
+          : "The host has paused scoring, so there's nothing to push right now.",
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsSyncing(true);
     try {
       // CRITICAL: must use the canonical teamId (UUID), NOT a slug of the team
@@ -371,6 +392,16 @@ export default function Scorecard() {
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
+    if (scoringLocked) {
+      toast({
+        title: 'Scoring locked',
+        description: isHost
+          ? 'You locked scoring in the admin panel. Unlock it before teams can submit.'
+          : "The host has paused scoring — you can't submit just yet.",
+        variant: 'destructive',
+      });
+      return;
+    }
     // Block submission until every scored wheel hole has been spun.
     const unspunHole = holeRules.reduce<number | null>((found, r, idx) => {
       if (found !== null) return found;
@@ -432,6 +463,24 @@ export default function Scorecard() {
         </div>
       )}
 
+      {scoringLocked && (
+        <div className="px-4 pt-3 max-w-lg mx-auto w-full">
+          <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/40 rounded-2xl px-4 py-3">
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center shrink-0">
+              <Lock className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm font-black uppercase tracking-widest text-amber-400 leading-tight">Scoring Locked</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                {isHost
+                  ? 'You paused scoring in the admin panel. Unlock it to let teams enter scores.'
+                  : "The host hasn't opened scoring yet. It'll unlock when play begins."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Submitted lock banner — shown on every team member's device ── */}
       {hasSubmitted && !isFinal && (
         <div className="px-4 pt-3 max-w-lg mx-auto w-full">
@@ -484,7 +533,7 @@ export default function Scorecard() {
 
               <button
                 onClick={handleSync}
-                disabled={isSyncing}
+                disabled={isSyncing || scoringLocked}
                 className="p-2 text-muted-foreground hover:text-primary transition-colors disabled:opacity-40"
               >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -792,7 +841,7 @@ export default function Scorecard() {
         )}
 
         {/* ── Submit Final Score (opens a confirmation first, never auto-locks) ── */}
-        {holesPlayed === 18 && !hasSubmitted && (
+        {holesPlayed === 18 && !hasSubmitted && !scoringLocked && (
           <button
             onClick={() => setConfirmFinishOpen(true)}
             disabled={finishLoading}

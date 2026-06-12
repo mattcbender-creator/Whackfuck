@@ -581,7 +581,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setScore = (hole: number, score: number | null) => {
     if (hasSubmitted) return;
-    if (tournament?.status === 'final') return;
+    if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
     const newScores = [...scores];
     newScores[hole - 1] = score;
     setScoresState(newScores);
@@ -627,7 +627,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const recordWheelSpin = async (hole: number, record: WheelSpinRecord) => {
     if (hasSubmitted) return;
-    if (tournament?.status === 'final') return;
+    if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
     // Guard against a double-spin for this hole using the latest known state.
     if (wheelSpins[hole]?.item) return;
     const commitLocal = (spin: WheelSpinRecord) => {
@@ -660,7 +660,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyEffectToSelf = (delta: number) => {
     if (hasSubmitted) return;
-    if (tournament?.status === 'final') return;
+    if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
     const nextAdjustment = wheelAdjustment + delta;
     setWheelAdjustment(nextAdjustment);
     saveToLocal({ wheelAdjustment: nextAdjustment });
@@ -673,7 +673,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyEffectToOthers = async (item: WheelItemId, targetIds: string[]) => {
     if (hasSubmitted) return;
-    if (tournament?.status === 'final') return;
+    if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
     if (!isFirebaseConfigured || !db || !tId || !teamInfo) return;
     if (targetIds.length === 0) return;
     try {

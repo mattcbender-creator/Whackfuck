@@ -15,7 +15,7 @@ import { RuleBuilder } from '@/components/RuleBuilder';
 import {
   teamsCol, eventsCol, drivesCol, teamDoc, configDoc, tournamentDoc,
   getActiveTournamentId, formatPlayers, teamSubtitle, normalizeScores, scoresToMap,
-  resolveHoleRules, generateAdminCode, generateHostKey, hostKeyKey,
+  resolveHoleRules, generateAdminCode, generateHostKey, generateTeamCode, hostKeyKey,
   chatCol, dmChannelId,
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
@@ -338,10 +338,23 @@ export default function Admin() {
   const [finalizing, setFinalizing] = useState(false);
   const isFinal = tournament?.status === 'final';
 
+  // Scoring lock (pause) — distinct from finalize: blocks entry but keeps players
+  // on their own screens (no results-page redirect).
+  const scoringLocked = tournament?.scoringLocked === true;
+  const [lockBusy, setLockBusy] = useState(false);
+
   // Shotgun-start hole assignments (only used when startType === 'shotgun').
   const isShotgun = tournament?.startType === 'shotgun';
   const [shotgunDraft, setShotgunDraft] = useState<Record<string, number>>({});
   const [shotgunSaving, setShotgunSaving] = useState(false);
+  const [startTypeBusy, setStartTypeBusy] = useState(false);
+
+  // Pre-create team modal (set teams up before play; assign holes when shotgun).
+  const [addingTeam, setAddingTeam] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamPlayers, setNewTeamPlayers] = useState<string[]>([]);
+  const [newTeamHole, setNewTeamHole] = useState(1);
+  const [creating, setCreating] = useState(false);
 
   const [rulesOpen, setRulesOpen] = useState(false);
   const [ruleDraft, setRuleDraft] = useState<HoleRule[]>([]);
@@ -700,6 +713,103 @@ export default function Admin() {
       toast({ title: 'Failed', description: String(e), variant: 'destructive' });
     } finally {
       setFinalizing(false);
+    }
+  };
+
+  // ── Lock / unlock scoring (pause, no redirect) ──
+  const handleToggleScoringLock = async (next: boolean) => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    setLockBusy(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { scoringLocked: next }, { merge: true });
+      toast({
+        title: next ? 'Scoring locked' : 'Scoring unlocked',
+        description: next
+          ? "Teams can't enter scores or spin. They stay on their own screens — nobody is moved to results."
+          : 'Teams can enter scores again.',
+      });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setLockBusy(false);
+    }
+  };
+
+  // ── Start format (normal vs shotgun) ──
+  const handleToggleStartType = async (next: boolean) => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    setStartTypeBusy(true);
+    try {
+      await setDoc(tournamentDoc(db, tId), { startType: next ? 'shotgun' : 'normal' }, { merge: true });
+      toast({
+        title: next ? 'Shotgun start on' : 'Normal start on',
+        description: next ? 'Assign each team a starting hole.' : 'All teams start on hole 1.',
+      });
+    } catch (e) {
+      toast({ title: 'Failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setStartTypeBusy(false);
+    }
+  };
+
+  // ── Pre-create a team (before play) ──
+  const openCreateTeam = () => {
+    const size = Math.max(1, Math.min(4, tournament?.teamSize ?? 2));
+    setNewTeamName('');
+    setNewTeamPlayers(Array(size).fill(''));
+    setNewTeamHole(1);
+    setAddingTeam(true);
+  };
+
+  const handleCreateTeam = async () => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) {
+      toast({ title: 'Not connected', description: 'Creating teams needs Firebase.', variant: 'destructive' });
+      return;
+    }
+    const useTeamNames = tournament?.useTeamNames ?? true;
+    const players = newTeamPlayers.map(p => p.trim()).filter(p => p !== '');
+    const teamName = useTeamNames ? newTeamName.trim() : (formatPlayers(players) || 'Team');
+    if (useTeamNames && !newTeamName.trim()) {
+      toast({ title: 'Team name required', variant: 'destructive' });
+      return;
+    }
+    if (players.length === 0) {
+      toast({ title: 'Add at least one player', variant: 'destructive' });
+      return;
+    }
+    setCreating(true);
+    try {
+      const ref = await addDoc(teamsCol(db), {
+        teamName,
+        players,
+        teamCode: generateTeamCode(),
+        scores: {},
+        netScore: 0,
+        holesPlayed: 0,
+        currentTee: 'womens',
+        frontNineConfirmed: false,
+        wheelSpins: {},
+        wheelAdjustment: 0,
+        targetedBy: [],
+      });
+      if (isShotgun) {
+        await setDoc(tournamentDoc(db, tId), {
+          shotgunAssignments: { ...(tournament?.shotgunAssignments ?? {}), [ref.id]: newTeamHole },
+        }, { merge: true });
+      }
+      toast({
+        title: 'Team created',
+        description: isShotgun ? `Starting on hole ${newTeamHole}.` : undefined,
+      });
+      setAddingTeam(false);
+      await loadTeams();
+    } catch (e) {
+      toast({ title: 'Create failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -1366,6 +1476,30 @@ export default function Admin() {
           )}
         </div>
 
+        {/* ── Start Format (normal vs shotgun) ── */}
+        <div className="bg-card p-6 rounded-xl border border-border space-y-3">
+          <div className="flex items-center gap-2">
+            <Flag className="w-4 h-4 text-primary" />
+            <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Start Format</h3>
+          </div>
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="pr-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Shotgun start</p>
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
+                {isShotgun
+                  ? 'Teams tee off on their assigned hole and wrap around all 18. Assign holes below.'
+                  : 'All teams start on hole 1. Turn on to give each team its own starting hole.'}
+              </p>
+            </div>
+            <Switch
+              checked={isShotgun}
+              onCheckedChange={handleToggleStartType}
+              disabled={startTypeBusy}
+              data-testid="switch-admin-start-type"
+            />
+          </label>
+        </div>
+
         {/* ── Shotgun Assignments (shotgun-start tournaments only) ── */}
         {isShotgun && (
           <div className="bg-card p-6 rounded-xl border border-border space-y-4">
@@ -1476,6 +1610,17 @@ export default function Admin() {
 
           {teamsOpen && (
             <div className="border-t border-border">
+              <div className="p-4 border-b border-border/50">
+                <Button
+                  size="sm"
+                  onClick={openCreateTeam}
+                  className="w-full text-xs uppercase tracking-widest font-bold"
+                  data-testid="button-add-team"
+                >
+                  <Plus className="w-3 h-3 mr-2" /> Add Team
+                </Button>
+              </div>
+
               {teams.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-6 px-5">No teams registered yet.</p>
               )}
@@ -1845,6 +1990,33 @@ export default function Admin() {
           )}
         </div>
 
+        {/* ── Lock / Unlock Scoring (pause, not finalize) ── */}
+        {!isFinal && (
+          <div className="bg-card p-6 rounded-xl border border-border space-y-4">
+            <div className="flex items-center gap-2">
+              {scoringLocked ? <Lock className="w-4 h-4 text-amber-400" /> : <LockOpen className="w-4 h-4 text-primary" />}
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Scoring</h3>
+            </div>
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+              {scoringLocked
+                ? "Scoring is locked. Teams can't enter scores or spin, but they stay on their own screens — nobody is moved to results."
+                : 'Scoring is open. Lock it to set teams up before play or to pause mid-round — players stay where they are.'}
+            </p>
+            <Button
+              type="button"
+              variant={scoringLocked ? 'default' : 'outline'}
+              className="w-full h-12 font-condensed font-black uppercase tracking-widest"
+              onClick={() => handleToggleScoringLock(!scoringLocked)}
+              disabled={lockBusy}
+              data-testid="button-toggle-scoring-lock"
+            >
+              {scoringLocked
+                ? <><LockOpen className="w-4 h-4 mr-2" /> Unlock Scoring</>
+                : <><Lock className="w-4 h-4 mr-2" /> Lock Scoring</>}
+            </Button>
+          </div>
+        )}
+
         {/* ── Finalize Tournament ── */}
         <div className="bg-card p-6 rounded-xl border border-border space-y-4">
           <div className="flex items-center gap-2">
@@ -1950,6 +2122,61 @@ export default function Admin() {
               <Button variant="outline" className="flex-1 h-11" onClick={() => setEditingTeam(null)}>Cancel</Button>
               <Button className="flex-1 h-11 font-bold" onClick={handleSaveEdit} disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Team Modal ── */}
+      {addingTeam && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setAddingTeam(false)}>
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-condensed text-xl font-black uppercase tracking-wider">Add Team</h3>
+              <button onClick={() => setAddingTeam(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {(tournament?.useTeamNames ?? true) && (
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Team Name</label>
+                  <Input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-11 bg-input" data-testid="input-new-team-name" />
+                </div>
+              )}
+              {newTeamPlayers.map((p, i) => (
+                <div key={i}>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Player {i + 1}</label>
+                  <Input
+                    value={p}
+                    onChange={e => setNewTeamPlayers(prev => prev.map((v, j) => (j === i ? e.target.value : v)))}
+                    className="h-11 bg-input"
+                  />
+                </div>
+              ))}
+              {isShotgun && (
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Starting Hole</label>
+                  <select
+                    value={newTeamHole}
+                    onChange={e => setNewTeamHole(Number(e.target.value))}
+                    data-testid="select-new-team-hole"
+                    className="w-full h-11 px-3 rounded-lg bg-input border border-border text-sm font-condensed font-bold"
+                  >
+                    {Array.from({ length: 18 }, (_, i) => i + 1).map(n => (
+                      <option key={n} value={n}>Hole {n}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 h-11" onClick={() => setAddingTeam(false)}>Cancel</Button>
+              <Button className="flex-1 h-11 font-bold" onClick={handleCreateTeam} disabled={creating} data-testid="button-save-new-team">
+                {creating ? 'Creating…' : 'Create'}
               </Button>
             </div>
           </div>

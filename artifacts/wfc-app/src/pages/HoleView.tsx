@@ -60,6 +60,7 @@ export default function HoleView() {
   } = useWFC();
   const { tournament, isHost } = useTournament();
   const isFinal = tournament?.status === 'final';
+  const scoringLocked = tournament?.scoringLocked === true && !isFinal;
   const [, setLocation] = useLocation();
   // Position within the team's play order (0–17), not the raw hole index. For a
   // normal start holeOrder is [1..18] so orderPos === holeIdx; for a shotgun
@@ -85,6 +86,16 @@ export default function HoleView() {
 
   const handleSubmitFinal = async () => {
     if (!teamInfo) return;
+    if (scoringLocked) {
+      toast({
+        title: 'Scoring locked',
+        description: isHost
+          ? 'You locked scoring in the admin panel. Unlock it before teams can submit.'
+          : "The host has paused scoring — you can't submit just yet.",
+        variant: 'destructive',
+      });
+      return;
+    }
     // Block submission until every wheel hole with a score has been spun.
     const unspunHole = findUnspunWheelHole();
     if (unspunHole !== null) {
@@ -255,6 +266,16 @@ export default function HoleView() {
       });
       return;
     }
+    if (scoringLocked) {
+      toast({
+        title: 'Scoring locked',
+        description: isHost
+          ? 'You locked scoring in the admin panel. Unlock it to let teams enter scores.'
+          : "The host hasn't opened scoring yet. Hang tight — it'll unlock when play begins.",
+        variant: 'destructive',
+      });
+      return;
+    }
     if (hasSubmitted) {
       toast({ title: 'Score locked', description: 'You already submitted your final score.' });
       return;
@@ -398,6 +419,22 @@ export default function HoleView() {
       <div className="flex-1 overflow-y-auto flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 pb-36">
         <FinalizedBanner />
 
+        {scoringLocked && (
+          <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/40 rounded-2xl px-4 py-3">
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center shrink-0">
+              <Lock className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm font-black uppercase tracking-widest text-amber-400 leading-tight">Scoring Locked</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                {isHost
+                  ? 'You paused scoring in the admin panel. Unlock it to let teams enter scores.'
+                  : "The host hasn't opened scoring yet. It'll unlock when play begins."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
             single row beside it instead of below, saving a full row of height. */}
         <div className="bg-card border border-border rounded-2xl px-5 py-5 relative overflow-hidden">
@@ -501,9 +538,9 @@ export default function HoleView() {
             <button
               className="flex flex-col items-center min-w-[60px] min-h-[60px] justify-center active:scale-95 transition-transform disabled:active:scale-100"
               onClick={() => {
-                if (!holeLocked && !isFinal && score === null) setScore(holeIdx + 1, hole.par);
+                if (!holeLocked && !isFinal && !scoringLocked && score === null) setScore(holeIdx + 1, hole.par);
               }}
-              disabled={holeLocked || isFinal || score !== null}
+              disabled={holeLocked || isFinal || scoringLocked || score !== null}
               aria-label={score === null ? `Set score to par ${hole.par}` : `Score: ${score}`}
             >
               {score === null ? (
@@ -573,7 +610,7 @@ export default function HoleView() {
         )}
 
         {/* Submit Final Score button — appears when all 18 done */}
-        {holesPlayed === 18 && !hasSubmitted && (
+        {holesPlayed === 18 && !hasSubmitted && !scoringLocked && (
           <button
             onClick={handleSubmitFinal}
             disabled={finishLoading}

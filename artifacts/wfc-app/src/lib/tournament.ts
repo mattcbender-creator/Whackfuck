@@ -125,6 +125,11 @@ export interface TournamentConfig {
   // Shotgun-format only: maps a team id to its starting hole (1–18). Absent /
   // empty for normal-start tournaments. Set by the host in the admin panel.
   shotgunAssignments?: Record<string, number>;
+  // Host pause switch, separate from finalization. When true, all score / wheel
+  // entry is blocked for every team BUT players are NOT moved to the results
+  // page — used to set everything up before play begins (or pause mid-round).
+  // Absent → unlocked, so legacy docs keep their current behavior.
+  scoringLocked?: boolean;
 }
 
 // ── Code / id generators ────────────────────────────────────────────────────

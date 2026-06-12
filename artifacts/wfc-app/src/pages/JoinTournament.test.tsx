@@ -95,6 +95,7 @@ function makeTournament(overrides: Partial<TournamentConfig>): TournamentConfig 
     startType: 'normal',
     autoTeeRule: false,
     requireTeamCode: true,
+    useTeamNames: true,
     adminCode: 'x',
     hostKey: 'KEY',
     joinCode: 'WFCDUN',
