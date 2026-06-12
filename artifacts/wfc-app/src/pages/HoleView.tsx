@@ -66,6 +66,7 @@ export default function HoleView() {
   // normal start holeOrder is [1..18] so orderPos === holeIdx; for a shotgun
   // start it wraps around from the team's assigned starting hole.
   const [orderPos, setOrderPos] = useState(0);
+  const [slideDir, setSlideDir] = useState(1);
   const userNavigatedRef = useRef(false);
   const [wheelOpen, setWheelOpen] = useState(false);
   // Which hole's Item Box the wheel modal is acting on (1–18).
@@ -238,6 +239,7 @@ export default function HoleView() {
   // Works on play-order positions (0–17), not raw hole indices.
   const tryGoToPos = (targetPos: number): boolean => {
     if (targetPos === orderPos) return true;
+    setSlideDir(targetPos > orderPos ? 1 : -1);
     userNavigatedRef.current = true;
     setOrderPos(targetPos);
     return true;
@@ -308,6 +310,7 @@ export default function HoleView() {
   };
 
   const goPrev = () => {
+    setSlideDir(-1);
     userNavigatedRef.current = true;
     setOrderPos(i => Math.max(0, i - 1));
   };
@@ -400,6 +403,14 @@ export default function HoleView() {
                 );
               })}
             </div>
+            {holeOrder[0] !== 1 && holeOrder.indexOf(1) !== orderPos && (
+              <button
+                onClick={() => tryGoToPos(holeOrder.indexOf(1))}
+                className="mt-1.5 px-2.5 py-0.5 rounded-full border border-primary/40 text-[9px] font-black uppercase tracking-widest text-primary/70 hover:text-primary hover:border-primary/70 transition-colors active:scale-95"
+              >
+                → Hole 1
+              </button>
+            )}
           </div>
 
           <button
@@ -416,19 +427,23 @@ export default function HoleView() {
 
       {/* Main Content — tightened spacing so everything important fits without
           scrolling on a typical phone (par/yds, rule, score stepper). */}
-      <div className="flex-1 overflow-y-auto flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 pb-36">
+      <div className="flex-1 relative overflow-hidden">
+        <AnimatePresence mode="sync" custom={slideDir} initial={false}>
+        <motion.div
+          key={orderPos}
+          custom={slideDir}
+          variants={{
+            enter: (dir: number) => ({ x: dir > 0 ? '100%' : '-100%', opacity: 0 }),
+            center: { x: 0, opacity: 1 },
+            exit:  (dir: number) => ({ x: dir > 0 ? '-30%' : '30%', opacity: 0 }),
+          }}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={{ type: 'spring', stiffness: 380, damping: 36, mass: 0.75 }}
+          className="absolute inset-0 overflow-y-auto flex flex-col max-w-md mx-auto w-full px-4 pt-3 gap-3 pb-36"
+        >
         <FinalizedBanner />
-
-        {scoringLocked && (
-          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/40 rounded-xl px-3 py-2">
-            <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <p className="text-[11px] font-black uppercase tracking-widest text-amber-400 leading-none">Scoring Locked</p>
-            <span className="text-[11px] text-muted-foreground leading-none">—</span>
-            <p className="text-[11px] text-muted-foreground leading-none truncate">
-              {isHost ? 'Unlock in admin to allow score entry.' : 'Host has paused scoring.'}
-            </p>
-          </div>
-        )}
 
         {/* Hole Stats Card — par hero shrunk + tee yardages compacted into a
             single row beside it instead of below, saving a full row of height. */}
@@ -514,7 +529,16 @@ export default function HoleView() {
 
         {/* Score Entry — removed the bottom Par/Yds/VsPar row (already shown
             above) so the stepper fits without scrolling on most phones. */}
-        <div className={`bg-card border rounded-2xl px-4 py-3 ${holeLocked ? 'border-primary/30 opacity-80' : 'border-border'}`}>
+        <div className={`bg-card border rounded-2xl px-4 py-3 relative overflow-hidden ${holeLocked ? 'border-primary/30 opacity-80' : scoringLocked ? 'border-amber-500/30' : 'border-border'}`}>
+          {scoringLocked && (
+            <div className="absolute inset-0 rounded-2xl bg-background/85 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5 z-10">
+              <Lock className="w-4 h-4 text-amber-400" />
+              <span className="text-[11px] font-black uppercase tracking-widest text-amber-400">Scoring Locked</span>
+              <span className="text-[10px] text-muted-foreground">
+                {isHost ? 'Unlock in admin to allow score entry.' : 'Host has paused scoring.'}
+              </span>
+            </div>
+          )}
           <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center mb-3 flex items-center justify-center gap-1.5">
             {holeLocked && <Lock className="w-3 h-3 text-primary" />}
             {hasSubmitted ? 'Round Submitted' : 'Enter Score'}
@@ -621,6 +645,8 @@ export default function HoleView() {
             <span className="font-condensed text-sm font-bold text-primary uppercase tracking-widest">Score Submitted</span>
           </div>
         )}
+        </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* ── Whacky message stack — up to 2 bubbles above the nav bar ── */}
