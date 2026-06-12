@@ -420,18 +420,13 @@ export default function HoleView() {
         <FinalizedBanner />
 
         {scoringLocked && (
-          <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/40 rounded-2xl px-4 py-3">
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center shrink-0">
-              <Lock className="w-4 h-4 text-amber-400" />
-            </div>
-            <div>
-              <p className="text-sm font-black uppercase tracking-widest text-amber-400 leading-tight">Scoring Locked</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                {isHost
-                  ? 'You paused scoring in the admin panel. Unlock it to let teams enter scores.'
-                  : "The host hasn't opened scoring yet. It'll unlock when play begins."}
-              </p>
-            </div>
+          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/40 rounded-xl px-3 py-2">
+            <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <p className="text-[11px] font-black uppercase tracking-widest text-amber-400 leading-none">Scoring Locked</p>
+            <span className="text-[11px] text-muted-foreground leading-none">—</span>
+            <p className="text-[11px] text-muted-foreground leading-none truncate">
+              {isHost ? 'Unlock in admin to allow score entry.' : 'Host has paused scoring.'}
+            </p>
           </div>
         )}
 
