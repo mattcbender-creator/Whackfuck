@@ -56,7 +56,7 @@ export default function HoleView() {
     teamId, teamInfo, scores, currentTee, netScore, rawNet, holesPlayed, setScore,
     wheelSpins, listTeamsOnce, logEvent,
     hasSubmitted, submitFinal,
-    holeOrder, startingHole,
+    holeOrder, startingHole, isShotgun,
   } = useWFC();
   const { tournament, isHost } = useTournament();
   const isFinal = tournament?.status === 'final';
@@ -312,9 +312,14 @@ export default function HoleView() {
   const goPrev = () => {
     setSlideDir(-1);
     userNavigatedRef.current = true;
-    setOrderPos(i => Math.max(0, i - 1));
+    // In shotgun mode wrap from position 0 back to 17 (circular lap review).
+    setOrderPos(i => isShotgun && i === 0 ? 17 : Math.max(0, i - 1));
   };
-  const goNext = () => tryGoToPos(Math.min(17, orderPos + 1));
+  const goNext = () => {
+    // In shotgun mode wrap from position 17 forward to 0 (circular lap review).
+    const next = isShotgun && orderPos === 17 ? 0 : Math.min(17, orderPos + 1);
+    tryGoToPos(next);
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -367,7 +372,7 @@ export default function HoleView() {
         <div className="flex items-center justify-between px-5 pb-3 max-w-md mx-auto">
           <button
             onClick={() => { hapticLight(); goPrev(); }}
-            disabled={orderPos === 0}
+            disabled={!isShotgun && orderPos === 0}
             className="w-16 h-16 flex items-center justify-center rounded-full bg-secondary text-foreground disabled:opacity-20 active:scale-90 transition-all"
             data-testid="button-prev-hole"
           >
@@ -415,7 +420,7 @@ export default function HoleView() {
 
           <button
             onClick={() => { hapticLight(); goNext(); }}
-            disabled={orderPos === 17}
+            disabled={!isShotgun && orderPos === 17}
             className="w-16 h-16 flex items-center justify-center rounded-full text-foreground disabled:opacity-20 active:scale-90 transition-all bg-secondary"
             data-testid="button-next-hole"
             aria-label="Next hole"

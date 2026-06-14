@@ -3,6 +3,7 @@ import {
   type CollectionReference, type DocumentReference,
 } from 'firebase/firestore';
 import { HOLES } from './holes';
+import type { WheelItemId } from './wheel';
 
 // ── Course data ─────────────────────────────────────────────────────────────
 // A tournament carries its own 18-hole course definition. Par is always
@@ -130,6 +131,10 @@ export interface TournamentConfig {
   // page — used to set everything up before play begins (or pause mid-round).
   // Absent → unlocked, so legacy docs keep their current behavior.
   scoringLocked?: boolean;
+  // Per-item landing weights for the Item Box wheel. Absent / missing keys fall
+  // back to DEFAULT_WHEEL_WEIGHTS (lightning = 0.5, everything else = 1.0).
+  // A weight of 0 disables the item entirely.
+  wheelItemWeights?: Partial<Record<WheelItemId, number>>;
 }
 
 // ── Code / id generators ────────────────────────────────────────────────────

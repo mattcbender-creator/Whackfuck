@@ -134,8 +134,36 @@ export function targetAngleForIndex(index: number, fullSpins = 6): number {
   return fullSpins * 360 - center + jitter;
 }
 
-export function pickRandomIndex(): number {
-  return Math.floor(Math.random() * WHEEL_ITEMS.length);
+// Default landing weights. Lightning (+1 to ALL teams) is set to 0.5 so it
+// lands roughly half as often as any other item out of the box. Hosts can
+// override per-item via tournament.wheelItemWeights.
+export const DEFAULT_WHEEL_WEIGHTS: Record<WheelItemId, number> = {
+  green_shell: 1,
+  red_shell:   1,
+  blue_shell:  1,
+  banana:      1,
+  lightning:   0.5,
+  mushroom:    1,
+  super_star:  1,
+  boo:         1,
+};
+
+// Weighted random pick. Each item's effective weight = overrides[id] ?? DEFAULT_WHEEL_WEIGHTS[id].
+// Weights of 0 (or negative) exclude that item entirely. If the total weight is
+// zero (all items disabled) falls back to uniform random.
+export function pickRandomIndex(overrides?: Partial<Record<WheelItemId, number>>): number {
+  const weights = WHEEL_ITEMS.map(item => {
+    const w = overrides?.[item.id] ?? DEFAULT_WHEEL_WEIGHTS[item.id];
+    return Math.max(0, w);
+  });
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return Math.floor(Math.random() * WHEEL_ITEMS.length);
+  let r = Math.random() * total;
+  for (let i = 0; i < weights.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return i;
+  }
+  return WHEEL_ITEMS.length - 1;
 }
 
 // Badge color helper — used by Leaderboard. Defined here (not in WheelModal)

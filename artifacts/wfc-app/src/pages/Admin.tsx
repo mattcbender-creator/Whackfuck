@@ -20,7 +20,7 @@ import {
   type CourseHole, type HoleRule, type RuleLibraryEntry,
 } from '@/lib/tournament';
 import { diffCorrectionEdits, correctTeamScores, applyManualAdjustment, spinsFromData, type WheelSpinRecord } from '@/lib/scoreSync';
-import { WHEEL_ITEMS, pickRandomIndex, type WheelItemId } from '@/lib/wheel';
+import { WHEEL_ITEMS, pickRandomIndex, DEFAULT_WHEEL_WEIGHTS, type WheelItemId } from '@/lib/wheel';
 import { useWFC } from '@/lib/store';
 import { pickRoast } from '@/lib/roasts';
 import {
@@ -358,6 +358,7 @@ export default function Admin() {
   const [ruleDraft, setRuleDraft] = useState<HoleRule[]>([]);
   const [customDraft, setCustomDraft] = useState<RuleLibraryEntry[]>([]);
   const [rulesSaving, setRulesSaving] = useState(false);
+  const [wheelWeightsBusy, setWheelWeightsBusy] = useState(false);
   // Once the host starts editing, stop reseeding from live snapshots so their
   // in-progress edits aren't clobbered by an incoming Firestore update.
   const [rulesDirty, setRulesDirty] = useState(false);
@@ -739,6 +740,21 @@ export default function Admin() {
       toast({ title: 'Failed', description: String(e), variant: 'destructive' });
     } finally {
       setLockBusy(false);
+    }
+  };
+
+  // ── Item Box wheel item weights ──
+  const handleSetWheelWeight = async (itemId: WheelItemId, weight: number) => {
+    const tId = getActiveTournamentId();
+    if (!db || !tId) { toast({ title: 'Not connected', variant: 'destructive' }); return; }
+    setWheelWeightsBusy(true);
+    try {
+      const current = tournament?.wheelItemWeights ?? {};
+      await setDoc(tournamentDoc(db, tId), { wheelItemWeights: { ...current, [itemId]: weight } }, { merge: true });
+    } catch (e) {
+      toast({ title: 'Failed to save weight', description: String(e), variant: 'destructive' });
+    } finally {
+      setWheelWeightsBusy(false);
     }
   };
 
@@ -1892,6 +1908,44 @@ export default function Admin() {
                   </div>
                 )}
               </div>
+
+              {/* Item Box Odds — only visible when at least one wheel hole is configured */}
+              {(holeRules.some(r => r?.type === 'wheel') || ruleDraft.some(r => r?.type === 'wheel')) && (
+                <div className="p-5 space-y-3 border-t border-border/50" data-testid="section-wheel-weights">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Item Box Odds</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                    How often each item lands. Default is 1× for all except Lightning (½×). Changes take effect immediately.
+                  </p>
+                  <div className="space-y-1.5">
+                    {WHEEL_ITEMS.map(item => {
+                      const w = tournament?.wheelItemWeights?.[item.id] ?? DEFAULT_WHEEL_WEIGHTS[item.id];
+                      return (
+                        <div key={item.id} className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: item.color }} />
+                            <span className="text-[11px] font-medium text-foreground/80 truncate">{item.label}</span>
+                          </div>
+                          <select
+                            value={String(w)}
+                            onChange={e => handleSetWheelWeight(item.id, Number(e.target.value))}
+                            disabled={wheelWeightsBusy}
+                            data-testid={`select-wheel-weight-${item.id}`}
+                            className="h-8 px-2 rounded-lg bg-input border border-border text-[11px] font-condensed font-bold shrink-0"
+                          >
+                            <option value="0">Off</option>
+                            <option value="0.5">½×</option>
+                            <option value="1">1×</option>
+                            <option value="2">2×</option>
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

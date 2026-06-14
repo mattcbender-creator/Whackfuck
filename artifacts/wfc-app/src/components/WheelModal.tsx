@@ -120,7 +120,7 @@ export default function WheelModal({ open, onClose, hole }: Props) {
       console.error('Failed to load teams', e);
     }
 
-    const idx = pickRandomIndex();
+    const idx = pickRandomIndex(tournament?.wheelItemWeights ?? undefined);
     const item = WHEEL_ITEMS[idx];
     const finalAngle = targetAngleForIndex(idx, 6);
     setAngle(finalAngle);
@@ -207,8 +207,10 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         }
         case 'lightning': {
           const ids = others.map(t => t.id);
-          await applyEffectToOthers('lightning', ids);
+          // Record spin FIRST — if the effect write fails the team can't retry
+          // and double-hit everyone. Consistent with the mushroom/super_star pattern.
           await recordSpinOnSelf(item);
+          await applyEffectToOthers('lightning', ids);
           break;
         }
         case 'mushroom':
