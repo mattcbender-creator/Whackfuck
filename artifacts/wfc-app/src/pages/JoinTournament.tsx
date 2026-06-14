@@ -28,6 +28,8 @@ export default function JoinTournament() {
   const [busy, setBusy] = useState(false);
 
   const [teams, setTeams] = useState<TeamLookup[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamsError, setTeamsError] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<TeamLookup | null>(null);
   const [teamCodeInput, setTeamCodeInput] = useState('');
 
@@ -88,6 +90,17 @@ export default function JoinTournament() {
         setStep('rejoin');
         return;
       }
+      // QR code path — pre-fetch teams so the list is ready the moment the
+      // choose step renders (onSnapshot will keep it live after that).
+      setTeamsLoading(true);
+      try {
+        const list = await fetchTeamsForTournament(t.id);
+        setTeams(list);
+      } catch {
+        setTeamsError('Couldn\u2019t load teams — pull to refresh.');
+      } finally {
+        setTeamsLoading(false);
+      }
       setStep('choose');
     } catch {
       setError('Something went wrong looking up that code.');
@@ -108,6 +121,7 @@ export default function JoinTournament() {
     if ((step !== 'rejoin' && step !== 'choose') || !resolved || !isFirebaseConfigured || !db) return;
     const col = collection(db, 'tournaments', resolved.id, 'teams');
     const unsub = onSnapshot(col, snap => {
+      setTeamsError('');
       const entries = snap.docs.map(d => {
         const data = d.data();
         const players = Array.isArray(data.players)
@@ -127,7 +141,7 @@ export default function JoinTournament() {
       });
       entries.sort((a, b) => b.ts - a.ts);
       setTeams(entries.map(e => ({ id: e.id, teamName: e.teamName, players: e.players, teamCode: e.teamCode })));
-    }, () => { /* ignore snapshot errors */ });
+    }, () => { setTeamsError('Live updates paused — tap Refresh to retry.'); });
     return () => unsub();
   }, [step, resolved?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -219,7 +233,12 @@ export default function JoinTournament() {
               <p className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
                 <Users className="w-3.5 h-3.5 text-primary" /> Join your team
               </p>
-              {teams.length === 0 ? (
+              {teamsError && <ErrorNote text={teamsError} />}
+              {teamsLoading ? (
+                <p className="text-sm text-muted-foreground/70 py-3 text-center bg-card/40 border border-border/50 rounded-xl animate-pulse">
+                  Loading teams…
+                </p>
+              ) : teams.length === 0 ? (
                 <p className="text-sm text-muted-foreground/70 py-3 text-center bg-card/40 border border-border/50 rounded-xl">
                   {isFirebaseConfigured ? 'No teams registered yet — be the first below.' : 'No teams registered yet.'}
                 </p>
