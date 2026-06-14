@@ -390,7 +390,7 @@ export default function Admin() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, teamsOpen, auditOpen, perTeamLinksOpen]);
 
-  // Build the join QR whenever the share panel opens / the join code changes.
+  // Build the join QR whenever the join code changes (always visible once authenticated).
   const joinCode = tournament?.joinCode ?? '';
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const joinLink = joinCode ? `${origin}${import.meta.env.BASE_URL}join/${joinCode}` : '';
@@ -399,7 +399,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (!auth || !joinLink) { setQr(''); return; }
-    QRCode.toDataURL(joinLink, { margin: 1, width: 220, color: { dark: '#39FF14', light: '#0a0a0a' } })
+    QRCode.toDataURL(joinLink, { margin: 1, width: 240, color: { dark: '#39FF14', light: '#0a0a0a' } })
       .then(setQr)
       .catch(() => setQr(''));
   }, [auth, joinLink]);
@@ -1431,6 +1431,40 @@ export default function Admin() {
           )}
         </div>
 
+        {/* ── Player Join QR ── */}
+        {joinCode ? (
+          <div className="bg-card rounded-xl border border-primary/40 overflow-hidden" data-testid="card-join-qr">
+            <div className="flex items-center gap-2 px-5 pt-5 pb-3">
+              <Grid3x3 className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Scan to Join</h3>
+            </div>
+            <div className="flex flex-col items-center gap-3 px-5 pb-5">
+              {qr ? (
+                <div className="bg-[#0a0a0a] border border-primary/30 rounded-2xl p-3">
+                  <img src={qr} alt="Join QR code" className="w-52 h-52" data-testid="img-join-qr" />
+                </div>
+              ) : (
+                <div className="w-52 h-52 bg-[#0a0a0a] border border-primary/30 rounded-2xl flex items-center justify-center">
+                  <span className="text-xs text-muted-foreground">Generating…</span>
+                </div>
+              )}
+              <div className="text-center">
+                <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Join code</p>
+                <p className="font-condensed text-4xl font-black tracking-[0.3em]" data-testid="text-qr-join-code">{joinCode}</p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                onClick={() => copy(joinLink, 'joinlink')}
+                data-testid="button-copy-join-link-qr"
+              >
+                {copied === 'joinlink' ? <><Check className="w-3.5 h-3.5 mr-2" /> Copied</> : <><Copy className="w-3.5 h-3.5 mr-2" /> Copy join link</>}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {/* ── Share & Invite (QR always visible) ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           <div className="p-5 space-y-4">
@@ -1442,26 +1476,6 @@ export default function Admin() {
               <p className="text-xs text-muted-foreground">No join code — a live connection is required.</p>
             ) : (
               <>
-                <div className="flex flex-col items-center gap-3">
-                  {qr && (
-                    <div className="bg-[#0a0a0a] border border-primary/30 rounded-2xl p-3">
-                      <img src={qr} alt="Join QR code" className="w-44 h-44" />
-                    </div>
-                  )}
-                  <div className="text-center">
-                    <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Join code</p>
-                    <p className="font-condensed text-4xl font-black tracking-[0.3em]" data-testid="text-share-join-code">{joinCode}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
-                    onClick={() => copy(joinLink, 'joinlink')}
-                    data-testid="button-copy-join-link"
-                  >
-                    {copied === 'joinlink' ? <><Check className="w-3.5 h-3.5 mr-2" /> Copied</> : <><Copy className="w-3.5 h-3.5 mr-2" /> Copy join link</>}
-                  </Button>
-                </div>
                 <div className="border-t border-border/50 pt-3">
                   <button
                     type="button"
