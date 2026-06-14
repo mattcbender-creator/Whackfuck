@@ -90,18 +90,17 @@ export default function JoinTournament() {
         setStep('rejoin');
         return;
       }
-      // QR code path — pre-fetch teams so the list is ready the moment the
-      // choose step renders (onSnapshot will keep it live after that).
+      // QR code path — show choose step immediately with a loading indicator,
+      // then pre-fetch teams in the background. The choose step renders while
+      // teamsLoading=true so players see "Loading teams…" rather than the
+      // misleading "No teams registered yet" empty state. onSnapshot keeps
+      // the list live once the initial fetch resolves.
       setTeamsLoading(true);
-      try {
-        const list = await fetchTeamsForTournament(t.id);
-        setTeams(list);
-      } catch {
-        setTeamsError('Couldn\u2019t load teams — pull to refresh.');
-      } finally {
-        setTeamsLoading(false);
-      }
       setStep('choose');
+      fetchTeamsForTournament(t.id)
+        .then(list => { setTeams(list); })
+        .catch(() => { setTeamsError('Couldn\u2019t load teams — pull to refresh.'); })
+        .finally(() => { setTeamsLoading(false); });
     } catch {
       setError('Something went wrong looking up that code.');
     } finally {

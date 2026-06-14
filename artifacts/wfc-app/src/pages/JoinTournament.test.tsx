@@ -33,22 +33,32 @@ vi.mock('@/lib/firebase', () => ({ db: {}, isFirebaseConfigured: true }));
 // them without error.
 const fs = vi.hoisted(() => {
   let teams: Array<{ id: string; teamName: string; players: string[]; teamCode: string }> = [];
+  let snapError = false;
   const setTeams = (t: typeof teams) => { teams = t; };
-  const onSnapshot = (_col: unknown, cb: (snap: unknown) => void) => {
-    cb({
-      docs: teams.map(t => ({
-        id: t.id,
-        data: () => ({
-          teamName: t.teamName,
-          players: t.players,
-          teamCode: t.teamCode,
-          lastUpdated: 0,
-        }),
-      })),
-    });
+  const setSnapError = (v: boolean) => { snapError = v; };
+  const onSnapshot = (
+    _col: unknown,
+    cb: (snap: unknown) => void,
+    errCb?: (err: unknown) => void,
+  ) => {
+    if (snapError && errCb) {
+      errCb(new Error('Simulated snapshot error'));
+    } else {
+      cb({
+        docs: teams.map(t => ({
+          id: t.id,
+          data: () => ({
+            teamName: t.teamName,
+            players: t.players,
+            teamCode: t.teamCode,
+            lastUpdated: 0,
+          }),
+        })),
+      });
+    }
     return () => {};
   };
-  return { setTeams, onSnapshot };
+  return { setTeams, setSnapError, onSnapshot };
 });
 
 vi.mock('firebase/firestore', () => ({
@@ -126,6 +136,7 @@ describe('JoinTournament — team code required setting', () => {
     ctx.enterSpectator.mockReset();
     ctx.lookupJoinCode.mockReset();
     fs.setTeams([TEAM]);
+    fs.setSnapError(false);
   });
 
   afterEach(() => {
@@ -186,21 +197,18 @@ describe('JoinTournament — eager team fetch on QR code path', () => {
     ctx.enterSpectator.mockReset();
     ctx.lookupJoinCode.mockReset();
     vi.mocked(fetchTeamsForTournament).mockReset();
-    // Snapshot delivers nothing by default in this suite — teams must come from
-    // the eager fetchTeamsForTournament call made in resolveCode.
     fs.setTeams([]);
+    fs.setSnapError(false);
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('calls fetchTeamsForTournament for the QR code path (teams shown immediately)', async () => {
+  it('calls fetchTeamsForTournament for the QR code path and shows teams once loaded', async () => {
     ctx.lookupJoinCode.mockResolvedValue(makeTournament({ requireTeamCode: false }));
-    // Eager fetch returns the team. The onSnapshot mock fires synchronously
-    // with whatever fs.setTeams() holds, so we set it to match — the point of
-    // this test is that fetchTeamsForTournament is called (the previous bug was
-    // that it was never called), not the timing of state merges with onSnapshot.
+    // Both the eager fetch AND the onSnapshot return the team so the state
+    // is consistent regardless of which arrives first in the test environment.
     vi.mocked(fetchTeamsForTournament).mockResolvedValue([TEAM]);
     fs.setTeams([TEAM]);
 
@@ -209,40 +217,55 @@ describe('JoinTournament — eager team fetch on QR code path', () => {
     fireEvent.change(input, { target: { value: 'WFCDUN' } });
     fireEvent.click(screen.getByTestId('button-resolve-code'));
 
-    // The critical contract: fetchTeamsForTournament is called with the
-    // tournament id on the QR code (choose) path. Before the fix it was never
-    // called here — teams only came from onSnapshot, which fires asynchronously
-    // in production and left the list empty during the first render.
+    // The critical regression contract: fetchTeamsForTournament must be called
+    // with the tournament id on the QR code path. Before the fix it was never
+    // called — teams came only from onSnapshot, which fires asynchronously in
+    // production and left the list empty on first render.
     await waitFor(() =>
       expect(vi.mocked(fetchTeamsForTournament)).toHaveBeenCalledWith('t_join'),
     );
-
-    // The choose step renders with the team list.
+    // Once both fetch and snapshot have resolved, the team list is visible.
     await screen.findByTestId(`button-team-${TEAM.id}`);
   });
 
-  it('does NOT call fetchTeamsForTournament for a team deep-link (autoTeamCode path)', async () => {
+  it('shows "Loading teams…" while the fetch is in flight, then teams once resolved', async () => {
     ctx.lookupJoinCode.mockResolvedValue(makeTournament({ requireTeamCode: false }));
-    // The autoTeamCode path calls fetchTeamsForTournament itself — ensure our new
-    // QR-code call doesn't fire on top of it when a teamCode is present.
-    vi.mocked(fetchTeamsForTournament).mockResolvedValue([TEAM]);
+    // Snapshot delivers nothing so onSnapshot doesn't preempt the loading state.
+    // fs.setTeams([]) is already the beforeEach default.
+    let resolveTeams!: (list: typeof TEAM[]) => void;
+    vi.mocked(fetchTeamsForTournament).mockReturnValue(
+      new Promise<typeof TEAM[]>(res => { resolveTeams = res; }),
+    );
 
     render(<JoinTournament />);
-    // Simulate arriving via /join/WFCDUN/WXYZ (autoTeamCode supplied).  Directly
-    // invoke resolveCode by rendering with params; we simulate by typing the code
-    // and asserting only ONE fetchTeams call total (the one from autoTeamCode).
     const input = screen.getByTestId('input-join-code') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'WFCDUN' } });
-
-    // Reach resolveCode's autoTeamCode branch by driving it from the deep-link
-    // effect — we do this by importing and re-invoking.  The easiest proxy: the
-    // autoTeamCode branch is exercised by the params useEffect on mount when
-    // params.teamCode is set. Since we can't supply route params in this test
-    // without a router, we verify the QR path contract: clicking Continue (no
-    // autoTeamCode) triggers exactly one fetchTeamsForTournament call.
     fireEvent.click(screen.getByTestId('button-resolve-code'));
-    await waitFor(() =>
-      expect(vi.mocked(fetchTeamsForTournament)).toHaveBeenCalledTimes(1),
-    );
+
+    // While the fetch is pending (deferred promise), teamsLoading=true so the
+    // loading placeholder is shown in place of the empty-state message.
+    await screen.findByText(/loading teams/i);
+
+    // Resolving the fetch delivers teams and clears the loading indicator.
+    resolveTeams([TEAM]);
+    await screen.findByTestId(`button-team-${TEAM.id}`);
+    expect(screen.queryByText(/loading teams/i)).toBeNull();
+  });
+
+  it('shows an inline error note when the live snapshot listener fails', async () => {
+    ctx.lookupJoinCode.mockResolvedValue(makeTournament({ requireTeamCode: false }));
+    // Snapshot fires the error callback (not the success one) so no
+    // setTeamsError('') clear happens and the error note remains visible.
+    // Fetch succeeds with an empty list — only the snapshot is broken here.
+    fs.setSnapError(true);
+    vi.mocked(fetchTeamsForTournament).mockResolvedValue([]);
+
+    render(<JoinTournament />);
+    const input = screen.getByTestId('input-join-code') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'WFCDUN' } });
+    fireEvent.click(screen.getByTestId('button-resolve-code'));
+
+    // Error note from the snapshot error handler is visible (not a silent empty list).
+    await screen.findByText(/live updates paused/i);
   });
 });
