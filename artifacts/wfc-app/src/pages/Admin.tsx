@@ -319,7 +319,6 @@ export default function Admin() {
   const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
 
   // Share & invite panel
-  const [shareOpen, setShareOpen] = useState(false);
   const [qr, setQr] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -330,7 +329,6 @@ export default function Admin() {
   const [correctSaving, setCorrectSaving] = useState(false);
 
   // Code management
-  const [codeOpen, setCodeOpen] = useState(false);
   const [codeBusy, setCodeBusy] = useState(false);
   const [newHostKey, setNewHostKey] = useState<string | null>(null);
 
@@ -364,6 +362,14 @@ export default function Admin() {
   // in-progress edits aren't clobbered by an incoming Firestore update.
   const [rulesDirty, setRulesDirty] = useState(false);
 
+  // New collapsible panel states
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [regOpen, setRegOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [perTeamLinksOpen, setPerTeamLinksOpen] = useState(false);
+
   const loadTeams = useCallback(async () => {
     if (!db || !getActiveTournamentId()) return;
     const snap = await getDocs(teamsCol(db));
@@ -374,7 +380,7 @@ export default function Admin() {
 
   // Live listener while any team-driven panel is open
   useEffect(() => {
-    if (!auth || (!teamsOpen && !auditOpen && !shareOpen) || !db || !getActiveTournamentId()) return;
+    if (!auth || (!teamsOpen && !auditOpen && !perTeamLinksOpen) || !db || !getActiveTournamentId()) return;
     const unsub = onSnapshot(teamsCol(db), snap => {
       const list: LiveTeam[] = snap.docs.map(d => mapTeam(d.id, d.data()));
       list.sort((a, b) => a.netScore - b.netScore);
@@ -382,7 +388,7 @@ export default function Admin() {
     });
     return () => unsub();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth, teamsOpen, auditOpen, shareOpen]);
+  }, [auth, teamsOpen, auditOpen, perTeamLinksOpen]);
 
   // Build the join QR whenever the share panel opens / the join code changes.
   const joinCode = tournament?.joinCode ?? '';
@@ -392,11 +398,11 @@ export default function Admin() {
     joinCode && teamCode ? `${origin}${import.meta.env.BASE_URL}join/${joinCode}/${teamCode}` : '';
 
   useEffect(() => {
-    if (!auth || !shareOpen || !joinLink) { setQr(''); return; }
+    if (!auth || !joinLink) { setQr(''); return; }
     QRCode.toDataURL(joinLink, { margin: 1, width: 220, color: { dark: '#39FF14', light: '#0a0a0a' } })
       .then(setQr)
       .catch(() => setQr(''));
-  }, [auth, shareOpen, joinLink]);
+  }, [auth, joinLink]);
 
   // Keep a live team list for the shotgun assignment card without needing the
   // host to open the Team Management panel first.
@@ -1377,236 +1383,187 @@ export default function Admin() {
           Tournament <span className="text-primary">Control</span>
         </h2>
 
-        {/* ── Broadcast ── */}
-        <div className="bg-card p-6 rounded-xl border border-border space-y-4">
-          <div className="flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-primary" />
-            <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Global Broadcast</h3>
+        {/* ── Status Strip ── */}
+        <div className="bg-card rounded-xl border border-border p-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            {isFinal ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-[11px] font-black uppercase tracking-widest shrink-0">
+                <Trophy className="w-3 h-3" /> Final
+              </span>
+            ) : scoringLocked ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/60 text-amber-400 border border-amber-700/50 text-[11px] font-black uppercase tracking-widest shrink-0">
+                <Lock className="w-3 h-3" /> Locked
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/30 text-[11px] font-black uppercase tracking-widest shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse inline-block" /> Live
+              </span>
+            )}
+            {joinCode ? (
+              <span className="font-condensed text-base font-black tracking-widest text-foreground/80 leading-none shrink-0">{joinCode}</span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground/50 shrink-0">No join code</span>
+            )}
+            <span className="text-[11px] text-muted-foreground/60 leading-none shrink-0">
+              {realTeams.length} {realTeams.length === 1 ? 'team' : 'teams'}
+            </span>
+            <div className="flex-1" />
+            {!isFinal && (
+              <Button
+                type="button"
+                size="sm"
+                variant={scoringLocked ? 'default' : 'outline'}
+                className="h-8 px-3 text-[11px] font-condensed font-black uppercase tracking-widest shrink-0"
+                onClick={() => handleToggleScoringLock(!scoringLocked)}
+                disabled={lockBusy}
+                data-testid="button-toggle-scoring-lock"
+              >
+                {scoringLocked
+                  ? <><LockOpen className="w-3 h-3 mr-1" /> Unlock</>
+                  : <><Lock className="w-3 h-3 mr-1" /> Lock</>}
+              </Button>
+            )}
           </div>
-          <form onSubmit={handleBroadcast} className="space-y-4">
-            <Input
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              placeholder="Message to all players..."
-              className="h-12 bg-input"
-              data-testid="input-broadcast-message"
-            />
-            <Button type="submit" className="w-full h-12" data-testid="button-send-broadcast">Send Broadcast</Button>
-          </form>
+          {scoringLocked && !isFinal && (
+            <p className="text-[11px] text-amber-400/80 mt-2 leading-relaxed">
+              Scoring is paused — teams can't enter scores or spin, but they stay on their own screens.
+            </p>
+          )}
         </div>
 
-        {/* ── Share & Invite ── */}
+        {/* ── Share & Invite (QR always visible) ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <button
-            className="w-full flex items-center justify-between p-5 text-left"
-            onClick={() => setShareOpen(v => !v)}
-            data-testid="button-toggle-share"
-          >
+          <div className="p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Share2 className="w-4 h-4 text-primary" />
               <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Share &amp; Invite</h3>
             </div>
-            <div className="flex items-center gap-3">
-              {joinCode && (
-                <span className="font-condensed text-lg font-black tracking-widest text-primary leading-none">{joinCode}</span>
-              )}
-              {shareOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-            </div>
-          </button>
-
-          {shareOpen && (
-            <div className="border-t border-border p-5 space-y-5">
-              {!joinCode ? (
-                <p className="text-xs text-muted-foreground">No join code — a live connection is required.</p>
-              ) : (
-                <>
-                  <div className="flex flex-col items-center gap-3">
-                    {qr && (
-                      <div className="bg-[#0a0a0a] border border-primary/30 rounded-2xl p-3">
-                        <img src={qr} alt="Join QR code" className="w-44 h-44" />
-                      </div>
-                    )}
-                    <div className="text-center">
-                      <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Join code</p>
-                      <p className="font-condensed text-4xl font-black tracking-[0.3em]" data-testid="text-share-join-code">{joinCode}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
-                      onClick={() => copy(joinLink, 'joinlink')}
-                      data-testid="button-copy-join-link"
-                    >
-                      {copied === 'joinlink' ? <><Check className="w-3.5 h-3.5 mr-2" /> Copied</> : <><Copy className="w-3.5 h-3.5 mr-2" /> Copy join link</>}
-                    </Button>
-                  </div>
-
-                  {/* Per-team invite links */}
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Per-team invite links</p>
-                    {realTeams.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No real teams registered yet.</p>
-                    ) : (
-                      realTeams.map(team => {
-                        const link = inviteLink(team.teamCode ?? '');
-                        return (
-                          <div key={`invite-${team.id}`} className="flex items-center gap-3 bg-secondary/30 rounded-lg px-3 py-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
-                              <p className="text-[11px] text-muted-foreground truncate">{team.teamCode ? `Code · ${team.teamCode}` : 'No team code yet'}</p>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={!link}
-                              onClick={() => copy(link, `invite-${team.id}`)}
-                              className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
-                              data-testid={`button-copy-invite-${team.id}`}
-                              title="Copy invite link"
-                            >
-                              {copied === `invite-${team.id}` ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
-                            </button>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Start Format (normal vs shotgun) ── */}
-        <div className="bg-card p-6 rounded-xl border border-border space-y-3">
-          <div className="flex items-center gap-2">
-            <Flag className="w-4 h-4 text-primary" />
-            <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Start Format</h3>
-          </div>
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <div className="pr-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Shotgun start</p>
-              <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
-                {isShotgun
-                  ? 'Teams tee off on their assigned hole and wrap around all 18. Assign holes below.'
-                  : 'All teams start on hole 1. Turn on to give each team its own starting hole.'}
-              </p>
-            </div>
-            <Switch
-              checked={isShotgun}
-              onCheckedChange={handleToggleStartType}
-              disabled={startTypeBusy}
-              data-testid="switch-admin-start-type"
-            />
-          </label>
-        </div>
-
-        {/* ── Shotgun Assignments (shotgun-start tournaments only) ── */}
-        {isShotgun && (
-          <div className="bg-card p-6 rounded-xl border border-border space-y-4">
-            <div className="flex items-center gap-2">
-              <Flag className="w-4 h-4 text-primary" />
-              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Shotgun Assignments</h3>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Set the starting hole for each team. Players tee off there and wrap around all 18.
-            </p>
-            {teams.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No teams registered yet.</p>
+            {!joinCode ? (
+              <p className="text-xs text-muted-foreground">No join code — a live connection is required.</p>
             ) : (
-              <div className="space-y-2">
-                {teams.map(team => (
-                  <div key={`shotgun-${team.id}`} className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-sm truncate flex-1">{team.teamName}</span>
-                    <select
-                      value={shotgunDraft[team.id] ?? 1}
-                      onChange={e => setShotgunDraft(d => ({ ...d, [team.id]: Number(e.target.value) }))}
-                      data-testid={`select-shotgun-hole-${team.id}`}
-                      className="h-10 px-3 rounded-lg bg-input border border-border text-sm font-condensed font-bold"
-                    >
-                      {Array.from({ length: 18 }, (_, i) => i + 1).map(n => (
-                        <option key={n} value={n}>Hole {n}</option>
-                      ))}
-                    </select>
+              <>
+                <div className="flex flex-col items-center gap-3">
+                  {qr && (
+                    <div className="bg-[#0a0a0a] border border-primary/30 rounded-2xl p-3">
+                      <img src={qr} alt="Join QR code" className="w-44 h-44" />
+                    </div>
+                  )}
+                  <div className="text-center">
+                    <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Join code</p>
+                    <p className="font-condensed text-4xl font-black tracking-[0.3em]" data-testid="text-share-join-code">{joinCode}</p>
                   </div>
-                ))}
-              </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                    onClick={() => copy(joinLink, 'joinlink')}
+                    data-testid="button-copy-join-link"
+                  >
+                    {copied === 'joinlink' ? <><Check className="w-3.5 h-3.5 mr-2" /> Copied</> : <><Copy className="w-3.5 h-3.5 mr-2" /> Copy join link</>}
+                  </Button>
+                </div>
+                <div className="border-t border-border/50 pt-3">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between text-left"
+                    onClick={() => setPerTeamLinksOpen(v => !v)}
+                    data-testid="button-toggle-share"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Per-team invite links</p>
+                    {perTeamLinksOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                  </button>
+                  {perTeamLinksOpen && (
+                    <div className="mt-3 space-y-2">
+                      {realTeams.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No real teams registered yet.</p>
+                      ) : (
+                        realTeams.map(team => {
+                          const link = inviteLink(team.teamCode ?? '');
+                          return (
+                            <div key={`invite-${team.id}`} className="flex items-center gap-3 bg-secondary/30 rounded-lg px-3 py-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm truncate leading-tight">{team.teamName}</p>
+                                <p className="text-[11px] text-muted-foreground truncate">{team.teamCode ? `Code · ${team.teamCode}` : 'No team code yet'}</p>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={!link}
+                                onClick={() => copy(link, `invite-${team.id}`)}
+                                className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
+                                data-testid={`button-copy-invite-${team.id}`}
+                                title="Copy invite link"
+                              >
+                                {copied === `invite-${team.id}` ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
-            <div className="flex gap-3">
-              <Button
-                type="button"
-                variant="secondary"
-                className="flex-1 h-11"
-                onClick={handleAutoAssignShotgun}
-                disabled={teams.length === 0}
-                data-testid="button-auto-assign-shotgun"
-              >
-                <RefreshCw className="w-4 h-4 mr-1" />
-                Auto-assign
-              </Button>
-              <Button
-                type="button"
-                className="flex-1 h-11"
-                onClick={handleSaveShotgun}
-                disabled={shotgunSaving || teams.length === 0}
-                data-testid="button-save-shotgun"
-              >
-                {shotgunSaving ? 'Saving…' : 'Save'}
-              </Button>
-            </div>
           </div>
-        )}
+        </div>
 
-        {/* ── Hole Rules ── */}
+        {/* ── Global Broadcast (collapsible) ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           <button
             className="w-full flex items-center justify-between p-5 text-left"
-            onClick={() => setRulesOpen(o => !o)}
-            data-testid="button-toggle-rules"
+            onClick={() => setBroadcastOpen(v => !v)}
+            data-testid="button-toggle-broadcast"
           >
             <div className="flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-primary" />
-              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Hole Rules</h3>
+              <Megaphone className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Global Broadcast</h3>
             </div>
-            {rulesOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            {broadcastOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
           </button>
-          {rulesOpen && (
-            <div className="px-5 pb-5 space-y-4">
-              <RuleBuilder
-                holeRules={ruleDraft}
-                onHoleRulesChange={r => { setRuleDraft(r); setRulesDirty(true); }}
-                customRules={customDraft}
-                onCustomRulesChange={r => { setCustomDraft(r); setRulesDirty(true); }}
-              />
-              <Button
-                type="button"
-                className="w-full h-12"
-                onClick={handleSaveRules}
-                disabled={rulesSaving}
-                data-testid="button-save-rules"
-              >
-                {rulesSaving ? 'Saving…' : 'Save Hole Rules'}
-              </Button>
+          {broadcastOpen && (
+            <div className="border-t border-border p-5">
+              <form onSubmit={handleBroadcast} className="space-y-4">
+                <Input
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  placeholder="Message to all players..."
+                  className="h-12 bg-input"
+                  data-testid="input-broadcast-message"
+                />
+                <Button type="submit" className="w-full h-12" data-testid="button-send-broadcast">Send Broadcast</Button>
+              </form>
             </div>
           )}
         </div>
 
-        {/* ── Team Management ── */}
+        {/* ── Manage Teams ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <button
-            className="w-full flex items-center justify-between p-5 text-left"
-            onClick={() => { setTeamsOpen(v => !v); }}
-          >
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between px-5 py-4">
+            <button
+              className="flex items-center gap-2 flex-1 text-left"
+              onClick={() => setTeamsOpen(v => !v)}
+            >
               <Users className="w-4 h-4 text-primary" />
               <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Manage Teams</h3>
-            </div>
-            <div className="flex items-center gap-3">
+            </button>
+            <div className="flex items-center gap-2 shrink-0">
               <span className="font-condensed text-lg font-black text-primary leading-none">
                 {realTeams.length} real · {demoTeams.length} demo
               </span>
-              {teamsOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+              <button
+                type="button"
+                onClick={openCreateTeam}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                title="Add team"
+                data-testid="button-add-team-quick"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button className="p-1" onClick={() => setTeamsOpen(v => !v)}>
+                {teamsOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+              </button>
             </div>
-          </button>
+          </div>
 
           {teamsOpen && (
             <div className="border-t border-border">
@@ -1625,7 +1582,6 @@ export default function Admin() {
                 <p className="text-xs text-muted-foreground text-center py-6 px-5">No teams registered yet.</p>
               )}
 
-              {/* Real teams */}
               {realTeams.length > 0 && (
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60 px-5 py-2 border-b border-border/50">
@@ -1646,7 +1602,6 @@ export default function Admin() {
                 </div>
               )}
 
-              {/* Demo teams (collapsed count only) */}
               {demoTeams.length > 0 && (
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 px-5 py-2 border-t border-border/50">
@@ -1755,8 +1710,6 @@ export default function Admin() {
                             <p className="text-[11px] text-foreground/80 mt-1 leading-snug">{f.detail}</p>
                           </div>
                         ))}
-
-                        {/* Mini hole-by-hole breakdown */}
                         <div className="bg-secondary/30 rounded-lg p-2 mt-2">
                           <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5 px-1">
                             Hole-by-Hole
@@ -1786,7 +1739,6 @@ export default function Admin() {
                             })}
                           </div>
                         </div>
-
                         <div className="flex gap-2 text-[10px] text-muted-foreground/70 pt-1 px-1 flex-wrap">
                           <span>Spins: <span className="text-foreground/80">{Object.keys(team.wheelSpins ?? {}).length}</span></span>
                           <span>· Adj: <span className="text-foreground/80">{team.wheelAdjustment ?? 0}</span></span>
@@ -1800,138 +1752,153 @@ export default function Admin() {
           )}
         </div>
 
-        {/* ── Demo Mode ── */}
-        <div className="bg-primary/5 p-6 rounded-xl border border-primary/30 space-y-4">
-          <div className="flex items-center gap-2">
-            <Beaker className="w-4 h-4 text-primary" />
-            <h3 className="font-bold uppercase tracking-widest text-sm text-primary">Demo Mode</h3>
-          </div>
-          <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-            Seeds fake teams scattered randomly across the course. Live Simulation makes them play like real users — firing off wild scores, trash-talking the Lounge, and sliding into your DMs. Use this to walk the group through the leaderboard, wheel effects, chat, and live sync before tee-off.
-          </p>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label htmlFor="demo-count" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                Number of Teams
-              </label>
-              <span className="font-condensed text-2xl font-black text-primary leading-none">{demoCount}</span>
-            </div>
-            <input
-              id="demo-count"
-              type="range"
-              min={2}
-              max={30}
-              value={demoCount}
-              onChange={e => setDemoCount(Number(e.target.value))}
-              className="w-full accent-primary"
-              data-testid="slider-demo-count"
-            />
-            <div className="flex justify-between text-[9px] text-muted-foreground/60 uppercase tracking-widest">
-              <span>2</span><span>30</span>
-            </div>
-          </div>
-
-          <Button
-            onClick={handleSeedDemo}
-            disabled={seeding}
-            className="w-full h-12 bg-primary text-primary-foreground font-condensed font-black uppercase tracking-widest"
-            data-testid="button-seed-demo"
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            {seeding ? 'Seeding…' : `Seed ${demoCount} Demo Teams`}
-          </Button>
-
-          {simulating ? (
-            <div className="space-y-3" data-testid="demo-running-panel">
-              {/* Auto-stop warning banner */}
-              <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/40 rounded-lg p-3">
-                <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-yellow-200/90 leading-relaxed">
-                  Demo Mode active — will auto-stop in 5 minutes to protect Firebase limits.
-                </p>
-              </div>
-
-              {/* Live countdown timer */}
-              <div className="flex items-center justify-center gap-2 bg-black/40 border border-primary/30 rounded-lg py-3">
-                <Timer className="w-5 h-5 text-primary" />
-                <span
-                  className="font-condensed text-3xl font-black text-primary leading-none tabular-nums"
-                  data-testid="text-demo-countdown"
-                >
-                  {Math.floor(demoSecondsLeft / 60)}:{String(demoSecondsLeft % 60).padStart(2, '0')}
-                </span>
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70">until auto-stop</span>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70 uppercase tracking-widest justify-center">
-                <MessageSquare className="w-3 h-3 text-primary/70" />
-                Bots scoring + chatting live
-              </div>
-
-              <Button
-                onClick={() => setSimulating(false)}
-                className="w-full h-12 bg-red-500 text-white font-condensed font-black uppercase tracking-widest hover:bg-red-600"
-                data-testid="button-stop-demo"
-              >
-                <Pause className="w-4 h-4 mr-2" /> Stop Demo Now
-              </Button>
-            </div>
-          ) : (
-            <Button
-              onClick={() => setSimulating(true)}
-              variant="outline"
-              className="w-full h-10 text-xs uppercase tracking-widest font-bold border-primary/40 text-primary hover:bg-primary/10"
-              data-testid="button-simulate-live"
-            >
-              <Play className="w-3 h-3 mr-2" /> Start Live Simulation
-            </Button>
-          )}
-
-          <Button
-            onClick={handleClearDemo}
-            variant="outline"
-            className="w-full h-10 text-xs uppercase tracking-widest font-bold border-primary/30 text-primary/80 hover:bg-primary/10"
-            data-testid="button-clear-demo"
-          >
-            Clear All Demo Data
-          </Button>
-        </div>
-
-        {/* ── Code Management ── */}
+        {/* ── Format & Rules (Start Format + Shotgun Assignments + Hole Rules merged) ── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           <button
             className="w-full flex items-center justify-between p-5 text-left"
-            onClick={() => setCodeOpen(v => !v)}
-            data-testid="button-toggle-codes"
+            onClick={() => setFormatOpen(v => !v)}
+            data-testid="button-toggle-format"
           >
             <div className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary" />
-              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Code Management</h3>
+              <Flag className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Format &amp; Rules</h3>
             </div>
-            {codeOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-muted-foreground/60 leading-none">{isShotgun ? 'Shotgun' : 'Normal'}</span>
+              {formatOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
           </button>
 
-          {codeOpen && (
-            <div className="border-t border-border p-5 space-y-5">
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Admin code</p>
-                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                  Regenerating creates a new admin code. Anyone using the old code can no longer reach this panel — re-share the new code with co-hosts.
-                </p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
-                  onClick={handleRegenAdminCode}
-                  disabled={codeBusy}
-                  data-testid="button-regen-admin-code"
-                >
-                  <KeyRound className="w-3.5 h-3.5 mr-2" /> Regenerate admin code
-                </Button>
+          {formatOpen && (
+            <div className="border-t border-border divide-y divide-border/50">
+              {/* Start type */}
+              <div className="p-5">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <div className="pr-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Shotgun start</p>
+                    <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
+                      {isShotgun
+                        ? 'Teams tee off on their assigned hole and wrap around all 18. Assign holes below.'
+                        : 'All teams start on hole 1. Turn on to give each team its own starting hole.'}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={isShotgun}
+                    onCheckedChange={handleToggleStartType}
+                    disabled={startTypeBusy}
+                    data-testid="switch-admin-start-type"
+                  />
+                </label>
               </div>
 
-              <label className="flex items-center justify-between gap-3 pt-1 border-t border-border/50 cursor-pointer">
+              {/* Shotgun hole assignments */}
+              {isShotgun && (
+                <div className="p-5 space-y-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Hole Assignments</p>
+                  <p className="text-xs text-muted-foreground">
+                    Set the starting hole for each team. Players tee off there and wrap around all 18.
+                  </p>
+                  {teams.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No teams registered yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {teams.map(team => (
+                        <div key={`shotgun-${team.id}`} className="flex items-center justify-between gap-3">
+                          <span className="font-bold text-sm truncate flex-1">{team.teamName}</span>
+                          <select
+                            value={shotgunDraft[team.id] ?? 1}
+                            onChange={e => setShotgunDraft(d => ({ ...d, [team.id]: Number(e.target.value) }))}
+                            data-testid={`select-shotgun-hole-${team.id}`}
+                            className="h-10 px-3 rounded-lg bg-input border border-border text-sm font-condensed font-bold"
+                          >
+                            {Array.from({ length: 18 }, (_, i) => i + 1).map(n => (
+                              <option key={n} value={n}>Hole {n}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="flex-1 h-11"
+                      onClick={handleAutoAssignShotgun}
+                      disabled={teams.length === 0}
+                      data-testid="button-auto-assign-shotgun"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Auto-assign
+                    </Button>
+                    <Button
+                      type="button"
+                      className="flex-1 h-11"
+                      onClick={handleSaveShotgun}
+                      disabled={shotgunSaving || teams.length === 0}
+                      data-testid="button-save-shotgun"
+                    >
+                      {shotgunSaving ? 'Saving…' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Hole Rules */}
+              <div className="p-5 space-y-4">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between"
+                  onClick={() => setRulesOpen(o => !o)}
+                  data-testid="button-toggle-rules"
+                >
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-primary" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Hole Rules</p>
+                  </div>
+                  {rulesOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                </button>
+                {rulesOpen && (
+                  <div className="space-y-4">
+                    <RuleBuilder
+                      holeRules={ruleDraft}
+                      onHoleRulesChange={r => { setRuleDraft(r); setRulesDirty(true); }}
+                      customRules={customDraft}
+                      onCustomRulesChange={r => { setCustomDraft(r); setRulesDirty(true); }}
+                    />
+                    <Button
+                      type="button"
+                      className="w-full h-12"
+                      onClick={handleSaveRules}
+                      disabled={rulesSaving}
+                      data-testid="button-save-rules"
+                    >
+                      {rulesSaving ? 'Saving…' : 'Save Hole Rules'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Registration Settings ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setRegOpen(v => !v)}
+            data-testid="button-toggle-registration"
+          >
+            <div className="flex items-center gap-2">
+              <Grid3x3 className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Registration</h3>
+            </div>
+            {regOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+
+          {regOpen && (
+            <div className="border-t border-border p-5 space-y-4">
+              <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <div className="pr-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Require team code to join</p>
                   <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
@@ -1964,60 +1931,11 @@ export default function Admin() {
                   data-testid="switch-admin-use-team-names"
                 />
               </label>
-
-              <div className="space-y-2 pt-1 border-t border-border/50">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">Host key</p>
-                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                  Rotating the host key immediately signs out every other host device. This device stays in control. Only do this if a host link leaked.
-                </p>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
-                  onClick={handleRotateHostKey}
-                  disabled={codeBusy}
-                  data-testid="button-rotate-host-key"
-                >
-                  <KeyRound className="w-3.5 h-3.5 mr-2" /> Rotate host key
-                </Button>
-                {newHostKey && (
-                  <p className="text-[11px] text-primary leading-relaxed">
-                    Host key rotated. This device remains the host. Other host devices must rejoin with a fresh invite.
-                  </p>
-                )}
-              </div>
             </div>
           )}
         </div>
 
-        {/* ── Lock / Unlock Scoring (pause, not finalize) ── */}
-        {!isFinal && (
-          <div className="bg-card p-6 rounded-xl border border-border space-y-4">
-            <div className="flex items-center gap-2">
-              {scoringLocked ? <Lock className="w-4 h-4 text-amber-400" /> : <LockOpen className="w-4 h-4 text-primary" />}
-              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Scoring</h3>
-            </div>
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-              {scoringLocked
-                ? "Scoring is locked. Teams can't enter scores or spin, but they stay on their own screens — nobody is moved to results."
-                : 'Scoring is open. Lock it to set teams up before play or to pause mid-round — players stay where they are.'}
-            </p>
-            <Button
-              type="button"
-              variant={scoringLocked ? 'default' : 'outline'}
-              className="w-full h-12 font-condensed font-black uppercase tracking-widest"
-              onClick={() => handleToggleScoringLock(!scoringLocked)}
-              disabled={lockBusy}
-              data-testid="button-toggle-scoring-lock"
-            >
-              {scoringLocked
-                ? <><LockOpen className="w-4 h-4 mr-2" /> Unlock Scoring</>
-                : <><Lock className="w-4 h-4 mr-2" /> Lock Scoring</>}
-            </Button>
-          </div>
-        )}
-
-        {/* ── Finalize Tournament ── */}
+        {/* ── Tournament Finale ── */}
         <div className="bg-card p-6 rounded-xl border border-border space-y-4">
           <div className="flex items-center gap-2">
             <Trophy className="w-4 h-4 text-primary" />
@@ -2065,6 +1983,172 @@ export default function Admin() {
                 <Trophy className="w-4 h-4 mr-2" /> Finalize &amp; Crown Winners
               </Button>
             </>
+          )}
+        </div>
+
+        {/* ── Security (renamed from Code Management) ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setSecurityOpen(v => !v)}
+            data-testid="button-toggle-codes"
+          >
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Security</h3>
+            </div>
+            {securityOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+
+          {securityOpen && (
+            <div className="border-t border-border p-5 space-y-5">
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Admin code</p>
+                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                  Regenerating creates a new admin code. Anyone using the old code can no longer reach this panel — re-share the new code with co-hosts.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                  onClick={handleRegenAdminCode}
+                  disabled={codeBusy}
+                  data-testid="button-regen-admin-code"
+                >
+                  <KeyRound className="w-3.5 h-3.5 mr-2" /> Regenerate admin code
+                </Button>
+              </div>
+
+              <div className="space-y-2 pt-1 border-t border-border/50">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">Host key</p>
+                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                  Rotating the host key immediately signs out every other host device. This device stays in control. Only do this if a host link leaked.
+                </p>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="w-full h-11 font-condensed font-bold uppercase tracking-widest text-xs"
+                  onClick={handleRotateHostKey}
+                  disabled={codeBusy}
+                  data-testid="button-rotate-host-key"
+                >
+                  <KeyRound className="w-3.5 h-3.5 mr-2" /> Rotate host key
+                </Button>
+                {newHostKey && (
+                  <p className="text-[11px] text-primary leading-relaxed">
+                    Host key rotated. This device remains the host. Other host devices must rejoin with a fresh invite.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Demo Mode (collapsible, de-emphasized) ── */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between p-5 text-left"
+            onClick={() => setDemoOpen(v => !v)}
+            data-testid="button-toggle-demo"
+          >
+            <div className="flex items-center gap-2">
+              <Beaker className="w-4 h-4 text-primary" />
+              <h3 className="font-bold uppercase tracking-widest text-sm text-muted-foreground">Demo Mode</h3>
+            </div>
+            {demoOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+
+          {demoOpen && (
+            <div className="border-t border-border p-6 space-y-4">
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                Seeds fake teams scattered randomly across the course. Live Simulation makes them play like real users — firing off wild scores, trash-talking the Lounge, and sliding into your DMs. Use this to walk the group through the leaderboard, wheel effects, chat, and live sync before tee-off.
+              </p>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="demo-count" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    Number of Teams
+                  </label>
+                  <span className="font-condensed text-2xl font-black text-primary leading-none">{demoCount}</span>
+                </div>
+                <input
+                  id="demo-count"
+                  type="range"
+                  min={2}
+                  max={30}
+                  value={demoCount}
+                  onChange={e => setDemoCount(Number(e.target.value))}
+                  className="w-full accent-primary"
+                  data-testid="slider-demo-count"
+                />
+                <div className="flex justify-between text-[9px] text-muted-foreground/60 uppercase tracking-widest">
+                  <span>2</span><span>30</span>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSeedDemo}
+                disabled={seeding}
+                className="w-full h-12 font-condensed font-black uppercase tracking-widest"
+                data-testid="button-seed-demo"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                {seeding ? 'Seeding…' : `Seed ${demoCount} Demo Teams`}
+              </Button>
+
+              {simulating ? (
+                <div className="space-y-3" data-testid="demo-running-panel">
+                  <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/40 rounded-lg p-3">
+                    <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-yellow-200/90 leading-relaxed">
+                      Demo Mode active — will auto-stop in 5 minutes to protect Firebase limits.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-center gap-2 bg-black/40 border border-primary/30 rounded-lg py-3">
+                    <Timer className="w-5 h-5 text-primary" />
+                    <span
+                      className="font-condensed text-3xl font-black text-primary leading-none tabular-nums"
+                      data-testid="text-demo-countdown"
+                    >
+                      {Math.floor(demoSecondsLeft / 60)}:{String(demoSecondsLeft % 60).padStart(2, '0')}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70">until auto-stop</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70 uppercase tracking-widest justify-center">
+                    <MessageSquare className="w-3 h-3 text-primary/70" />
+                    Bots scoring + chatting live
+                  </div>
+
+                  <Button
+                    onClick={() => setSimulating(false)}
+                    className="w-full h-12 bg-red-500 text-white font-condensed font-black uppercase tracking-widest hover:bg-red-600"
+                    data-testid="button-stop-demo"
+                  >
+                    <Pause className="w-4 h-4 mr-2" /> Stop Demo Now
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  onClick={() => setSimulating(true)}
+                  variant="outline"
+                  className="w-full h-10 text-xs uppercase tracking-widest font-bold border-primary/40 text-primary hover:bg-primary/10"
+                  data-testid="button-simulate-live"
+                >
+                  <Play className="w-3 h-3 mr-2" /> Start Live Simulation
+                </Button>
+              )}
+
+              <Button
+                onClick={handleClearDemo}
+                variant="outline"
+                className="w-full h-10 text-xs uppercase tracking-widest font-bold border-border text-muted-foreground/80 hover:bg-secondary/50"
+                data-testid="button-clear-demo"
+              >
+                Clear All Demo Data
+              </Button>
+            </div>
           )}
         </div>
 
