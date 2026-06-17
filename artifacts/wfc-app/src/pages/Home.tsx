@@ -259,8 +259,8 @@ export default function Home() {
     setTeamInfo({ teamName: name, players: cleaned });
     setEditing(false);
     if (!wasEditing) {
-      // First registration → go straight to hole view
-      setLocation('/hole');
+      // First registration → go to home so the team card shows before play
+      setLocation('/');
     }
     // Edit → stay on home, form closes, team card refreshes
   };
@@ -426,81 +426,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Existing teams to join — shown to unregistered devices so teammates
-            don't accidentally create duplicate teams ── */}
-        {!teamInfo && !hasSubmitted && !editing && existingTeams.length > 0 && (
-          <div className={`w-full transition-all duration-700 delay-150 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-            <div className="space-y-2">
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-                <Users className="w-3 h-3" />
-                {teamsLoading ? 'Loading teams…' : 'Join a team already in the tournament'}
-              </p>
-              {existingTeams.map(t => (
-                <div
-                  key={t.id}
-                  className="bg-card border border-border/60 rounded-2xl px-4 py-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-condensed font-black uppercase tracking-tight text-base text-foreground leading-tight truncate">
-                        {t.teamName}
-                      </p>
-                      {teamSubtitle(t.teamName, t.players) && (
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {teamSubtitle(t.teamName, t.players)}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => startJoinExisting(t)}
-                      data-testid={`button-join-team-${t.id}`}
-                      className="shrink-0 px-4 py-2 rounded-full bg-primary text-black font-condensed font-black uppercase tracking-widest text-xs hover:opacity-90 transition-opacity"
-                    >
-                      Join
-                    </button>
-                  </div>
-                  {requireTeamCode && joinTeamId === t.id && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                        Enter this team's 4-character code
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={joinCodeInput}
-                          onChange={e => { setJoinCodeInput(e.target.value.toUpperCase()); setJoinCodeError(false); }}
-                          onKeyDown={e => { if (e.key === 'Enter') confirmJoinExisting(t); }}
-                          maxLength={4}
-                          autoFocus
-                          data-testid={`input-team-code-${t.id}`}
-                          className="flex-1 min-w-0 bg-input border border-border/60 rounded-xl px-3 py-2 font-condensed font-black uppercase tracking-[0.3em] text-foreground text-center focus:outline-none focus:border-primary"
-                          placeholder="••••"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => confirmJoinExisting(t)}
-                          data-testid={`button-confirm-join-${t.id}`}
-                          className="shrink-0 px-4 py-2 rounded-full bg-primary text-black font-condensed font-black uppercase tracking-widest text-xs hover:opacity-90 transition-opacity"
-                        >
-                          Go
-                        </button>
-                      </div>
-                      {joinCodeError && (
-                        <p className="text-[11px] text-destructive">Wrong code. Ask your team captain.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div className="flex items-center gap-3 py-1">
-                <div className="h-px flex-1 bg-border/40" />
-                <span className="text-[10px] text-muted-foreground uppercase tracking-widest">or create a new team</span>
-                <div className="h-px flex-1 bg-border/40" />
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ── Registration form ── */}
         {showForm && !hasSubmitted && (
@@ -574,7 +499,7 @@ export default function Home() {
                 disabled={isLocked || nameTaken}
                 className="w-full h-14 font-condensed text-2xl font-black tracking-widest uppercase rounded-full neon-border disabled:opacity-50"
               >
-                {editing ? 'Save Changes' : 'Start Tournament'}
+                {editing ? 'Save Changes' : 'Register >'}
               </Button>
 
               {editing && (

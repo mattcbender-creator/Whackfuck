@@ -71,7 +71,7 @@ export const HOLES = [
     rule: "Roll the wooden die once per team and follow the instructions." },
 
   { hole: 17, hdcp: 18, par: 3, tips: 148, mid: 137, womens: 112,
-    ruleName: "BunkerTube / Longest Drive",
+    ruleName: "BunkerTube / Longest Putt",
     rule: "If your ball lands in the fairway bunkers on the right side of the fairway, transport it to the greenside bunker. This hole also features a longest drive contest (must land on the fairway)." },
 
   { hole: 18, hdcp: 12, par: 5, tips: 495, mid: 470, womens: 415,

@@ -14,8 +14,6 @@ import { useToast } from '@/hooks/use-toast';
 import WheelModal from '@/components/WheelModal';
 import { getWheelItem } from '@/lib/wheel';
 
-type Half = 'front' | 'back';
-
 function fmtNet(diff: number) {
   if (diff === 0) return 'E';
   return diff > 0 ? `+${diff}` : `${diff}`;
@@ -231,7 +229,6 @@ export default function Scorecard() {
     return pos === -1 ? 17 : pos;
   })();
   const initialIdx = holeOrder[initialPos] - 1;
-  const [half, setHalf] = useState<Half>(initialPos >= 9 ? 'back' : 'front');
   const [selectedIdx, setSelectedIdx] = useState(initialIdx);
   const userNavigatedRef = useRef(false);
   // Mark a manual selection so the auto-jump effect won't override it.
@@ -252,28 +249,29 @@ export default function Scorecard() {
   const [totalTeams, setTotalTeams] = useState(0);
   const { toast } = useToast();
 
-  // The wheel is now a per-hole rule, not a front-9 lock. The currently selected
-  // hole's spin (if any) drives the "your item" panel.
+  // Per-hole spin for the currently selected hole (drives the "Spin Item Box" prompt).
   const selSpin = wheelSpins[selectedIdx + 1] ?? null;
-  const spunItem = getWheelItem(selSpin?.item);
+  // "Your Item" card: find the first spin on any wheel hole so it's always
+  // visible regardless of which cell is currently selected in the table.
+  const firstSpinEntry = Object.entries(wheelSpins)
+    .find(([holeNum]) => holeRules[Number(holeNum) - 1]?.type === 'wheel');
+  const spunItem = firstSpinEntry ? getWheelItem(firstSpinEntry[1].item) : null;
+  const spunItemHole = firstSpinEntry ? Number(firstSpinEntry[0]) : null;
   const anyWheelHole = holeRules.some(r => r?.type === 'wheel');
   // The selected hole only gets a "Check Rule" affordance when it actually
   // carries a rule — plain holes (type 'none') have nothing to show.
   const selRule = holeRules[selectedIdx];
   const selHasRule = !!selRule && selRule.type !== 'none';
 
-  // Play-order halves: first 9 played holes vs last 9, by hole index. For a
-  // normal start these are [0..8] / [9..17]; a shotgun start wraps around.
-  const frontIdxs = holeOrder.slice(0, 9).map(n => n - 1);
-  const backIdxs = holeOrder.slice(9, 18).map(n => n - 1);
-  const halfIdxs = half === 'front' ? frontIdxs : backIdxs;
+  // Play position (0–17) of a given hole index — used for Prev/Next navigation.
+  const playPos = (idx: number) => holeOrder.indexOf(idx + 1);
+
+  // All 18 holes in play order (shotgun wraps from the team's starting hole).
+  const halfIdxs = holeOrder.map(n => n - 1);
   const halfHoles = halfIdxs.map(idx => HOLES[idx]);
   const halfScores = halfIdxs.map(idx => scores[idx]);
 
-  // Play position (0–17) of a given hole index.
-  const playPos = (idx: number) => holeOrder.indexOf(idx + 1);
-
-  // Running cumulative to-par within this half
+  // Running cumulative to-par across all 18 holes
   let running = 0;
   const cumNets: (number | null)[] = halfHoles.map((h, i) => {
     const s = halfScores[i];
@@ -292,14 +290,6 @@ export default function Scorecard() {
   const selHole = HOLES[selectedIdx];
   const selScore = scores[selectedIdx];
   const selDiff = selScore !== null ? selScore - selHole.par : null;
-
-  // Sync selected half with the play position of the selected hole.
-  useEffect(() => {
-    const pos = playPos(selectedIdx);
-    if (pos < 9 && half !== 'front') setHalf('front');
-    if (pos >= 9 && half !== 'back') setHalf('back');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIdx, half, startingHole]);
 
   // Re-jump to the first unscored hole in play order once the team's starting
   // hole resolves (shotgun assignments load after mount). Never overrides a
@@ -586,28 +576,6 @@ export default function Scorecard() {
             </div>
           )}
 
-          {/* Front / Back toggle */}
-          <div className="flex gap-2 mt-3 bg-secondary/40 rounded-full p-1">
-            {(['front', 'back'] as const).map(h => (
-              <button
-                key={h}
-                onClick={() => {
-                  if (h === 'back') {
-                    selectCell(backIdxs[0]);
-                    setHalf('back');
-                  } else {
-                    setHalf('front');
-                    selectCell(frontIdxs[0]);
-                  }
-                }}
-                className={`flex-1 py-2 rounded-full font-condensed font-bold text-sm uppercase tracking-wider transition-colors ${
-                  half === h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {h === 'front' ? 'Front 9' : 'Back 9'}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -634,7 +602,7 @@ export default function Scorecard() {
                   </td>
                 ))}
                 <td className={`${CELL} font-bold text-muted-foreground/50 text-[10px] border-l border-white/8 w-11`}>
-                  {half === 'front' ? 'OUT' : 'IN'}
+                  TOT
                 </td>
               </tr>
 
@@ -653,23 +621,8 @@ export default function Scorecard() {
                 <td className={`${CELL} text-muted-foreground/50 border-l border-white/8 font-bold`}>{halfTotalPar}</td>
               </tr>
 
-              {/* HDCP row */}
-              <tr className="border-b border-white/8">
-                <td className={`${STICKY} text-muted-foreground/40`}>HDCP</td>
-                {halfHoles.map((h, i) => (
-                  <td
-                    key={h.hole}
-                    onClick={() => selectCell(halfIdxs[i])}
-                    className={`${CELL} text-muted-foreground/40 text-[10px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
-                  >
-                    {h.hdcp}
-                  </td>
-                ))}
-                <td className={`${CELL} border-l border-white/8`} />
-              </tr>
-
-              {/* YDS row */}
-              {trackYardages && (
+              {/* YDS row — hidden when autoTeeRule is on (tee changes each hole) */}
+              {trackYardages && !autoTeeRule && (
               <tr className="border-b border-white/10">
                 <td
                   className={`${STICKY} ${!autoTeeRule ? 'text-foreground/50' : currentTee === 'tips' ? 'text-red-400' : 'text-blue-400'}`}
@@ -690,7 +643,7 @@ export default function Scorecard() {
               )}
 
               {/* Scores divider */}
-              <tr><td colSpan={11} className="h-px bg-primary/20" /></tr>
+              <tr><td colSpan={20} className="h-px bg-primary/20" /></tr>
 
               {/* SCORE row */}
               <tr className="border-b border-white/6">
@@ -757,18 +710,53 @@ export default function Scorecard() {
                 </td>
               </tr>
 
+              {/* WHEEL row — one colored badge per spun Item Box hole */}
+              {anyWheelHole && (
+              <tr>
+                <td className={`${STICKY} text-primary/70`}>WHEEL</td>
+                {halfHoles.map((h, i) => {
+                  const idx = halfIdxs[i];
+                  const isWheelHole = holeRules[idx]?.type === 'wheel';
+                  const spin = wheelSpins[idx + 1];
+                  const item = spin ? getWheelItem(spin.item) : null;
+                  return (
+                    <td
+                      key={h.hole}
+                      onClick={() => selectCell(halfIdxs[i])}
+                      className={`${CELL} py-1.5 text-[9px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
+                    >
+                      {isWheelHole && item ? (
+                        <span
+                          className="inline-block px-1 py-0.5 rounded font-black text-[8px] uppercase leading-none"
+                          style={{ background: item.color, color: item.textColor }}
+                        >
+                          {item.short}
+                        </span>
+                      ) : isWheelHole ? (
+                        <span className="text-primary/30">◆</span>
+                      ) : null}
+                    </td>
+                  );
+                })}
+                <td className={`${CELL} py-1.5 border-l border-white/8 text-[11px] font-bold`}>
+                  <span className={wheelAdjustment === 0 ? 'text-muted-foreground/30' : wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}>
+                    {wheelAdjustment !== 0 ? (wheelAdjustment > 0 ? `+${wheelAdjustment}` : `${wheelAdjustment}`) : ''}
+                  </span>
+                </td>
+              </tr>
+              )}
 
             </tbody>
           </table>
         </div>
 
-        {/* Half summary bar */}
+        {/* Score summary bar */}
         <div className="flex justify-between items-center mt-2 px-1">
           <span className="text-[10px] text-muted-foreground">
-            {halfHolesPlayed} / 9 holes{trackYardages ? ` · ${halfTotalYds.toLocaleString()} yds` : ''}
+            {halfHolesPlayed} / 18 holes{trackYardages && !autoTeeRule ? ` · ${halfTotalYds.toLocaleString()} yds` : ''}
           </span>
           <span className={`text-[10px] font-bold ${netCls(halfNet)}`}>
-            {halfNet === null ? '' : `${fmtNet(halfNet)} this nine`}
+            {halfNet === null ? '' : `${fmtNet(halfNet)} total`}
           </span>
         </div>
 
@@ -788,7 +776,7 @@ export default function Scorecard() {
         {/* Show what you spun on this hole — tap to re-open the wheel modal */}
         {spunItem && (
           <button
-            onClick={() => { setWheelHole(selectedIdx + 1); setWheelOpen(true); }}
+            onClick={() => { setWheelHole(spunItemHole); setWheelOpen(true); }}
             data-testid="button-show-spun-item"
             className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2"
             style={{
@@ -870,8 +858,7 @@ export default function Scorecard() {
                   Par {selHole.par}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {trackYardages && <>{currentTee === 'tips' ? selHole.tips : selHole.womens} yds<span className="ml-2 opacity-60">· </span></>}
-                  <span className="opacity-60">Hdcp {selHole.hdcp}</span>
+                  {trackYardages && !autoTeeRule && <>{currentTee === 'tips' ? selHole.tips : selHole.womens} yds</>}
                 </p>
               </div>
             </div>
