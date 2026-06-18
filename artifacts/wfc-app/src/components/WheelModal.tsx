@@ -261,8 +261,11 @@ export default function WheelModal({ open, onClose, hole }: Props) {
     if (!landed) return;
     try {
       // Only Red Shell uses the picker now — straight +1 on chosen team.
-      await applyEffectToOthers(landed.id, [target.id]);
-      await recordSpinOnSelf(landed, target.teamName);
+      // Shared timestamp so the reconciler's de-dup key (fromTeam|spin.at)
+      // matches the key stored in targetedBy — same fix as applyAutoEffect.
+      const at = Date.now();
+      await applyEffectToOthers(landed.id, [target.id], at);
+      await recordSpinOnSelf(landed, target.teamName, at);
       setPhase('applied');
     } catch (e) {
       console.error('Target effect failed', e);
