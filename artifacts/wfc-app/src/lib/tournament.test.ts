@@ -26,7 +26,7 @@ describe('WFC 2026 preset (toggle ON content)', () => {
     expect(c.name).toBe('Whack Fuck Cup 2026');
     expect(c.courseName).toBe('Dundee Country Club');
     expect(c.teamSize).toBe(2);
-    expect(c.startType).toBe('normal');
+    expect(c.startType).toBe('shotgun');
     expect(c.autoTeeRule).toBe(true);
     expect(c.adminCode.trim().length).toBeGreaterThan(0);
   });
@@ -40,13 +40,14 @@ describe('WFC 2026 preset (toggle ON content)', () => {
     expect(c.trackYardages).toBe(true);
   });
 
-  it('derives 18 hole rules purely from the course (no auto-placed wheel)', () => {
+  it('derives 18 hole rules from the course and places the wheel on hole 18', () => {
     expect(c.holeRules).toHaveLength(18);
     // Hole 9 (index 8) carries the course's own "Twin Putter" standard rule.
     expect(c.holeRules[8].type).toBe('standard');
     expect(c.holeRules[8].ruleName).toBe('Twin Putter');
-    // The Item Box wheel is opt-in via the rule builder — never auto-placed.
-    expect(c.holeRules.filter(r => r.type === 'wheel')).toHaveLength(0);
+    // Hole 18 (index 17) is the single auto-placed Mario Kart Item Box wheel.
+    expect(c.holeRules[17].type).toBe('wheel');
+    expect(c.holeRules.filter(r => r.type === 'wheel')).toHaveLength(1);
   });
 });
 

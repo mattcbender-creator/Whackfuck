@@ -271,21 +271,25 @@ export const WFC_2026_JOIN_CODE = 'WFCDUN';
 export const WFC_2026_HOST_KEY = 'WFC2-026H-OST0-KEY9';
 
 export function buildWfc2026Config(): TournamentConfig {
+  const holes = dundeeCourseDefaults();
+  const holeRules = holeRulesFromCourse(holes);
+  // Hole 18 fires the Mario Kart Item Box wheel.
+  holeRules[17] = { type: 'wheel', ruleName: WHEEL_RULE_NAME, ruleText: WHEEL_RULE_TEXT };
   return {
     id: WFC_2026_ID,
     name: 'Whack Fuck Cup 2026',
     courseName: 'Dundee Country Club',
-    holes: dundeeCourseDefaults(),
+    holes,
     trackYardages: true,
     teamSize: 2,
-    startType: 'normal',
+    startType: 'shotgun',
     autoTeeRule: true,
     requireTeamCode: true,
     useTeamNames: true,
     adminCode: 'dundee2025',
     hostKey: WFC_2026_HOST_KEY,
     joinCode: WFC_2026_JOIN_CODE,
-    holeRules: holeRulesFromCourse(dundeeCourseDefaults()),
+    holeRules,
     customRules: [],
     status: 'live',
     createdAt: Date.now(),

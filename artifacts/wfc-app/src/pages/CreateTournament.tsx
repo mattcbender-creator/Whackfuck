@@ -72,10 +72,11 @@ export default function CreateTournament() {
       setUseTeamNames(c.useTeamNames);
       setHoles(c.holes);
       setHoleRules(c.holeRules);
-      // The preset only pre-fills plain rules derived from the course. The host
-      // adds any wheel/Item Box holes themselves in the rule builder, so let the
-      // holes→rules mirror stay live until they edit.
-      setRulesDirty(false);
+      // The preset ships its own rules — a Mario Kart Item Box wheel on hole 18
+      // plus the plain per-hole rules — so mark rules dirty to keep them as-is.
+      // (Leaving the holes→rules mirror live would wipe the wheel back to a
+      // plain rule.) The host can still edit any rule afterwards.
+      setRulesDirty(true);
       setCustomRules(c.customRules ?? []);
       setAdminCode(c.adminCode);
     } else {
