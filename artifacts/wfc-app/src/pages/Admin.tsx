@@ -1346,7 +1346,7 @@ export default function Admin() {
         // brand-new one when it is re-entered (the WFC preset reuses the same
         // deterministic doc, so leftover 'final' status would otherwise persist).
         const tId = getActiveTournamentId();
-        if (tId) await setDoc(tournamentDoc(fdb, tId), { status: 'live' }, { merge: true });
+        if (tId) await setDoc(tournamentDoc(fdb, tId), { status: 'live', scoringLocked: false }, { merge: true });
         await setDoc(configDoc(fdb), { resetAt: serverTimestamp() }, { merge: true });
       }
       localStorage.clear();
@@ -2235,7 +2235,7 @@ export default function Admin() {
             Reset Tournament
           </Button>
           <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-            Wipes ALL teams (real and demo), scores, wheel spins, and the leaderboard from Firestore. Every connected device will be reset to the home screen automatically.
+            Wipes ALL teams (real and demo), scores, wheel spins, and the leaderboard from Firestore, and clears any scoring lock or final state so the tournament is fresh and live. Every connected device will be reset to the home screen automatically. Use this to clean up after a test run before tournament day.
           </p>
         </div>
       </div>
