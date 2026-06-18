@@ -535,6 +535,16 @@ export default function Leaderboard() {
                       {teamSubtitle(team.teamName, team.players) && (
                         <span className="text-[10px] text-muted-foreground truncate">{teamSubtitle(team.teamName, team.players)}</span>
                       )}
+                      {(spinEntries.length > 0 || aggregated.length > 0) && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {spinEntries.map(([holeStr, rec]) => (
+                            <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
+                          ))}
+                          {aggregated.map(h => (
+                            <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="col-span-1 text-center font-condensed font-bold text-muted-foreground">
                       {team.holesPlayed === 18 ? 'F' : team.holesPlayed || '-'}
