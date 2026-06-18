@@ -163,7 +163,7 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   correctTeamScores, writeHoleScore,
-  reconcileWheelHits, recordWheelSpinTx, applyManualAdjustment,
+  reconcileWheelHits, applyWheelHit, recordWheelSpinTx, applyManualAdjustment,
   spinsFromData,
   type ParHole, type TargetedByEntry, type WheelSpinRecord,
 } from './scoreSync';
@@ -406,6 +406,101 @@ describe('reconcileWheelHits', () => {
     expect(data.wheelAdjustment).toBe(0);
     expect(data.netScore).toBe(0);
     expect(data.targetedBy).toEqual([]);
+  });
+});
+
+// ── Single-target transactional wheel hit (applyWheelHit) ───────────────────
+// applyWheelHit is the primitive used by applyEffectToOthers (spinner's direct
+// write) so it must be idempotent to the same degree as reconcileWheelHits.
+describe('applyWheelHit', () => {
+  beforeEach(() => h.reset());
+
+  const ENTRY = (over: Partial<TargetedByEntry> = {}): TargetedByEntry => ({
+    item: 'lightning', fromTeam: 'A', at: 3000, ...over,
+  });
+
+  it('applies a hit and bumps wheelAdjustment + netScore', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
+
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY());
+
+    expect(applied).toBe(true);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1);
+    expect(data.netScore).toBe(1);
+    expect(data.targetedBy).toEqual([ENTRY()]);
+  });
+
+  it('is idempotent: calling again with the same entry is a no-op', async () => {
+    h.seed(TEAM, { wheelAdjustment: 1, netScore: 1, targetedBy: [ENTRY()] });
+
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY());
+
+    expect(applied).toBe(false);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1); // unchanged
+    expect(data.netScore).toBe(1);
+    expect((data.targetedBy as unknown[]).length).toBe(1);
+  });
+
+  it('does not double-count when reconcileWheelHits runs after applyWheelHit with the same at', async () => {
+    // Simulates the fixed race: applyEffectToOthers writes via applyWheelHit,
+    // then the continuous reconciler fires reconcileWheelHits for the same entry.
+    // Both must see exactly one increment — not two.
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
+
+    const entry = ENTRY();
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, entry);
+    expect(applied).toBe(true);
+
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [entry]);
+    expect(added).toBe(0);
+
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1); // not 2
+    expect(data.netScore).toBe(1);
+    expect((data.targetedBy as unknown[]).length).toBe(1);
+  });
+
+  it('applies exactly once when applyWheelHit and reconcileWheelHits race on an empty doc', async () => {
+    // Both see an empty targetedBy before either commits. The transaction retry
+    // ensures only one increment lands.
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
+    const entry = ENTRY();
+
+    // Queue a concurrent applyWheelHit write to fire after the reconciler's first read.
+    h.queueAfterFirstGet(async () => {
+      await applyWheelHit({} as never, h.ref(TEAM) as never, entry);
+    });
+
+    // reconcileWheelHits retries, re-reads, sees the entry, and adds nothing.
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [entry]);
+
+    expect(added).toBe(0);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(1); // not 2
+    expect(data.netScore).toBe(1);
+    expect((data.targetedBy as unknown[]).length).toBe(1);
+  });
+
+  it('skips a submitted team', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [], hasSubmitted: true });
+
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY());
+
+    expect(applied).toBe(false);
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(0);
+    expect(data.targetedBy).toEqual([]);
+  });
+
+  it('returns false and does not throw when the target doc does not exist', async () => {
+    const applied = await applyWheelHit(
+      {} as never,
+      h.ref('nonexistent-team') as never,
+      ENTRY(),
+    );
+    expect(applied).toBe(false);
   });
 });
 

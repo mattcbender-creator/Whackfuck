@@ -140,9 +140,9 @@ export default function WheelModal({ open, onClose, hole }: Props) {
     }, 4200);
   };
 
-  const recordSpinOnSelf = async (item: WheelItem, targetTeam?: string) => {
+  const recordSpinOnSelf = async (item: WheelItem, targetTeam?: string, at?: number) => {
     if (hole == null) return;
-    await recordWheelSpin(hole, { item: item.id, at: Date.now(), targetTeam });
+    await recordWheelSpin(hole, { item: item.id, at: at ?? Date.now(), targetTeam });
     // Push a 'wheel' event onto the global feed so it shows up in the live
     // ticker alongside birdies/eagles. targetTeam is "all teams" for
     // lightning, the picked/random opponent for shells & boo, or omitted for
@@ -171,8 +171,12 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         case 'green_shell': {
           const target = pickRandom(others);
           if (target) {
-            await applyEffectToOthers('green_shell', [target.id]);
-            await recordSpinOnSelf(item, target.teamName);
+            // Single timestamp shared by both the targetedBy write and the spin
+            // record so the reconciler's de-dup key (fromTeam|spin.at) matches
+            // the key already stored on the target doc — preventing double-hits.
+            const at = Date.now();
+            await applyEffectToOthers('green_shell', [target.id], at);
+            await recordSpinOnSelf(item, target.teamName, at);
           } else {
             await recordSpinOnSelf(item);
           }
@@ -183,12 +187,13 @@ export default function WheelModal({ open, onClose, hole }: Props) {
           const leader = sorted[0];
           if (leader) {
             if (leader.id === teamId) {
-              // Record spin BEFORE self-effect to avoid a Firestore write race
+              // Self-hit: record spin BEFORE self-effect to avoid a write race.
               await recordSpinOnSelf(item, leader.teamName);
               applyEffectToSelf(+1);
             } else {
-              await applyEffectToOthers('blue_shell', [leader.id]);
-              await recordSpinOnSelf(item, leader.teamName);
+              const at = Date.now();
+              await applyEffectToOthers('blue_shell', [leader.id], at);
+              await recordSpinOnSelf(item, leader.teamName, at);
             }
           } else {
             await recordSpinOnSelf(item);
@@ -198,8 +203,9 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         case 'banana': {
           const target = pickRandom(others);
           if (target) {
-            await applyEffectToOthers('banana', [target.id]);
-            await recordSpinOnSelf(item, target.teamName);
+            const at = Date.now();
+            await applyEffectToOthers('banana', [target.id], at);
+            await recordSpinOnSelf(item, target.teamName, at);
           } else {
             await recordSpinOnSelf(item);
           }
@@ -207,10 +213,12 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         }
         case 'lightning': {
           const ids = others.map(t => t.id);
-          // Record spin FIRST — if the effect write fails the team can't retry
-          // and double-hit everyone. Consistent with the mushroom/super_star pattern.
-          await recordSpinOnSelf(item);
-          await applyEffectToOthers('lightning', ids);
+          // Capture the timestamp BEFORE recording the spin so the at stored in
+          // the spin record equals the at written to every target's targetedBy.
+          // This aligns the reconciler's de-dup key with the applyWheelHit key.
+          const at = Date.now();
+          await recordSpinOnSelf(item, undefined, at);
+          await applyEffectToOthers('lightning', ids, at);
           break;
         }
         case 'mushroom':
@@ -228,8 +236,9 @@ export default function WheelModal({ open, onClose, hole }: Props) {
         case 'boo': {
           const target = pickRandom(others);
           if (target) {
-            await applyEffectToOthers('boo', [target.id]);
-            await recordSpinOnSelf(item, target.teamName);
+            const at = Date.now();
+            await applyEffectToOthers('boo', [target.id], at);
+            await recordSpinOnSelf(item, target.teamName, at);
             applyEffectToSelf(-1);
           } else {
             // Record spin FIRST before the self-effect write

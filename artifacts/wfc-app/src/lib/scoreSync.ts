@@ -195,6 +195,39 @@ export async function reconcileWheelHits(
   return added;
 }
 
+// Apply a single cross-team wheel hit to a target doc inside a transaction.
+// Idempotent: if the fromTeam|at key is already present in targetedBy no write
+// is made and the function returns false. This mirrors reconcileWheelHits but
+// operates on one entry at a time so applyEffectToOthers (the spinner's direct
+// write path) and the continuous reconciler share the same server-side de-dup
+// logic — eliminating the double-hit race regardless of call ordering.
+export async function applyWheelHit(
+  db: Firestore,
+  ref: DocumentReference,
+  entry: TargetedByEntry,
+): Promise<boolean> {
+  let applied = false;
+  await runTransaction(db, async (tx) => {
+    applied = false;
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (data?.hasSubmitted === true) return;
+    const currentTargeted = Array.isArray(data?.targetedBy)
+      ? (data.targetedBy as TargetedByEntry[])
+      : [];
+    const key = `${entry.fromTeam}|${entry.at}`;
+    if (currentTargeted.some(t => `${t.fromTeam}|${t.at}` === key)) return;
+    tx.set(ref, {
+      wheelAdjustment: increment(1),
+      netScore: increment(1),
+      targetedBy: arrayUnion(entry),
+    }, { merge: true });
+    applied = true;
+  });
+  return applied;
+}
+
 // Record a single wheel spin for a hole. One spin per wheel-hole, ever: the
 // transaction re-reads before committing so two racing callers can't both write
 // the hole — the loser observes the winner's spin and returns it unchanged. If

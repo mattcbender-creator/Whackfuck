@@ -3,11 +3,12 @@ import { db, isFirebaseConfigured } from './firebase';
 import { useToast } from '@/hooks/use-toast';
 import {
   setDoc, onSnapshot, serverTimestamp,
-  writeBatch, increment, arrayUnion, query, orderBy, getDocs,
+  increment, query, orderBy, getDocs,
   addDoc,
 } from 'firebase/firestore';
 import {
   writeHoleScore, spinsFromData, reconcileWheelHits, recordWheelSpinTx,
+  applyWheelHit,
   type WheelSpinRecord, type TargetedByEntry,
 } from './scoreSync';
 import type { WheelItemId } from './wheel';
@@ -71,7 +72,7 @@ export interface WFCState {
   resetScores: () => void;
   confirmFrontNine: () => void;
   recordWheelSpin: (hole: number, record: WheelSpinRecord) => Promise<void>;
-  applyEffectToOthers: (item: WheelItemId, targetIds: string[]) => Promise<void>;
+  applyEffectToOthers: (item: WheelItemId, targetIds: string[], at?: number) => Promise<void>;
   applyEffectToSelf: (delta: number) => void;
   submitFinal: () => void;
   listTeamsOnce: () => Promise<TeamSnapshot[]>;
@@ -671,28 +672,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const applyEffectToOthers = async (item: WheelItemId, targetIds: string[]) => {
+  const applyEffectToOthers = async (item: WheelItemId, targetIds: string[], at?: number) => {
     if (hasSubmitted) return;
     if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
     if (!isFirebaseConfigured || !db || !tId || !teamInfo) return;
     if (targetIds.length === 0) return;
+    // Use the caller-supplied timestamp so the de-dup key written into targetedBy
+    // matches the at value stored in the spin record (which the reconciler uses).
+    // If no at is provided fall back to now — backward compat for direct calls.
+    const effectAt = at ?? Date.now();
+    const entry: TargetedByEntry = { item, fromTeam: teamInfo.teamName, at: effectAt };
+    const fdb = db; // capture after the !db guard so TypeScript knows it's non-null
     try {
-      const batch = writeBatch(db);
-      const now = Date.now();
-      for (const tid of targetIds) {
-        if (tid === teamId) continue;
-        const ref = teamDoc(db, tid);
-        batch.set(ref, {
-          wheelAdjustment: increment(1),
-          netScore: increment(1),
-          targetedBy: arrayUnion({
-            item,
-            fromTeam: teamInfo.teamName,
-            at: now,
-          }),
-        }, { merge: true });
-      }
-      await batch.commit();
+      await Promise.all(
+        targetIds
+          .filter(tid => tid !== teamId)
+          .map(tid => applyWheelHit(fdb, teamDoc(fdb, tid), entry)),
+      );
     } catch (e) {
       console.error('Cross-team effect failed', e);
     }
