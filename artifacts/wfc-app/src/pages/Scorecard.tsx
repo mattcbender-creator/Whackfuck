@@ -266,8 +266,9 @@ export default function Scorecard() {
   // Play position (0–17) of a given hole index — used for Prev/Next navigation.
   const playPos = (idx: number) => holeOrder.indexOf(idx + 1);
 
-  // All 18 holes in play order (shotgun wraps from the team's starting hole).
-  const halfIdxs = holeOrder.map(n => n - 1);
+  // Scorecard table always displays holes 1–18 in numerical order.
+  // holeOrder (play sequence) is used only for navigation, not column order.
+  const halfIdxs = Array.from({ length: 18 }, (_, i) => i);
   const halfHoles = halfIdxs.map(idx => HOLES[idx]);
   const halfScores = halfIdxs.map(idx => scores[idx]);
 
