@@ -605,6 +605,11 @@ export default function Scorecard() {
                 <td className={`${CELL} font-bold text-muted-foreground/50 text-[10px] border-l border-white/8 w-11`}>
                   TOT
                 </td>
+                {anyWheelHole && (
+                  <td className={`${CELL} font-bold text-primary/70 text-[10px] border-l border-primary/30 w-11`}>
+                    WHL
+                  </td>
+                )}
               </tr>
 
               {/* PAR row */}
@@ -620,6 +625,7 @@ export default function Scorecard() {
                   </td>
                 ))}
                 <td className={`${CELL} text-muted-foreground/50 border-l border-white/8 font-bold`}>{halfTotalPar}</td>
+                {anyWheelHole && <td className={`${CELL} border-l border-primary/30`} />}
               </tr>
 
               {/* YDS row — hidden when autoTeeRule is on (tee changes each hole) */}
@@ -640,11 +646,12 @@ export default function Scorecard() {
                   </td>
                 ))}
                 <td className={`${CELL} text-foreground/50 border-l border-white/8 font-bold`}>{halfTotalYds}</td>
+                {anyWheelHole && <td className={`${CELL} border-l border-primary/30`} />}
               </tr>
               )}
 
               {/* Scores divider */}
-              <tr><td colSpan={20} className="h-px bg-primary/20" /></tr>
+              <tr><td colSpan={anyWheelHole ? 21 : 20} className="h-px bg-primary/20" /></tr>
 
               {/* SCORE row */}
               <tr className="border-b border-white/6">
@@ -668,6 +675,13 @@ export default function Scorecard() {
                 <td className={`${CELL} border-l border-white/8 font-condensed text-lg font-black text-foreground/80`}>
                   {halfPlayedPar > 0 ? halfPlayedScore : ''}
                 </td>
+                {anyWheelHole && (
+                  <td className={`${CELL} border-l border-primary/30 font-condensed text-lg font-black`}>
+                    <span className={wheelAdjustment === 0 ? 'text-muted-foreground/40' : wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}>
+                      {wheelAdjustment === 0 ? '—' : wheelAdjustment > 0 ? `+${wheelAdjustment}` : `${wheelAdjustment}`}
+                    </span>
+                  </td>
+                )}
               </tr>
 
               {/* NET row */}
@@ -689,6 +703,7 @@ export default function Scorecard() {
                 <td className={`${CELL} py-1.5 border-l border-white/8`}>
                   <span className={netCls(halfNet)}>{halfNet === null ? '' : fmtNet(halfNet)}</span>
                 </td>
+                {anyWheelHole && <td className={`${CELL} py-1.5 border-l border-primary/30`} />}
               </tr>
 
               {/* TO PAR row */}
@@ -709,43 +724,8 @@ export default function Scorecard() {
                 <td className={`${CELL} py-1.5 border-l border-white/8`}>
                   <span className={netCls(halfNet)}>{halfNet === null ? '' : fmtNet(halfNet)}</span>
                 </td>
+                {anyWheelHole && <td className={`${CELL} py-1.5 border-l border-primary/30`} />}
               </tr>
-
-              {/* WHEEL row — one colored badge per spun Item Box hole */}
-              {anyWheelHole && (
-              <tr>
-                <td className={`${STICKY} text-primary/70`}>WHEEL</td>
-                {halfHoles.map((h, i) => {
-                  const idx = halfIdxs[i];
-                  const isWheelHole = holeRules[idx]?.type === 'wheel';
-                  const spin = wheelSpins[idx + 1];
-                  const item = spin ? getWheelItem(spin.item) : null;
-                  return (
-                    <td
-                      key={h.hole}
-                      onClick={() => selectCell(halfIdxs[i])}
-                      className={`${CELL} py-1.5 text-[9px] ${selectedIdx === halfIdxs[i] ? 'bg-primary/10' : 'hover:bg-white/3'}`}
-                    >
-                      {isWheelHole && item ? (
-                        <span
-                          className="inline-block px-1 py-0.5 rounded font-black text-[8px] uppercase leading-none"
-                          style={{ background: item.color, color: item.textColor }}
-                        >
-                          {item.short}
-                        </span>
-                      ) : isWheelHole ? (
-                        <span className="text-primary/30">◆</span>
-                      ) : null}
-                    </td>
-                  );
-                })}
-                <td className={`${CELL} py-1.5 border-l border-white/8 text-[11px] font-bold`}>
-                  <span className={wheelAdjustment === 0 ? 'text-muted-foreground/30' : wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}>
-                    {wheelAdjustment !== 0 ? (wheelAdjustment > 0 ? `+${wheelAdjustment}` : `${wheelAdjustment}`) : ''}
-                  </span>
-                </td>
-              </tr>
-              )}
 
             </tbody>
           </table>

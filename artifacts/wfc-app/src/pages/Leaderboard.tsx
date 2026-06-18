@@ -122,6 +122,7 @@ function MiniScorecard({ scores, holes: HOLES, wheelAdjustment = 0 }: { scores: 
             ))}
             <td className={`${totalCell} text-[9px] tracking-widest text-muted-foreground/70`}>In</td>
             <td className={`${totalCell} text-[9px] tracking-widest text-muted-foreground/70`}>Tot</td>
+            <td className={`${totalCell} text-[9px] tracking-widest text-primary/70 border-l-2 border-primary/40`}>Whl</td>
           </tr>
           {/* Par row */}
           <tr className="border-b border-white/8">
@@ -135,6 +136,7 @@ function MiniScorecard({ scores, holes: HOLES, wheelAdjustment = 0 }: { scores: 
             ))}
             <td className={`${totalCell} text-muted-foreground/60`}>{inPar}</td>
             <td className={`${totalCell} text-muted-foreground/60`}>{totPar}</td>
+            <td className={`${totalCell} text-muted-foreground/60 border-l-2 border-primary/40`} />
           </tr>
           {/* Score row */}
           <tr>
@@ -163,6 +165,9 @@ function MiniScorecard({ scores, holes: HOLES, wheelAdjustment = 0 }: { scores: 
             </td>
             <td className={`${totalCell} text-base py-2 ${anyScored ? 'text-foreground/70' : 'text-foreground/80'}`}>
               {anyScored ? totScore : ''}
+            </td>
+            <td className={`${totalCell} text-base py-2 border-l-2 border-primary/40 ${wheelAdjustment === 0 ? 'text-muted-foreground/40' : wheelAdjustment > 0 ? 'text-orange-400' : 'text-primary'}`}>
+              {wheelAdjustment === 0 ? '—' : wheelAdjustment > 0 ? `+${wheelAdjustment}` : `${wheelAdjustment}`}
             </td>
           </tr>
         </tbody>
