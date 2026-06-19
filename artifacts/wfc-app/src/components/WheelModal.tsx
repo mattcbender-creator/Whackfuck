@@ -225,12 +225,12 @@ export default function WheelModal({ open, onClose, hole }: Props) {
           // Record spin FIRST so the transaction doesn't race with the self-effect
           // Firestore write that the state change triggers via the sync useEffect.
           await recordSpinOnSelf(item);
-          await applyEffectToSelf(-1);
+          applyEffectToSelf(-1);
           fireBirdieConfetti();
           break;
         case 'super_star':
           await recordSpinOnSelf(item);
-          await applyEffectToSelf(-2);
+          applyEffectToSelf(-2);
           fireEagleConfetti();
           break;
         case 'boo': {
