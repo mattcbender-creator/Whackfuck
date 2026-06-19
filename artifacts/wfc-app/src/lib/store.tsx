@@ -73,7 +73,7 @@ export interface WFCState {
   confirmFrontNine: () => void;
   recordWheelSpin: (hole: number, record: WheelSpinRecord) => Promise<void>;
   applyEffectToOthers: (item: WheelItemId, targetIds: string[], at?: number) => Promise<void>;
-  applyEffectToSelf: (delta: number) => void;
+  applyEffectToSelf: (delta: number) => Promise<void>;
   submitFinal: () => void;
   listTeamsOnce: () => Promise<TeamSnapshot[]>;
   logEvent: (event: Record<string, unknown>) => void;
@@ -667,7 +667,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const applyEffectToSelf = (delta: number) => {
+  const applyEffectToSelf = async (delta: number) => {
     if (hasSubmitted) return;
     if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
     const nextAdjustment = wheelAdjustment + delta;
@@ -675,12 +675,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveToLocal({ wheelAdjustment: nextAdjustment });
     if (isFirebaseConfigured && db && tId && teamInfo) {
       pendingWheelAdjWritesRef.current++;
-      setDoc(teamDoc(db, teamId), {
-        wheelAdjustment: increment(delta),
-        netScore: increment(delta),
-      }, { merge: true })
-        .catch(e => console.error('Self effect sync failed', e))
-        .finally(() => { pendingWheelAdjWritesRef.current--; });
+      try {
+        await setDoc(teamDoc(db, teamId), {
+          wheelAdjustment: increment(delta),
+          netScore: increment(delta),
+        }, { merge: true });
+      } catch (e) {
+        console.error('Self effect sync failed', e);
+      } finally {
+        pendingWheelAdjWritesRef.current--;
+      }
     }
   };
 
