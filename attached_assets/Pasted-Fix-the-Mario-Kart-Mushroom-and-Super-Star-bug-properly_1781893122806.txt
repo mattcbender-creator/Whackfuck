@@ -1,0 +1,103 @@
+Fix the Mario Kart Mushroom and Super Star bug properly. Do not use setTimeout hacks. The issue is that Mushroom and Super Star record the spin and apply the self score adjustment as two separate operations, so the spin can appear while wheelAdjustment/netScore does not reliably update.
+
+Implement an atomic self-effect wheel transaction.
+
+Files involved:
+- artifacts/wfc-app/src/lib/scoreSync.ts
+- artifacts/wfc-app/src/lib/store.tsx
+- artifacts/wfc-app/src/components/WheelModal.tsx
+- artifacts/wfc-app/src/pages/Leaderboard.tsx
+
+PART 1 — scoreSync.ts
+
+Add a new exported function:
+
+recordWheelSpinAndApplySelfEffectTx(db, ref, hole, record, delta)
+
+It should:
+1. Run a Firestore transaction.
+2. Read the current team doc.
+3. If hasSubmitted is true:
+   - If a spin already exists for that hole, return { spin: existingSpin, applied: false }
+   - Otherwise throw Error('submitted')
+4. Use spinsFromData(data) to check if this hole already has a spin.
+5. If the hole already has a spin, return { spin: existingSpin, applied: false } and do NOT apply the score adjustment again.
+6. Clean the record so undefined fields are removed, same as recordWheelSpinTx currently does.
+7. In the same transaction write:
+   - wheelSpins: { [String(hole)]: cleanRecord }
+   - wheelAdjustment: increment(delta)
+   - netScore: increment(delta)
+8. Return { spin: record, applied: true }
+
+This must be atomic. The spin and score adjustment must either both happen or neither happens.
+
+PART 2 — store.tsx
+
+Add a new method to WFCState:
+
+recordWheelSpinAndApplySelfEffect: (hole: number, record: WheelSpinRecord, delta: number) => Promise<void>;
+
+Implement it in StoreProvider.
+
+It should:
+1. Return early if hasSubmitted, tournament final, or scoringLocked.
+2. Return early if wheelSpins[hole]?.item already exists.
+3. Optimistically update local state:
+   - add the spin to wheelSpins
+   - update wheelAdjustment using a functional state update: prev => prev + delta
+   - save both to localStorage
+4. If Firebase is configured, call recordWheelSpinAndApplySelfEffectTx(db, teamDoc(db, teamId), hole, record, delta).
+5. If the transaction returns applied: false, do not apply the local delta again.
+6. If the transaction throws Error('submitted'), set hasSubmitted true and save that locally.
+7. Keep the existing applyEffectToSelf function for Boo/blue-shell self-hit/manual compatibility, but Mushroom and Super Star should stop using the two-step recordSpinOnSelf + applyEffectToSelf flow.
+
+Important: use functional state updates for wheelAdjustment. Do not use stale closure math like wheelAdjustment + delta.
+
+PART 3 — WheelModal.tsx
+
+Update only the mushroom and super_star cases.
+
+Replace this pattern:
+
+await recordSpinOnSelf(item);
+applyEffectToSelf(-1);
+
+and:
+
+await recordSpinOnSelf(item);
+applyEffectToSelf(-2);
+
+With the new atomic method.
+
+For mushroom:
+- create one timestamp
+- call recordWheelSpinAndApplySelfEffect(hole, { item: item.id, at }, -1)
+- fireBirdieConfetti()
+
+For super_star:
+- create one timestamp
+- call recordWheelSpinAndApplySelfEffect(hole, { item: item.id, at }, -2)
+- fireEagleConfetti()
+
+If hole is null, safely fall back to the old behavior or show an error, but normal Item Box spins should always have a hole.
+
+Do not change Boo, shells, lightning, or target selection.
+
+PART 4 — Leaderboard.tsx visual duplicate cleanup
+
+There is also a confusing live-view issue when there are multiple Mario Kart wheel holes.
+
+Fix WheelBadge so it actually displays the label prop, because right now multiple wheel-hole spins can look like duplicate badges with no hole context.
+
+Example display:
+H3 · Mushroom
+H9 · Super Star
+
+Also make sure spin badge React keys include both team id and hole number so multiple wheel spins never render as confusing duplicates.
+
+Do not remove valid multiple wheel spins. If a team spins on two different Item Box holes, both should show — but they must show the hole number so it is clear they are separate.
+
+After changes:
+- Typecheck.
+- Run tests.
+- Tell me exactly what changed in each file.

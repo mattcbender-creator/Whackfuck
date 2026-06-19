@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import {
   writeHoleScore, spinsFromData, reconcileWheelHits, recordWheelSpinTx,
-  applyWheelHit,
+  applyWheelHit, recordWheelSpinAndApplySelfEffectTx,
   type WheelSpinRecord, type TargetedByEntry,
 } from './scoreSync';
 import type { WheelItemId } from './wheel';
@@ -72,6 +72,13 @@ export interface WFCState {
   resetScores: () => void;
   confirmFrontNine: () => void;
   recordWheelSpin: (hole: number, record: WheelSpinRecord) => Promise<void>;
+  /** Atomic self-effect spin: record the spin AND apply the score delta in one
+   *  Firestore transaction. Used by Mushroom/Super Star so the spin and the
+   *  score adjustment can never partially apply. Resolves with applied:true only
+   *  when the spin was actually committed (so callers can gate side effects like
+   *  the live-feed event); false when refused (submitted) or a no-op (hole
+   *  already spun). */
+  recordWheelSpinAndApplySelfEffect: (hole: number, record: WheelSpinRecord, delta: number) => Promise<{ applied: boolean }>;
   applyEffectToOthers: (item: WheelItemId, targetIds: string[], at?: number) => Promise<void>;
   applyEffectToSelf: (delta: number) => Promise<void>;
   submitFinal: () => void;
@@ -667,6 +674,86 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Atomic self-effect spin (Mushroom / Super Star): record the per-hole spin
+  // AND apply the score delta in a single Firestore transaction so they can
+  // never partially apply. Replaces the old two-step recordSpinOnSelf +
+  // applyEffectToSelf flow that let the spin show while netScore lagged.
+  const recordWheelSpinAndApplySelfEffect = async (hole: number, record: WheelSpinRecord, delta: number): Promise<{ applied: boolean }> => {
+    if (hasSubmitted) return { applied: false };
+    if (tournament?.status === 'final' || tournament?.scoringLocked === true) return { applied: false };
+    // One spin per wheel-hole — never re-apply for a hole already spun.
+    if (wheelSpins[hole]?.item) return { applied: false };
+    // Optimistic local update: add the spin and bump the adjustment using a
+    // functional update so concurrent self-effects can't read a stale value.
+    setWheelSpins(prev => {
+      const next = { ...prev, [hole]: record };
+      saveToLocal({ wheelSpins: next });
+      return next;
+    });
+    setWheelAdjustment(prev => {
+      const next = prev + delta;
+      saveToLocal({ wheelAdjustment: next });
+      return next;
+    });
+    // Local-only mode (no Firebase): the optimistic update is authoritative.
+    if (!(isFirebaseConfigured && db && tId && teamInfo)) {
+      return { applied: true };
+    }
+    pendingWheelAdjWritesRef.current++;
+    try {
+      const result = await recordWheelSpinAndApplySelfEffectTx(db, teamDoc(db, teamId), hole, record, delta);
+      // Reconcile our optimistic wheelAdjustment to the authoritative server
+      // value. For applied:true this equals what we optimistically set; for a
+      // no-op (another device already spun this hole) it deterministically
+      // removes our wrong delta WITHOUT relying on an onSnapshot that may have
+      // been skipped while this write was pending.
+      setWheelAdjustment(prev => {
+        if (prev === result.wheelAdjustment) return prev;
+        saveToLocal({ wheelAdjustment: result.wheelAdjustment });
+        return result.wheelAdjustment;
+      });
+      if (!result.applied) {
+        // Adopt the server's authoritative spin for this hole (it can differ
+        // from ours if both devices spun the same Item Box concurrently).
+        setWheelSpins(prev => {
+          const next = { ...prev, [hole]: result.spin };
+          saveToLocal({ wheelSpins: next });
+          return next;
+        });
+      }
+      return { applied: result.applied };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      if (msg === 'submitted') {
+        // Server says the round is over — the spin must not count. Roll back the
+        // optimistic spin + delta and lock the round locally.
+        console.warn('Self-effect spin refused: round already submitted on server.');
+        setHasSubmitted(true);
+        saveToLocal({ hasSubmitted: true });
+        setWheelAdjustment(prev => {
+          const next = prev - delta;
+          saveToLocal({ wheelAdjustment: next });
+          return next;
+        });
+        setWheelSpins(prev => {
+          if (!(hole in prev)) return prev;
+          const next = { ...prev };
+          delete next[hole];
+          saveToLocal({ wheelSpins: next });
+          return next;
+        });
+      } else {
+        // Transient/offline error: keep the optimistic spin (offline-first; the
+        // sync effect re-pushes it when connectivity returns), matching
+        // recordWheelSpin's behavior.
+        console.error('Self-effect spin sync failed', e);
+      }
+      return { applied: false };
+    } finally {
+      pendingWheelAdjWritesRef.current--;
+    }
+  };
+
   const applyEffectToSelf = async (delta: number) => {
     if (hasSubmitted) return;
     if (tournament?.status === 'final' || tournament?.scoringLocked === true) return;
@@ -804,6 +891,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         resetScores,
         confirmFrontNine,
         recordWheelSpin,
+        recordWheelSpinAndApplySelfEffect,
         applyEffectToOthers,
         applyEffectToSelf,
         submitFinal,

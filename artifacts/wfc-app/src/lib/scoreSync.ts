@@ -260,6 +260,57 @@ export async function recordWheelSpinTx(
   });
 }
 
+// Atomic self-effect spin: record the per-hole spin AND apply the score
+// adjustment in a single transaction so they can never partially apply (the
+// flicker/desync seen when the spin record and the wheelAdjustment write were
+// two separate operations). One spin per wheel-hole — if the hole already has a
+// spin the transaction is a no-op for the score and returns applied:false so
+// the caller doesn't double-count. Refuses brand-new spins on a submitted round.
+export interface SelfEffectTxResult {
+  /** The spin now authoritative for this hole (ours if applied, else the server's). */
+  spin: WheelSpinRecord;
+  /** True when this call actually wrote the spin + adjustment; false when the
+   *  hole was already spun (no-op, no double-count). */
+  applied: boolean;
+  /** The authoritative wheelAdjustment after the transaction, so the caller can
+   *  reconcile its optimistic local value deterministically without waiting for
+   *  the onSnapshot listener (which may be gated/skipped mid-write). */
+  wheelAdjustment: number;
+}
+
+export async function recordWheelSpinAndApplySelfEffectTx(
+  db: Firestore,
+  ref: DocumentReference,
+  hole: number,
+  record: WheelSpinRecord,
+  delta: number,
+): Promise<SelfEffectTxResult> {
+  const cleanRecord: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) {
+    if (v !== undefined) cleanRecord[k] = v;
+  }
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists() ? snap.data() : undefined;
+    const existingSpins = spinsFromData(data);
+    const currentAdj = typeof data?.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
+    if (data?.hasSubmitted === true) {
+      const existing = existingSpins[hole];
+      if (existing && existing.item) return { spin: existing, applied: false, wheelAdjustment: currentAdj };
+      throw new Error('submitted');
+    }
+    // One spin per wheel-hole — never overwrite or re-apply the adjustment.
+    const existing = existingSpins[hole];
+    if (existing && existing.item) return { spin: existing, applied: false, wheelAdjustment: currentAdj };
+    tx.set(ref, {
+      wheelSpins: { [String(hole)]: cleanRecord },
+      wheelAdjustment: increment(delta),
+      netScore: increment(delta),
+    }, { merge: true });
+    return { spin: record, applied: true, wheelAdjustment: currentAdj + delta };
+  });
+}
+
 // Admin manual stroke adjustment. Bumps the persisted wheelAdjustment and the
 // netScore aggregate by the same delta via field-level increments so it composes
 // with concurrent score and wheel writes without clobbering them.

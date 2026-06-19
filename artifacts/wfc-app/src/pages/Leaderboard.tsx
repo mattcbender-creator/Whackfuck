@@ -190,7 +190,7 @@ function WheelBadge({ item, label }: { item: WheelItemId; label: string }) {
       title={label}
     >
       <Sparkles className="w-2.5 h-2.5" />
-      {w.label}
+      {label}
     </span>
   );
 }
@@ -543,7 +543,7 @@ export default function Leaderboard() {
                       {(spinEntries.length > 0 || aggregated.length > 0) && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {spinEntries.map(([holeStr, rec]) => (
-                            <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
+                            <WheelBadge key={`${team.id}-${holeStr}`} item={rec.item} label={`H${holeStr} · ${getWheelItem(rec.item)?.label ?? rec.item}`} />
                           ))}
                           {aggregated.map(h => (
                             <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />
@@ -578,7 +578,7 @@ export default function Leaderboard() {
                             </span>
                           )}
                           {spinEntries.map(([holeStr, rec]) => (
-                            <WheelBadge key={holeStr} item={rec.item} label={`Hole ${holeStr}: spun ${rec.item}`} />
+                            <WheelBadge key={`${team.id}-${holeStr}`} item={rec.item} label={`H${holeStr} · ${getWheelItem(rec.item)?.label ?? rec.item}`} />
                           ))}
                           {aggregated.map(h => (
                             <HitBadge key={h.item} item={h.item} count={h.count} fromList={h.fromList} />

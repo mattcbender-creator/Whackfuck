@@ -164,6 +164,7 @@ vi.mock('firebase/firestore', () => ({
 import {
   correctTeamScores, writeHoleScore,
   reconcileWheelHits, applyWheelHit, recordWheelSpinTx, applyManualAdjustment,
+  recordWheelSpinAndApplySelfEffectTx,
   spinsFromData,
   type ParHole, type TargetedByEntry, type WheelSpinRecord,
 } from './scoreSync';
@@ -598,6 +599,112 @@ describe('recordWheelSpinTx', () => {
     expect(result).toEqual(existing);
     const spins = h.get(TEAM)!.wheelSpins as Record<string, unknown>;
     expect(spins['9']).toEqual(existing);
+  });
+});
+
+// ── Atomic self-effect spin (Mushroom / Super Star) ─────────────────────────
+// recordWheelSpinAndApplySelfEffectTx records the per-hole spin AND applies the
+// score delta in a single transaction, returning the authoritative
+// wheelAdjustment so the client can reconcile its optimistic value without
+// waiting on a snapshot.
+describe('recordWheelSpinAndApplySelfEffectTx', () => {
+  beforeEach(() => h.reset());
+
+  it('records a brand-new spin and applies the delta atomically', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0 });
+    const rec: WheelSpinRecord = { item: 'mushroom', at: 1000 };
+
+    const result = await recordWheelSpinAndApplySelfEffectTx(
+      {} as never, h.ref(TEAM) as never, 7, rec, -1,
+    );
+
+    expect(result).toEqual({ spin: rec, applied: true, wheelAdjustment: -1 });
+    const data = h.get(TEAM)!;
+    expect((data.wheelSpins as Record<string, unknown>)['7']).toEqual(rec);
+    expect(data.wheelAdjustment).toBe(-1);
+    expect(data.netScore).toBe(-1);
+  });
+
+  it('is a no-op that does not double-count when the hole was already spun', async () => {
+    const existing: WheelSpinRecord = { item: 'mushroom', at: 1000 };
+    h.seed(TEAM, { wheelAdjustment: -1, netScore: -1, wheelSpins: { '7': existing } });
+
+    const result = await recordWheelSpinAndApplySelfEffectTx(
+      {} as never, h.ref(TEAM) as never, 7, { item: 'super_star', at: 2000 }, -2,
+    );
+
+    // Returns the existing spin and the unchanged authoritative adjustment so the
+    // caller can roll back its optimistic delta.
+    expect(result).toEqual({ spin: existing, applied: false, wheelAdjustment: -1 });
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(-1); // not -3
+    expect(data.netScore).toBe(-1);
+    expect((data.wheelSpins as Record<string, unknown>)['7']).toEqual(existing);
+  });
+
+  it('yields the authoritative value when two devices race the same hole with different items', async () => {
+    // Both devices spin hole 7's Item Box at once. The winner (mushroom, -1) lands
+    // first; our call (super_star, -2) reads before that commit, then retries and
+    // sees the winner. We must return applied:false with the winner's spin and the
+    // winner's adjustment (-1), NOT our optimistic -2.
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0 });
+    const winner: WheelSpinRecord = { item: 'mushroom', at: 1000 };
+    h.queueAfterFirstGet(() =>
+      recordWheelSpinAndApplySelfEffectTx(
+        {} as never, h.ref(TEAM) as never, 7, winner, -1,
+      ),
+    );
+
+    const result = await recordWheelSpinAndApplySelfEffectTx(
+      {} as never, h.ref(TEAM) as never, 7, { item: 'super_star', at: 1001 }, -2,
+    );
+
+    expect(result).toEqual({ spin: winner, applied: false, wheelAdjustment: -1 });
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(-1); // winner's delta only, never -3
+    expect(data.netScore).toBe(-1);
+    expect((data.wheelSpins as Record<string, unknown>)['7']).toEqual(winner);
+  });
+
+  it('throws "submitted" for a brand-new spin on a submitted round', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, hasSubmitted: true });
+
+    await expect(
+      recordWheelSpinAndApplySelfEffectTx(
+        {} as never, h.ref(TEAM) as never, 7, { item: 'mushroom', at: 1000 }, -1,
+      ),
+    ).rejects.toThrow('submitted');
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(0); // nothing applied
+    expect(data.netScore).toBe(0);
+    expect(data.wheelSpins).toBeUndefined();
+  });
+
+  it('returns the existing spin (no throw) when submitted but the hole already spun', async () => {
+    const existing: WheelSpinRecord = { item: 'super_star', at: 1000 };
+    h.seed(TEAM, { wheelAdjustment: -2, netScore: -2, hasSubmitted: true, wheelSpins: { '7': existing } });
+
+    const result = await recordWheelSpinAndApplySelfEffectTx(
+      {} as never, h.ref(TEAM) as never, 7, { item: 'mushroom', at: 2000 }, -1,
+    );
+
+    expect(result).toEqual({ spin: existing, applied: false, wheelAdjustment: -2 });
+    const data = h.get(TEAM)!;
+    expect(data.wheelAdjustment).toBe(-2);
+    expect(data.netScore).toBe(-2);
+  });
+
+  it('strips undefined fields before writing the spin', async () => {
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 0 });
+
+    await recordWheelSpinAndApplySelfEffectTx(
+      {} as never, h.ref(TEAM) as never, 3,
+      { item: 'mushroom', at: 1000, targetTeam: undefined }, -1,
+    );
+
+    const spins = h.get(TEAM)!.wheelSpins as Record<string, Record<string, unknown>>;
+    expect(spins['3']).toEqual({ item: 'mushroom', at: 1000 });
+    expect('targetTeam' in spins['3']).toBe(false);
   });
 });
 

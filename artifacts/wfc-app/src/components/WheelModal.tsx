@@ -38,7 +38,8 @@ function iconFor(id: WheelItemId) {
 export default function WheelModal({ open, onClose, hole }: Props) {
   const {
     teamId, teamInfo, netScore, wheelSpins,
-    recordWheelSpin, applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
+    recordWheelSpin, recordWheelSpinAndApplySelfEffect,
+    applyEffectToOthers, applyEffectToSelf, listTeamsOnce,
     logEvent, hasSubmitted,
   } = useWFC();
   const { tournament } = useTournament();
@@ -222,15 +223,32 @@ export default function WheelModal({ open, onClose, hole }: Props) {
           break;
         }
         case 'mushroom':
-          // Record spin FIRST so the transaction doesn't race with the self-effect
-          // Firestore write that the state change triggers via the sync useEffect.
-          await recordSpinOnSelf(item);
-          applyEffectToSelf(-1);
+          // Atomic: spin record + score adjustment commit together, so netScore
+          // never lags behind the spin pill. Falls back to the two-step flow only
+          // if this Item Box has no hole (shouldn't happen for normal spins).
+          if (hole != null) {
+            const r = await recordWheelSpinAndApplySelfEffect(hole, { item: item.id, at: Date.now() }, -1);
+            // Only log the live-feed event when the spin actually committed — not
+            // on a refused (submitted) or no-op (already spun) result.
+            if (r.applied && teamInfo) {
+              logEvent({ type: 'wheel', subtype: item.id, itemLabel: item.label, teamName: teamInfo.teamName });
+            }
+          } else {
+            await recordSpinOnSelf(item);
+            applyEffectToSelf(-1);
+          }
           fireBirdieConfetti();
           break;
         case 'super_star':
-          await recordSpinOnSelf(item);
-          applyEffectToSelf(-2);
+          if (hole != null) {
+            const r = await recordWheelSpinAndApplySelfEffect(hole, { item: item.id, at: Date.now() }, -2);
+            if (r.applied && teamInfo) {
+              logEvent({ type: 'wheel', subtype: item.id, itemLabel: item.label, teamName: teamInfo.teamName });
+            }
+          } else {
+            await recordSpinOnSelf(item);
+            applyEffectToSelf(-2);
+          }
           fireEagleConfetti();
           break;
         case 'boo': {
