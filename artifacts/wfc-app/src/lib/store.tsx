@@ -668,6 +668,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isFirebaseConfigured && db && tId && teamInfo) {
       setDoc(teamDoc(db, teamId), {
         wheelAdjustment: increment(delta),
+        netScore: increment(delta),
       }, { merge: true }).catch(e => console.error('Self effect sync failed', e));
     }
   };
