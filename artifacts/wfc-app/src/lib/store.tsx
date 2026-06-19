@@ -143,6 +143,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   });
   const hydratedRef = useRef(false);
+  // Counts in-flight applyEffectToSelf writes. While > 0 the Firestore
+  // listener must not overwrite the optimistic local wheelAdjustment value,
+  // or the score would flash back to the pre-spin value before the server
+  // confirms the increment.
+  const pendingWheelAdjWritesRef = useRef(0);
 
   // ── Hydrate from localStorage ──
   useEffect(() => {
@@ -224,7 +229,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const arr = normalizeScores(data.scores);
         setScoresState(prev => JSON.stringify(prev) === JSON.stringify(arr) ? prev : arr);
       }
-      if (typeof data.wheelAdjustment === 'number') {
+      // Only accept the server's wheelAdjustment when no self-effect write is
+      // in flight. If pendingWheelAdjWritesRef > 0 the optimistic local value
+      // is already correct; overwriting it would cause a visible score flash.
+      if (typeof data.wheelAdjustment === 'number' && pendingWheelAdjWritesRef.current === 0) {
         setWheelAdjustment(prev => prev === data.wheelAdjustment ? prev : data.wheelAdjustment);
       }
       if (Array.isArray(data.targetedBy)) {
@@ -666,10 +674,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWheelAdjustment(nextAdjustment);
     saveToLocal({ wheelAdjustment: nextAdjustment });
     if (isFirebaseConfigured && db && tId && teamInfo) {
+      pendingWheelAdjWritesRef.current++;
       setDoc(teamDoc(db, teamId), {
         wheelAdjustment: increment(delta),
         netScore: increment(delta),
-      }, { merge: true }).catch(e => console.error('Self effect sync failed', e));
+      }, { merge: true })
+        .catch(e => console.error('Self effect sync failed', e))
+        .finally(() => { pendingWheelAdjWritesRef.current--; });
     }
   };
 
