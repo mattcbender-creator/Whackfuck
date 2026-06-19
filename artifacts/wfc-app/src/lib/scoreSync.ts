@@ -1,5 +1,5 @@
 import {
-  runTransaction, setDoc, updateDoc, deleteField, increment, arrayUnion,
+  runTransaction, setDoc, deleteField, increment, arrayUnion,
   type Firestore, type DocumentReference,
 } from 'firebase/firestore';
 import { normalizeScores } from './tournament';
@@ -171,6 +171,7 @@ export async function reconcileWheelHits(
   db: Firestore,
   ref: DocumentReference,
   possiblyMissing: TargetedByEntry[],
+  holes: ParHole[],
 ): Promise<number> {
   let added = 0;
   await runTransaction(db, async (tx) => {
@@ -185,9 +186,19 @@ export async function reconcileWheelHits(
     const serverKeys = new Set(currentTargeted.map(t => `${t.fromTeam}|${t.at}`));
     const toAdd = possiblyMissing.filter(e => !serverKeys.has(`${e.fromTeam}|${e.at}`));
     if (toAdd.length === 0) return;
+    // netScore is ALWAYS written as an absolute value recomputed from the doc's
+    // own scores + the new wheelAdjustment — never via increment. This keeps it
+    // single-discipline with the owning team's sync effect (which also writes an
+    // absolute netScore), so an absolute write and this write can never
+    // double-count the same delta. wheelAdjustment stays an increment because it
+    // composes across concurrent cross-team hits (the tx retries on conflict, so
+    // currentAdj + toAdd.length matches what increment commits).
+    const currentAdj = typeof ourData?.wheelAdjustment === 'number' ? ourData.wheelAdjustment : 0;
+    const merged = normalizeScores(ourData?.scores);
+    const { netScore } = aggregatesFromScores(merged, holes, currentAdj + toAdd.length);
     tx.set(ref, {
       wheelAdjustment: increment(toAdd.length),
-      netScore: increment(toAdd.length),
+      netScore,
       targetedBy: arrayUnion(...toAdd),
     }, { merge: true });
     added = toAdd.length;
@@ -205,6 +216,7 @@ export async function applyWheelHit(
   db: Firestore,
   ref: DocumentReference,
   entry: TargetedByEntry,
+  holes: ParHole[],
 ): Promise<boolean> {
   let applied = false;
   await runTransaction(db, async (tx) => {
@@ -218,9 +230,13 @@ export async function applyWheelHit(
       : [];
     const key = `${entry.fromTeam}|${entry.at}`;
     if (currentTargeted.some(t => `${t.fromTeam}|${t.at}` === key)) return;
+    // Absolute netScore recompute (see reconcileWheelHits) — never increment.
+    const currentAdj = typeof data?.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
+    const merged = normalizeScores(data?.scores);
+    const { netScore } = aggregatesFromScores(merged, holes, currentAdj + 1);
     tx.set(ref, {
       wheelAdjustment: increment(1),
-      netScore: increment(1),
+      netScore,
       targetedBy: arrayUnion(entry),
     }, { merge: true });
     applied = true;
@@ -284,6 +300,7 @@ export async function recordWheelSpinAndApplySelfEffectTx(
   hole: number,
   record: WheelSpinRecord,
   delta: number,
+  holes: ParHole[],
 ): Promise<SelfEffectTxResult> {
   const cleanRecord: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(record)) {
@@ -302,25 +319,40 @@ export async function recordWheelSpinAndApplySelfEffectTx(
     // One spin per wheel-hole — never overwrite or re-apply the adjustment.
     const existing = existingSpins[hole];
     if (existing && existing.item) return { spin: existing, applied: false, wheelAdjustment: currentAdj };
+    // Absolute netScore recompute (see reconcileWheelHits) — never increment, so
+    // this tx and the owning team's absolute sync-effect write agree and can
+    // never double-count the self-effect delta.
+    const merged = normalizeScores(data?.scores);
+    const { netScore } = aggregatesFromScores(merged, holes, currentAdj + delta);
     tx.set(ref, {
       wheelSpins: { [String(hole)]: cleanRecord },
       wheelAdjustment: increment(delta),
-      netScore: increment(delta),
+      netScore,
     }, { merge: true });
     return { spin: record, applied: true, wheelAdjustment: currentAdj + delta };
   });
 }
 
-// Admin manual stroke adjustment. Bumps the persisted wheelAdjustment and the
-// netScore aggregate by the same delta via field-level increments so it composes
-// with concurrent score and wheel writes without clobbering them.
-export function applyManualAdjustment(
+// Admin manual stroke adjustment. Bumps the persisted wheelAdjustment via a
+// field-level increment (composes with concurrent wheel writes) and rewrites
+// netScore as an absolute recompute from the doc's scores + the new adjustment.
+// netScore is never incremented anywhere — that single-discipline rule is what
+// stops it from double-counting against the owning team's absolute sync write.
+export async function applyManualAdjustment(
   db: Firestore,
   ref: DocumentReference,
   delta: number,
+  holes: ParHole[],
 ): Promise<void> {
-  return updateDoc(ref, {
-    wheelAdjustment: increment(delta),
-    netScore: increment(delta),
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists() ? snap.data() : undefined;
+    const currentAdj = typeof data?.wheelAdjustment === 'number' ? data.wheelAdjustment : 0;
+    const merged = normalizeScores(data?.scores);
+    const { netScore } = aggregatesFromScores(merged, holes, currentAdj + delta);
+    tx.set(ref, {
+      wheelAdjustment: increment(delta),
+      netScore,
+    }, { merge: true });
   });
 }

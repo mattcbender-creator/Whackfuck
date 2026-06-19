@@ -1,17 +1,38 @@
 ---
-name: applyEffectToSelf must write netScore
-description: Self-wheel effects (mushroom, super_star) must write netScore atomically; relying on sync effect alone causes a race with the Firestore listener.
+name: netScore is single-discipline (always absolute, never increment)
+description: Every Firestore writer of a team's netScore must write it as an absolute recompute (rawNet + wheelAdjustment); mixing absolute and increment(delta) writes double-counts.
 ---
 
 ## Rule
-`applyEffectToSelf(delta)` must write **both** `wheelAdjustment: increment(delta)` and `netScore: increment(delta)` in the same `setDoc` call.
+`netScore` on a team doc has exactly ONE write discipline: **absolute**. Every path
+that touches it must set `netScore = aggregatesFromScores(normalizeScores(scores), holes, wheelAdjustment).netScore`
+(i.e. `rawNet + wheelAdjustment`), never `increment(delta)`. `wheelAdjustment` is the
+opposite — it is **increment-only** and is the single source of truth for the cumulative
+wheel/manual delta.
 
 ## Why
-The store has two competing write paths for `netScore`:
-1. **Direct write** in `applyEffectToSelf` — only wrote `wheelAdjustment`, relied on the React sync useEffect to push `netScore`.
-2. **Sync useEffect** — fires when `netScore` or `wheelAdjustment` changes in local state, writes the absolute value `rawNet + wheelAdjustment`.
+The double-count bug (Mike & Les showed net -5 instead of -3): `netScore` was written
+by TWO incompatible disciplines at once.
+- Absolute writers: the store's sync `useEffect` and `correctTeamScores`.
+- Increment writers: the four wheel/manual transactions + a legacy self-effect path,
+  each doing `netScore: increment(delta)`.
 
-Race condition: If the Firestore listener fires with a stale snapshot (old `wheelAdjustment`) *before* the sync effect runs, it calls `setWheelAdjustment(oldValue)`, resetting local state. The sync effect then writes the *old* `netScore`, losing the wheel adjustment. This manifested as super_star and mushroom spins appearing to do nothing on the leaderboard / net score display.
+When an absolute write races an increment write on the same field, the delta lands
+twice — once baked into the absolute recompute (because `wheelAdjustment` already
+moved), and once from the standalone `increment`. `wheelAdjustment` itself stayed
+correct precisely because it was increment-only (one discipline), which is what
+pinpointed the asymmetry.
+
+The earlier belief — "self-effects MUST also write `netScore: increment(delta)` or a
+stale snapshot loses the adjustment" — was the cause, not the fix. The real fix for a
+stale snapshot is that `wheelAdjustment` is authoritative and `netScore` is always
+recomputed from it; the absolute write self-heals.
 
 ## How to apply
-Any time you touch `applyEffectToSelf` or add a new self-effect write path, ensure the Firestore write includes `netScore: increment(delta)` alongside `wheelAdjustment: increment(delta)`. This matches the pattern used by `applyWheelHit` (cross-team) and `applyManualAdjustment` (admin). The sync effect can still run — it writes the same absolute value and does not double-count.
+Any new writer of `netScore` (cross-team hit, self-effect spin, admin manual adjust,
+score correction, sync effect) must:
+- write `wheelAdjustment` via `increment(delta)` (composes with concurrent writes), and
+- write `netScore` as the absolute recompute from the doc's current `scores` +
+  `currentAdj + delta`, inside the same transaction.
+Functions that recompute netScore need the `holes: ParHole[]` (par list) passed in so
+they can compute `rawNet`. Never reintroduce `netScore: increment(...)` anywhere.

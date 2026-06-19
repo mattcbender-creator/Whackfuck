@@ -569,7 +569,7 @@ export default function Admin() {
     if (!db || !adjustingTeam || adjustDelta === 0 || !getActiveTournamentId()) { setAdjustingTeam(null); return; }
     setSaving(true);
     try {
-      await applyManualAdjustment(db, teamDoc(db, adjustingTeam.id), adjustDelta);
+      await applyManualAdjustment(db, teamDoc(db, adjustingTeam.id), adjustDelta, holes);
       toast({
         title: `Adjusted "${adjustingTeam.teamName}"`,
         description: `${adjustDelta > 0 ? '+' : ''}${adjustDelta} stroke${Math.abs(adjustDelta) !== 1 ? 's' : ''} applied`,

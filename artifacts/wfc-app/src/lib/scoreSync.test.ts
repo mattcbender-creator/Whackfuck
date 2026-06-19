@@ -340,7 +340,7 @@ describe('reconcileWheelHits', () => {
   it('adds a missing hit and bumps wheelAdjustment + netScore once', async () => {
     h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
 
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()], HOLES);
 
     expect(added).toBe(1);
     const data = h.get(TEAM)!;
@@ -352,7 +352,7 @@ describe('reconcileWheelHits', () => {
   it('does not double-count a hit already present on the team doc', async () => {
     h.seed(TEAM, { wheelAdjustment: 1, netScore: 1, targetedBy: [HIT()] });
 
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()], HOLES);
 
     expect(added).toBe(0);
     const data = h.get(TEAM)!;
@@ -374,7 +374,7 @@ describe('reconcileWheelHits', () => {
       }, { merge: true }),
     );
 
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()], HOLES);
 
     expect(added).toBe(0); // retried, found nothing left to add
     const data = h.get(TEAM)!;
@@ -388,7 +388,7 @@ describe('reconcileWheelHits', () => {
     const fresh = HIT({ item: 'red_shell', fromTeam: 'C', at: 2000 });
     h.seed(TEAM, { wheelAdjustment: 1, netScore: 1, targetedBy: [known] });
 
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [known, fresh]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [known, fresh], HOLES);
 
     expect(added).toBe(1);
     const data = h.get(TEAM)!;
@@ -400,7 +400,7 @@ describe('reconcileWheelHits', () => {
   it('skips reconciliation entirely once the round is submitted', async () => {
     h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [], hasSubmitted: true });
 
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [HIT()], HOLES);
 
     expect(added).toBe(0);
     const data = h.get(TEAM)!;
@@ -423,7 +423,7 @@ describe('applyWheelHit', () => {
   it('applies a hit and bumps wheelAdjustment + netScore', async () => {
     h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
 
-    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY());
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY(), HOLES);
 
     expect(applied).toBe(true);
     const data = h.get(TEAM)!;
@@ -435,7 +435,7 @@ describe('applyWheelHit', () => {
   it('is idempotent: calling again with the same entry is a no-op', async () => {
     h.seed(TEAM, { wheelAdjustment: 1, netScore: 1, targetedBy: [ENTRY()] });
 
-    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY());
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY(), HOLES);
 
     expect(applied).toBe(false);
     const data = h.get(TEAM)!;
@@ -451,10 +451,10 @@ describe('applyWheelHit', () => {
     h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [] });
 
     const entry = ENTRY();
-    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, entry);
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, entry, HOLES);
     expect(applied).toBe(true);
 
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [entry]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [entry], HOLES);
     expect(added).toBe(0);
 
     const data = h.get(TEAM)!;
@@ -471,11 +471,11 @@ describe('applyWheelHit', () => {
 
     // Queue a concurrent applyWheelHit write to fire after the reconciler's first read.
     h.queueAfterFirstGet(async () => {
-      await applyWheelHit({} as never, h.ref(TEAM) as never, entry);
+      await applyWheelHit({} as never, h.ref(TEAM) as never, entry, HOLES);
     });
 
     // reconcileWheelHits retries, re-reads, sees the entry, and adds nothing.
-    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [entry]);
+    const added = await reconcileWheelHits({} as never, h.ref(TEAM) as never, [entry], HOLES);
 
     expect(added).toBe(0);
     const data = h.get(TEAM)!;
@@ -487,7 +487,7 @@ describe('applyWheelHit', () => {
   it('skips a submitted team', async () => {
     h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, targetedBy: [], hasSubmitted: true });
 
-    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY());
+    const applied = await applyWheelHit({} as never, h.ref(TEAM) as never, ENTRY(), HOLES);
 
     expect(applied).toBe(false);
     const data = h.get(TEAM)!;
@@ -500,6 +500,7 @@ describe('applyWheelHit', () => {
       {} as never,
       h.ref('nonexistent-team') as never,
       ENTRY(),
+      HOLES,
     );
     expect(applied).toBe(false);
   });
@@ -615,7 +616,7 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
     const rec: WheelSpinRecord = { item: 'mushroom', at: 1000 };
 
     const result = await recordWheelSpinAndApplySelfEffectTx(
-      {} as never, h.ref(TEAM) as never, 7, rec, -1,
+      {} as never, h.ref(TEAM) as never, 7, rec, -1, HOLES,
     );
 
     expect(result).toEqual({ spin: rec, applied: true, wheelAdjustment: -1 });
@@ -630,7 +631,7 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
     h.seed(TEAM, { wheelAdjustment: -1, netScore: -1, wheelSpins: { '7': existing } });
 
     const result = await recordWheelSpinAndApplySelfEffectTx(
-      {} as never, h.ref(TEAM) as never, 7, { item: 'super_star', at: 2000 }, -2,
+      {} as never, h.ref(TEAM) as never, 7, { item: 'super_star', at: 2000 }, -2, HOLES,
     );
 
     // Returns the existing spin and the unchanged authoritative adjustment so the
@@ -651,12 +652,12 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
     const winner: WheelSpinRecord = { item: 'mushroom', at: 1000 };
     h.queueAfterFirstGet(() =>
       recordWheelSpinAndApplySelfEffectTx(
-        {} as never, h.ref(TEAM) as never, 7, winner, -1,
+        {} as never, h.ref(TEAM) as never, 7, winner, -1, HOLES,
       ),
     );
 
     const result = await recordWheelSpinAndApplySelfEffectTx(
-      {} as never, h.ref(TEAM) as never, 7, { item: 'super_star', at: 1001 }, -2,
+      {} as never, h.ref(TEAM) as never, 7, { item: 'super_star', at: 1001 }, -2, HOLES,
     );
 
     expect(result).toEqual({ spin: winner, applied: false, wheelAdjustment: -1 });
@@ -671,7 +672,7 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
 
     await expect(
       recordWheelSpinAndApplySelfEffectTx(
-        {} as never, h.ref(TEAM) as never, 7, { item: 'mushroom', at: 1000 }, -1,
+        {} as never, h.ref(TEAM) as never, 7, { item: 'mushroom', at: 1000 }, -1, HOLES,
       ),
     ).rejects.toThrow('submitted');
     const data = h.get(TEAM)!;
@@ -685,7 +686,7 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
     h.seed(TEAM, { wheelAdjustment: -2, netScore: -2, hasSubmitted: true, wheelSpins: { '7': existing } });
 
     const result = await recordWheelSpinAndApplySelfEffectTx(
-      {} as never, h.ref(TEAM) as never, 7, { item: 'mushroom', at: 2000 }, -1,
+      {} as never, h.ref(TEAM) as never, 7, { item: 'mushroom', at: 2000 }, -1, HOLES,
     );
 
     expect(result).toEqual({ spin: existing, applied: false, wheelAdjustment: -2 });
@@ -699,7 +700,7 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
 
     await recordWheelSpinAndApplySelfEffectTx(
       {} as never, h.ref(TEAM) as never, 3,
-      { item: 'mushroom', at: 1000, targetTeam: undefined }, -1,
+      { item: 'mushroom', at: 1000, targetTeam: undefined }, -1, HOLES,
     );
 
     const spins = h.get(TEAM)!.wheelSpins as Record<string, Record<string, unknown>>;
@@ -712,49 +713,56 @@ describe('recordWheelSpinAndApplySelfEffectTx', () => {
 describe('applyManualAdjustment', () => {
   beforeEach(() => h.reset());
 
-  it('increments wheelAdjustment and netScore by a positive delta', async () => {
-    h.seed(TEAM, { wheelAdjustment: 2, netScore: 5 });
+  it('bumps wheelAdjustment and recomputes netScore absolutely for a positive delta', async () => {
+    // rawNet from scores: 7 over par 4 = +3, with wheelAdjustment 2 → netScore 5.
+    h.seed(TEAM, { wheelAdjustment: 2, netScore: 5, scores: { '1': 7 } });
 
-    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 3);
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 3, HOLES);
 
     const data = h.get(TEAM)!;
     expect(data.wheelAdjustment).toBe(5);
+    // netScore = rawNet 3 + new wheelAdjustment 5 = 8.
     expect(data.netScore).toBe(8);
   });
 
   it('applies a negative delta', async () => {
-    h.seed(TEAM, { wheelAdjustment: 0, netScore: 1 });
+    // rawNet: 5 over par 4 = +1, with wheelAdjustment 0 → netScore 1.
+    h.seed(TEAM, { wheelAdjustment: 0, netScore: 1, scores: { '1': 5 } });
 
-    await applyManualAdjustment({} as never, h.ref(TEAM) as never, -2);
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, -2, HOLES);
 
     const data = h.get(TEAM)!;
     expect(data.wheelAdjustment).toBe(-2);
+    // netScore = rawNet 1 + (-2) = -1.
     expect(data.netScore).toBe(-1);
   });
 
   it('treats missing aggregate fields as zero', async () => {
     h.seed(TEAM, {});
 
-    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 4);
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 4, HOLES);
 
     const data = h.get(TEAM)!;
     expect(data.wheelAdjustment).toBe(4);
+    // No scores → rawNet 0, netScore = 0 + 4 = 4.
     expect(data.netScore).toBe(4);
   });
 
-  it('composes with a concurrent per-hole score write without clobbering it', async () => {
-    // A player writes a new hole via the field-level merge while the admin adjusts
-    // strokes. Both must land: the adjustment increments, the score is preserved.
+  it('recomputes net from the merged scores when a per-hole write lands mid-flight', async () => {
+    // A player writes a new hole after the admin transaction's first read, forcing
+    // a retry. The recomputed netScore must reflect the merged scores and the score
+    // write must survive (no clobber).
     h.seed(TEAM, { wheelAdjustment: 0, netScore: 0, scores: { '1': 4 } });
-
-    await Promise.all([
-      applyManualAdjustment({} as never, h.ref(TEAM) as never, 2),
+    h.queueAfterFirstGet(() =>
       writeHoleScore({} as never, h.ref(TEAM) as never, 5, 5),
-    ]);
+    );
+
+    await applyManualAdjustment({} as never, h.ref(TEAM) as never, 2, HOLES);
 
     const data = h.get(TEAM)!;
     expect(data.wheelAdjustment).toBe(2);
-    expect(data.netScore).toBe(2);
+    // scores: 4 + 5 = 9 over par 8 = +1, plus wheelAdjustment 2 = +3.
+    expect(data.netScore).toBe(3);
     const scores = data.scores as Record<string, number>;
     expect(scores['1']).toBe(4);
     expect(scores['5']).toBe(5); // concurrent player write survives

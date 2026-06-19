@@ -313,7 +313,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reconcileInFlightRef.current = true;
       try {
         const ref = teamDoc(fdb, teamId);
-        await reconcileWheelHits(fdb, ref, possiblyMissing);
+        await reconcileWheelHits(fdb, ref, possiblyMissing, courseHoles);
       } catch (e) {
         console.error('Hit reconciliation failed', e);
       } finally {
@@ -701,7 +701,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     pendingWheelAdjWritesRef.current++;
     try {
-      const result = await recordWheelSpinAndApplySelfEffectTx(db, teamDoc(db, teamId), hole, record, delta);
+      const result = await recordWheelSpinAndApplySelfEffectTx(db, teamDoc(db, teamId), hole, record, delta, courseHoles);
       // Reconcile our optimistic wheelAdjustment to the authoritative server
       // value. For applied:true this equals what we optimistically set; for a
       // no-op (another device already spun this hole) it deterministically
@@ -763,9 +763,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isFirebaseConfigured && db && tId && teamInfo) {
       pendingWheelAdjWritesRef.current++;
       try {
+        // Only wheelAdjustment is written here (increment, composes). netScore is
+        // NOT touched — the absolute sync effect (which runs right after the
+        // optimistic setWheelAdjustment above) rewrites netScore = rawNet +
+        // wheelAdjustment. Writing netScore here too (via increment) would
+        // double-count against that absolute write.
         await setDoc(teamDoc(db, teamId), {
           wheelAdjustment: increment(delta),
-          netScore: increment(delta),
         }, { merge: true });
       } catch (e) {
         console.error('Self effect sync failed', e);
@@ -790,7 +794,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await Promise.all(
         targetIds
           .filter(tid => tid !== teamId)
-          .map(tid => applyWheelHit(fdb, teamDoc(fdb, tid), entry)),
+          .map(tid => applyWheelHit(fdb, teamDoc(fdb, tid), entry, courseHoles)),
       );
     } catch (e) {
       console.error('Cross-team effect failed', e);

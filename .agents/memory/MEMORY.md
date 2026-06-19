@@ -9,4 +9,4 @@
 - [Async sim tick cancellation](async-tick-cancellation.md) — interval-driven async ticks that write need a runningRef checked before every await; clearInterval can't unwind an in-flight tick.
 - [WFC team identity settings](wfc-team-display-dedup.md) — host flags useTeamNames + requireTeamCode (default-on); dedup displays via teamSubtitle, and gate EVERY join/claim path (Home list + JoinTournament) on the code.
 - [Wheel self-effect reconciliation](wheel-selfeffect-reconciliation.md) — atomic self-effect spin tx returns authoritative wheelAdjustment; reconcile from it (listener is gated mid-write), and gate logEvent on applied.
-- [applyEffectToSelf must write netScore](apply-effect-to-self-netscore.md) — self-wheel effects (mushroom, super_star) must write both wheelAdjustment AND netScore via increment in the same setDoc; relying on the sync effect alone races with the Firestore listener.
+- [netScore is single-discipline](apply-effect-to-self-netscore.md) — netScore is ALWAYS absolute (rawNet + wheelAdjustment), NEVER increment(delta); wheelAdjustment is increment-only. Mixing the two double-counts the delta.
